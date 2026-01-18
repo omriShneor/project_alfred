@@ -42,41 +42,9 @@ func (d *DB) migrate() error {
 			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 		)`,
 
-		`CREATE TABLE IF NOT EXISTS pending_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			sender_jid TEXT NOT NULL,
-			source_type TEXT NOT NULL,
-			source_id INTEGER NOT NULL,
-			event_json TEXT NOT NULL,
-			status TEXT DEFAULT 'pending',
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-			expires_at TIMESTAMP NOT NULL
-		)`,
-
-		`CREATE TABLE IF NOT EXISTS event_source_messages (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			sender_jid TEXT NOT NULL,
-			source_type TEXT NOT NULL,
-			source_id INTEGER NOT NULL,
-			message_text TEXT NOT NULL,
-			pending_event_id INTEGER REFERENCES pending_events(id),
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`,
-
-		`CREATE TABLE IF NOT EXISTS calendar_events (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			pending_event_id INTEGER REFERENCES pending_events(id),
-			google_event_id TEXT NOT NULL,
-			title TEXT NOT NULL,
-			event_date TIMESTAMP NOT NULL,
-			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-		)`,
-
-		// Indexes for common queries
+		// Indexes
 		`CREATE INDEX IF NOT EXISTS idx_channels_identifier ON channels(identifier)`,
 		`CREATE INDEX IF NOT EXISTS idx_channels_type ON channels(type)`,
-		`CREATE INDEX IF NOT EXISTS idx_pending_events_status ON pending_events(status)`,
-		`CREATE INDEX IF NOT EXISTS idx_pending_events_sender ON pending_events(sender_jid)`,
 	}
 
 	for _, migration := range migrations {

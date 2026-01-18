@@ -11,6 +11,7 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/onboarding"
 	"github.com/omriShneor/project_alfred/internal/server"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
@@ -33,14 +34,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := waClient.Connect(context.Background()); err != nil {
-		fmt.Fprintf(os.Stderr, "Error connecting to WhatsApp: %v\n", err)
+	if err := onboarding.RunOnboarding(db, waClient, cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "Onboarding failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	printStartupInfo(db, cfg)
+	printStartupInfo(cfg)
 
-	// Start HTTP server
 	srv := server.New(db, waClient, cfg.HTTPPort)
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
@@ -54,38 +54,27 @@ func main() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
-	fmt.Println("\nShutting down...")
+	fmt.Println("Shutting down...")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	srv.Shutdown(ctx)
+	if err := srv.Shutdown(ctx); err != nil {
+		fmt.Fprintf(os.Stderr, "HTTP server shutdown error: %v\n", err)
+	} else {
+		fmt.Println("HTTP server stopped")
+	}
+
 	waClient.Disconnect()
+	fmt.Println("WhatsApp disconnected")
+	fmt.Println("Goodbye!")
 }
 
-func printStartupInfo(db *database.DB, cfg *config.Config) {
+func printStartupInfo(cfg *config.Config) {
 	if cfg.DebugAllMessages {
 		fmt.Println("Debug mode: printing ALL messages")
-	} else {
-		channels, _ := db.ListEnabledChannels()
-
-		senderCount := 0
-		groupCount := 0
-		for _, ch := range channels {
-			if ch.Type == "sender" {
-				senderCount++
-			} else if ch.Type == "group" {
-				groupCount++
-			}
-		}
-
-		if len(channels) > 0 {
-			fmt.Printf("Listening for messages from %d senders and %d groups (%d channels total)...\n", senderCount, groupCount, len(channels))
-		} else {
-			fmt.Println("Warning: No tracked channels configured.")
-		}
 	}
 
 	fmt.Printf("Admin UI available at http://localhost:%d\n", cfg.HTTPPort)
-	fmt.Println("Press Ctrl+C to exit\n")
+	fmt.Println("Press Ctrl+C to exit")
 }

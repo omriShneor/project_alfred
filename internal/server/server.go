@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"embed"
 	"fmt"
 	"net/http"
 	"time"
@@ -9,6 +10,9 @@ import (
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
+
+//go:embed static/discovery.html
+var staticFiles embed.FS
 
 type Server struct {
 	db       *database.DB
@@ -42,17 +46,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Dashboard
 	mux.HandleFunc("GET /", s.handleDashboard)
 
-	// Channel Registery API
+	// Discovery Page
+	mux.HandleFunc("GET /discovery", s.handleDiscoveryPage)
+
+	// Discovery API
+	mux.HandleFunc("GET /api/discovery/channels", s.handleDiscoverChannels)
+
+	// Channel Registry API
 	mux.HandleFunc("GET /api/channel", s.handleListChannels)
 	mux.HandleFunc("POST /api/channel", s.handleCreateChannel)
 	mux.HandleFunc("PUT /api/channel/{id}", s.handleUpdateChannel)
 	mux.HandleFunc("DELETE /api/channel/{id}", s.handleDeleteChannel)
-
-	// Events API
-	mux.HandleFunc("GET /api/events", s.handleListEvents)
-	mux.HandleFunc("GET /api/events/{id}/messages", s.handleEventMessages)
-	mux.HandleFunc("POST /api/events/{id}/confirm", s.handleConfirmEvent)
-	mux.HandleFunc("POST /api/events/{id}/reject", s.handleRejectEvent)
 }
 
 func (s *Server) Start() error {

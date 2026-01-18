@@ -7,14 +7,13 @@ import (
 	"strconv"
 
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 // Dashboard
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	channels, _ := s.db.ListChannels()
-	pendingEvents, _ := s.db.ListPendingEvents()
-	recentEvents, _ := s.db.ListRecentCalendarEvents(10)
 
 	senderCount := 0
 	groupCount := 0
@@ -30,103 +29,64 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"tracked_channels": len(channels),
 		"tracked_senders":  senderCount,
 		"tracked_groups":   groupCount,
-		"pending_events":   len(pendingEvents),
-		"recent_events":    len(recentEvents),
 	}
 
 	respondJSON(w, http.StatusOK, data)
 }
 
-// WhatsApp Discovery
+// Discovery Page
 
-func (s *Server) handleWhatsAppContacts(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDiscoveryPage(w http.ResponseWriter, r *http.Request) {
+	html, err := staticFiles.ReadFile("static/discovery.html")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "Failed to load discovery page")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(html)
+}
+
+// WhatsApp Discovery API
+
+func (s *Server) handleDiscoverChannels(w http.ResponseWriter, r *http.Request) {
 	if s.waClient == nil || s.waClient.WAClient == nil {
 		respondError(w, http.StatusServiceUnavailable, "WhatsApp not connected")
 		return
 	}
 
-	contacts, err := s.waClient.GetRecentContacts(15)
+	// Get all discoverable channels from WhatsApp
+	channels, err := s.waClient.GetDiscoverableChannels()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	respondJSON(w, http.StatusOK, contacts)
+	// Enrich with tracking status from database
+	for i := range channels {
+		channel, err := s.db.GetChannelByIdentifier(channels[i].Identifier)
+		if err == nil && channel != nil {
+			channels[i].IsTracked = true
+			channels[i].ChannelID = &channel.ID
+			channels[i].Enabled = &channel.Enabled
+		}
+	}
+
+	// Optional: filter by type if query parameter is provided
+	typeFilter := r.URL.Query().Get("type")
+	if typeFilter != "" && (typeFilter == "sender" || typeFilter == "group") {
+		filtered := make([]whatsapp.DiscoverableChannel, 0)
+		for _, ch := range channels {
+			if ch.Type == typeFilter {
+				filtered = append(filtered, ch)
+			}
+		}
+		channels = filtered
+	}
+
+	respondJSON(w, http.StatusOK, channels)
 }
 
-func (s *Server) handleWhatsAppGroups(w http.ResponseWriter, r *http.Request) {
-	if s.waClient == nil || s.waClient.WAClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "WhatsApp not connected")
-		return
-	}
-
-	groups, err := s.waClient.GetGroups(15)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, groups)
-}
-
-// Events API
-
-func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
-	events, err := s.db.ListAllEvents(50)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	respondJSON(w, http.StatusOK, events)
-}
-
-func (s *Server) handleEventMessages(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	messages, err := s.db.GetMessagesByPendingEvent(id)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	respondJSON(w, http.StatusOK, messages)
-}
-
-func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	// TODO: Actually create the Google Calendar event
-	if err := s.db.UpdatePendingEventStatus(id, "confirmed"); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "confirmed"})
-}
-
-func (s *Server) handleRejectEvent(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		respondError(w, http.StatusBadRequest, "invalid id")
-		return
-	}
-
-	if err := s.db.UpdatePendingEventStatus(id, "rejected"); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]string{"status": "rejected"})
-}
-
-// Channels API (Consolidated)
+// Channels API
 
 func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
 	typeFilter := r.URL.Query().Get("type")

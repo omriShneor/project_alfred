@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Channel Discovery - Project Alfred</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        #search {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        #search:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .type-filter {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .filter-btn {
+            padding: 0.5rem 1rem;
+            border: 2px solid #e0e0e0;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-btn:hover {
+            border-color: #3498db;
+        }
+
+        .filter-btn.active {
+            background: #3498db;
+            color: white;
+            border-color: #3498db;
+        }
+
+        .stats {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+            display: flex;
+            gap: 2rem;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .stat-value {
+            font-weight: bold;
+            font-size: 1.25rem;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .type-badge.sender {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .type-badge.group {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .status-dot.tracked {
+            background: #4caf50;
+        }
+
+        .status-dot.untracked {
+            background: #9e9e9e;
+        }
+
+        .action-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .action-btn.track {
+            background: #4caf50;
+            color: white;
+        }
+
+        .action-btn.track:hover {
+            background: #43a047;
+        }
+
+        .action-btn.untrack {
+            background: #ef5350;
+            color: white;
+        }
+
+        .action-btn.untrack:hover {
+            background: #e53935;
+        }
+
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        #loading {
+            text-align: center;
+            padding: 2rem;
+            color: #7f8c8d;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .identifier {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #666;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #7f8c8d;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Channel Discovery</h1>
+            <p class="subtitle">Discover and track WhatsApp contacts and groups</p>
+        </header>
+
+        <div class="controls">
+            <input type="text" id="search" placeholder="Filter by name..." autofocus>
+            <div class="type-filter">
+                <button class="filter-btn active" data-type="all">All</button>
+                <button class="filter-btn" data-type="sender">Contacts</button>
+                <button class="filter-btn" data-type="group">Groups</button>
+            </div>
+        </div>
+
+        <div class="stats" id="stats"></div>
+
+        <div id="error" class="error hidden"></div>
+
+        <table id="channels-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Name</th>
+                    <th>Identifier</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody id="channels-body">
+            </tbody>
+        </table>
+
+        <div id="loading">Loading channels...</div>
+    </div>
+
+    <script>
+        (function() {
+            let allChannels = [];
+            let currentTypeFilter = 'all';
+
+            const searchInput = document.getElementById('search');
+            const tableBody = document.getElementById('channels-body');
+            const loadingEl = document.getElementById('loading');
+            const errorEl = document.getElementById('error');
+            const statsEl = document.getElementById('stats');
+            const filterBtns = document.querySelectorAll('.filter-btn');
+
+            document.addEventListener('DOMContentLoaded', init);
+
+            async function init() {
+                await loadChannels();
+                setupEventListeners();
+            }
+
+            function setupEventListeners() {
+                let debounceTimer;
+                searchInput.addEventListener('input', () => {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(renderTable, 150);
+                });
+
+                filterBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        filterBtns.forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        currentTypeFilter = btn.dataset.type;
+                        renderTable();
+                    });
+                });
+            }
+
+            async function loadChannels() {
+                try {
+                    loadingEl.classList.remove('hidden');
+                    errorEl.classList.add('hidden');
+
+                    const response = await fetch('/api/discovery/channels');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    allChannels = await response.json();
+                    renderTable();
+                    updateStats();
+                } catch (err) {
+                    showError(`Failed to load channels: ${err.message}`);
+                } finally {
+                    loadingEl.classList.add('hidden');
+                }
+            }
+
+            function getFilteredChannels() {
+                const searchTerm = searchInput.value.toLowerCase().trim();
+
+                return allChannels
+                    .filter(channel => {
+                        if (currentTypeFilter !== 'all' && channel.type !== currentTypeFilter) {
+                            return false;
+                        }
+
+                        if (searchTerm && !channel.name.toLowerCase().includes(searchTerm)) {
+                            return false;
+                        }
+
+                        return true;
+                    })
+                    .sort((a, b) => {
+                        // Tracked channels first, then alphabetically by name
+                        if (a.is_tracked !== b.is_tracked) {
+                            return a.is_tracked ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+            }
+
+            function renderTable() {
+                const filtered = getFilteredChannels();
+
+                if (filtered.length === 0) {
+                    tableBody.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                No channels found matching your criteria
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                tableBody.innerHTML = filtered.map(channel => `
+                    <tr data-identifier="${escapeHtml(channel.identifier)}">
+                        <td>
+                            <span class="type-badge ${channel.type}">
+                                ${channel.type === 'sender' ? 'Contact' : 'Group'}
+                            </span>
+                        </td>
+                        <td>${escapeHtml(channel.name)}</td>
+                        <td class="identifier" title="${escapeHtml(channel.identifier)}">
+                            ${escapeHtml(channel.identifier)}
+                        </td>
+                        <td>
+                            <span class="status">
+                                <span class="status-dot ${channel.is_tracked ? 'tracked' : 'untracked'}"></span>
+                                ${channel.is_tracked ? 'Tracked' : 'Not tracked'}
+                            </span>
+                        </td>
+                        <td>
+                            ${channel.is_tracked
+                                ? `<button class="action-btn untrack" onclick="untrackChannel(${channel.channel_id}, this)">
+                                       Untrack
+                                   </button>`
+                                : `<button class="action-btn track" onclick="trackChannel('${escapeHtml(channel.type)}', '${escapeHtml(channel.identifier)}', '${escapeHtml(channel.name)}', this)">
+                                       Track
+                                   </button>`
+                            }
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            function updateStats() {
+                const total = allChannels.length;
+                const contacts = allChannels.filter(c => c.type === 'sender').length;
+                const groups = allChannels.filter(c => c.type === 'group').length;
+                const tracked = allChannels.filter(c => c.is_tracked).length;
+
+                statsEl.innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-value">${total}</span>
+                        <span>Total</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${contacts}</span>
+                        <span>Contacts</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${groups}</span>
+                        <span>Groups</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${tracked}</span>
+                        <span>Tracked</span>
+                    </div>
+                `;
+            }
+
+            window.trackChannel = async function(type, identifier, name, btn) {
+                btn.disabled = true;
+                btn.textContent = 'Tracking...';
+
+                try {
+                    const response = await fetch('/api/channel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type, identifier, name })
+                    });
+
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.error || 'Failed to track channel');
+                    }
+
+                    await loadChannels();
+                } catch (err) {
+                    showError(`Failed to track channel: ${err.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Track';
+                }
+            };
+
+            window.untrackChannel = async function(channelId, btn) {
+                btn.disabled = true;
+                btn.textContent = 'Removing...';
+
+                try {
+                    const response = await fetch(`/api/channel/${channelId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.error || 'Failed to untrack channel');
+                    }
+
+                    await loadChannels();
+                } catch (err) {
+                    showError(`Failed to untrack channel: ${err.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Untrack';
+                }
+            };
+
+            function showError(message) {
+                errorEl.textContent = message;
+                errorEl.classList.remove('hidden');
+                setTimeout(() => errorEl.classList.add('hidden'), 5000);
+            }
+
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+        })();
+    </script>
+</body>
+</html>

@@ -63,15 +63,20 @@ func (c *Client) connectWithQR(ctx context.Context) error {
 		return fmt.Errorf("failed to connect: %w", err)
 	}
 
-	fmt.Println("\nScan this QR code in WhatsApp:")
-	fmt.Println("WhatsApp > Settings > Linked Devices > Link a Device\n")
+	fmt.Println("Scan this QR code in WhatsApp:")
+	fmt.Println("WhatsApp > Settings > Linked Devices > Link a Device")
 
+	qrDisplayed := false
 	for evt := range qrChan {
 		switch evt.Event {
 		case "code":
-			DisplayQR(evt.Code)
+			// Only display QR code once (first code event)
+			if !qrDisplayed {
+				DisplayQR(evt.Code)
+				qrDisplayed = true
+			}
 		case "success":
-			fmt.Println("\nSuccessfully logged in!")
+			fmt.Println("Successfully logged in!")
 			return nil
 		case "timeout":
 			return fmt.Errorf("QR code timeout - please restart and try again")

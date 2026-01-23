@@ -24,4 +24,5 @@ Thumbs.db
 
 # Credentials
 credentials.json
+client_secret_*.json
 token.json

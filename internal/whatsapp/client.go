@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/omriShneor/project_alfred/internal/sse"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
@@ -43,53 +44,54 @@ func NewClient(handler *Handler) (*Client, error) {
 	return c, nil
 }
 
-func (c *Client) Connect(ctx context.Context) error {
-	if c.WAClient.Store.ID == nil {
-		return c.connectWithQR(ctx)
-	}
-
-	if err := c.WAClient.Connect(); err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
-	}
-
-	fmt.Println("Connected to WhatsApp!")
-	return nil
-}
-
-func (c *Client) connectWithQR(ctx context.Context) error {
-	qrChan, _ := c.WAClient.GetQRChannel(ctx)
-
-	if err := c.WAClient.Connect(); err != nil {
-		return fmt.Errorf("failed to connect: %w", err)
-	}
-
-	fmt.Println("Scan this QR code in WhatsApp:")
-	fmt.Println("WhatsApp > Settings > Linked Devices > Link a Device")
-
-	qrDisplayed := false
-	for evt := range qrChan {
-		switch evt.Event {
-		case "code":
-			// Only display QR code once (first code event)
-			if !qrDisplayed {
-				DisplayQR(evt.Code)
-				qrDisplayed = true
-			}
-		case "success":
-			fmt.Println("Successfully logged in!")
-			return nil
-		case "timeout":
-			return fmt.Errorf("QR code timeout - please restart and try again")
-		}
-	}
-
-	return nil
-}
-
 func (c *Client) Disconnect() {
 	c.WAClient.Disconnect()
 }
 
 func (c *Client) IsLoggedIn() bool {
 	return c.WAClient.Store.ID != nil
+}
+
+// Reconnect disconnects and reconnects to WhatsApp, generating a new QR code
+func (c *Client) Reconnect(ctx context.Context, state *sse.State) {
+	// Disconnect first
+	c.WAClient.Disconnect()
+
+	// Reset status
+	state.SetWhatsAppStatus("waiting")
+	state.SetWhatsAppError("")
+
+	// Get QR channel
+	qrChan, err := c.WAClient.GetQRChannel(ctx)
+	if err != nil {
+		state.SetWhatsAppError(fmt.Sprintf("Failed to get QR channel: %v", err))
+		return
+	}
+
+	// Connect (this triggers QR generation)
+	if err := c.WAClient.Connect(); err != nil {
+		state.SetWhatsAppError(fmt.Sprintf("Failed to connect: %v", err))
+		return
+	}
+
+	// Listen for QR events
+	for evt := range qrChan {
+		switch evt.Event {
+		case "code":
+			// Generate QR code as data URL
+			dataURL, err := GenerateQRDataURL(evt.Code)
+			if err != nil {
+				state.SetWhatsAppError(fmt.Sprintf("Failed to generate QR: %v", err))
+				continue
+			}
+			state.SetQR(dataURL)
+		case "success":
+			state.SetWhatsAppStatus("connected")
+			fmt.Println("WhatsApp reconnected successfully!")
+			return
+		case "timeout":
+			state.SetWhatsAppError("QR code expired. Click retry to try again.")
+			return
+		}
+	}
 }

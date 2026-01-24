@@ -13,7 +13,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
-//go:embed static/admin.html static/events.html static/onboarding.html
+//go:embed static/admin.html static/events.html static/onboarding.html static/settings.html
 var staticFiles embed.FS
 
 type Server struct {
@@ -24,9 +24,10 @@ type Server struct {
 	httpSrv         *http.Server
 	port            int
 	devMode         bool
+	resendAPIKey    string // For checking email availability
 }
 
-func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, devMode bool) *Server {
+func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, devMode bool, resendAPIKey string) *Server {
 	s := &Server{
 		db:              db,
 		waClient:        waClient,
@@ -34,6 +35,7 @@ func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, po
 		onboardingState: onboardingState,
 		port:            port,
 		devMode:         devMode,
+		resendAPIKey:    resendAPIKey,
 	}
 
 	mux := http.NewServeMux()
@@ -41,7 +43,7 @@ func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, po
 
 	s.httpSrv = &http.Server{
 		Addr:         fmt.Sprintf(":%d", port),
-		Handler:      mux,
+		Handler:      s.corsMiddleware(mux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
 		IdleTimeout:  60 * time.Second,
@@ -51,8 +53,11 @@ func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, po
 }
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
-	// Dashboard
-	mux.HandleFunc("GET /", s.handleDashboard)
+	// Health check
+	mux.HandleFunc("GET /health", s.handleHealthCheck)
+
+	// Main page (admin)
+	mux.HandleFunc("GET /", s.handleAdminPage)
 
 	// Admin Page
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
@@ -89,6 +94,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/events/{id}/confirm", s.handleConfirmEvent)
 	mux.HandleFunc("POST /api/events/{id}/reject", s.handleRejectEvent)
 	mux.HandleFunc("GET /api/events/channel/{channelId}/history", s.handleGetChannelHistory)
+
+	// Settings Page
+	mux.HandleFunc("GET /settings", s.handleSettingsPage)
+
+	// Notification Preferences API
+	mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
+	mux.HandleFunc("PUT /api/notifications/email", s.handleUpdateEmailPrefs)
 }
 
 func (s *Server) Start() error {
@@ -104,4 +116,21 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) SetClients(waClient *whatsapp.Client, gcalClient *gcal.Client) {
 	s.waClient = waClient
 	s.gcalClient = gcalClient
+}
+
+// corsMiddleware adds CORS headers to allow mobile app requests
+func (s *Server) corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// Handle preflight requests
+		if r.Method == "OPTIONS" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		next.ServeHTTP(w, r)
+	})
 }

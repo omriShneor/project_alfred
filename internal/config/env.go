@@ -20,12 +20,17 @@ type Config struct {
 
 	// Optional with defaults
 	DBPath             string
+	WhatsAppDBPath     string
 	HTTPPort           int
 	DebugAllMessages   bool
 	ClaudeModel        string
 	ClaudeTemperature  float64
 	MessageHistorySize int
 	DevMode            bool
+
+	// Notification server config (API keys only - user prefs in database)
+	ResendAPIKey string
+	EmailFrom    string
 }
 
 func LoadFromEnv() *Config {
@@ -37,12 +42,17 @@ func LoadFromEnv() *Config {
 
 		// Optional with defaults
 		DBPath:             getEnvOrDefault("ALFRED_DB_PATH", "./alfred.db"),
-		HTTPPort:           getEnvAsIntOrDefault("ALFRED_HTTP_PORT", 8080),
+		WhatsAppDBPath:     getEnvOrDefault("ALFRED_WHATSAPP_DB_PATH", "./whatsapp.db"),
+		HTTPPort:           getEnvAsIntOrDefault("PORT", getEnvAsIntOrDefault("ALFRED_HTTP_PORT", 8080)),
 		DebugAllMessages:   getEnvAsBoolOrDefault("ALFRED_DEBUG_ALL_MESSAGES", false),
 		ClaudeModel:        getEnvOrDefault("ALFRED_CLAUDE_MODEL", "claude-sonnet-4-20250514"),
 		ClaudeTemperature:  getEnvAsFloatOrDefault("ALFRED_CLAUDE_TEMPERATURE", 0.1),
 		MessageHistorySize: getEnvAsIntOrDefault("ALFRED_MESSAGE_HISTORY_SIZE", 25),
 		DevMode:            getEnvAsBoolOrDefault("ALFRED_DEV_MODE", false),
+
+		// Notification server config (API keys only)
+		ResendAPIKey: os.Getenv("ALFRED_RESEND_API_KEY"),
+		EmailFrom:    getEnvOrDefault("ALFRED_EMAIL_FROM", "Alfred <onboarding@resend.dev>"),
 	}
 
 	return cfg

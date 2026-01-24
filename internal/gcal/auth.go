@@ -18,9 +18,18 @@ const (
 	callbackPath      = "/oauth/callback"
 )
 
-// loadOAuthConfig loads OAuth2 configuration from credentials file
+// loadOAuthConfig loads OAuth2 configuration from credentials file or environment variable
 func loadOAuthConfig(credentialsFile string) (*oauth2.Config, error) {
-	// Try specified file first
+	// Try environment variable first (useful for container deployments)
+	if credJSON := os.Getenv("GOOGLE_CREDENTIALS_JSON"); credJSON != "" {
+		config, err := google.ConfigFromJSON([]byte(credJSON), calendar.CalendarScope)
+		if err == nil {
+			config.RedirectURL = fmt.Sprintf("http://localhost:%d%s", oauthCallbackPort, callbackPath)
+			return config, nil
+		}
+	}
+
+	// Try specified file
 	if credentialsFile != "" {
 		if config, err := loadConfigFromFile(credentialsFile); err == nil {
 			return config, nil
@@ -32,7 +41,7 @@ func loadOAuthConfig(credentialsFile string) (*oauth2.Config, error) {
 		return config, nil
 	}
 
-	return nil, fmt.Errorf("no credentials file found - please provide credentials.json")
+	return nil, fmt.Errorf("no credentials file found - please provide credentials.json or set GOOGLE_CREDENTIALS_JSON env var")
 }
 
 // loadConfigFromFile attempts to load OAuth config from a file

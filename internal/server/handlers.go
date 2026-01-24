@@ -37,6 +37,33 @@ func (s *Server) serveStaticFile(w http.ResponseWriter, filename string) {
 	w.Write(html)
 }
 
+// Health Check
+
+func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
+	// Check database connectivity
+	if err := s.db.Ping(); err != nil {
+		respondError(w, http.StatusServiceUnavailable, "database unavailable")
+		return
+	}
+
+	// Build status response
+	status := map[string]interface{}{
+		"status":   "healthy",
+		"whatsapp": "disconnected",
+		"gcal":     "disconnected",
+	}
+
+	if s.waClient != nil && s.waClient.IsLoggedIn() {
+		status["whatsapp"] = "connected"
+	}
+
+	if s.gcalClient != nil && s.gcalClient.IsAuthenticated() {
+		status["gcal"] = "connected"
+	}
+
+	respondJSON(w, http.StatusOK, status)
+}
+
 // Dashboard
 
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
@@ -718,4 +745,57 @@ func (s *Server) handleOnboardingSSE(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// Settings Page
+
+func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
+	s.serveStaticFile(w, "settings.html")
+}
+
+// Notification Preferences API
+
+func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Request) {
+	prefs, err := s.db.GetUserNotificationPrefs()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Include server-side availability info
+	response := map[string]interface{}{
+		"preferences": prefs,
+		"available": map[string]bool{
+			"email":   s.resendAPIKey != "",
+			"push":    false,
+			"sms":     false,
+			"webhook": false,
+		},
+	}
+	respondJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) handleUpdateEmailPrefs(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool   `json:"enabled"`
+		Address string `json:"address"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.Enabled && req.Address == "" {
+		respondError(w, http.StatusBadRequest, "email address required when enabling notifications")
+		return
+	}
+
+	if err := s.db.UpdateEmailPrefs(req.Enabled, req.Address); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	prefs, _ := s.db.GetUserNotificationPrefs()
+	respondJSON(w, http.StatusOK, prefs)
 }

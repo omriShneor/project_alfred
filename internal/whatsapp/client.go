@@ -16,11 +16,11 @@ type Client struct {
 	handler  *Handler
 }
 
-func NewClient(handler *Handler) (*Client, error) {
+func NewClient(handler *Handler, dbPath string) (*Client, error) {
 	dbLog := waLog.Stdout("Database", "ERROR", true)
 	clientLog := waLog.Stdout("Client", "ERROR", true)
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", "file:whatsapp.db?_foreign_keys=on", dbLog)
+	container, err := sqlstore.New(context.Background(), "sqlite3", "file:"+dbPath+"?_foreign_keys=on", dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create database: %w", err)
 	}

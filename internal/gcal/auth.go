@@ -18,13 +18,21 @@ const (
 	callbackPath      = "/oauth/callback"
 )
 
+// getOAuthCallbackURL returns the OAuth callback URL, using ALFRED_BASE_URL if set
+func getOAuthCallbackURL() string {
+	if baseURL := os.Getenv("ALFRED_BASE_URL"); baseURL != "" {
+		return baseURL + callbackPath
+	}
+	return fmt.Sprintf("http://localhost:%d%s", oauthCallbackPort, callbackPath)
+}
+
 // loadOAuthConfig loads OAuth2 configuration from credentials file or environment variable
 func loadOAuthConfig(credentialsFile string) (*oauth2.Config, error) {
 	// Try environment variable first (useful for container deployments)
 	if credJSON := os.Getenv("GOOGLE_CREDENTIALS_JSON"); credJSON != "" {
 		config, err := google.ConfigFromJSON([]byte(credJSON), calendar.CalendarScope)
 		if err == nil {
-			config.RedirectURL = fmt.Sprintf("http://localhost:%d%s", oauthCallbackPort, callbackPath)
+			config.RedirectURL = getOAuthCallbackURL()
 			return config, nil
 		}
 	}
@@ -56,7 +64,7 @@ func loadConfigFromFile(path string) (*oauth2.Config, error) {
 		return nil, err
 	}
 
-	config.RedirectURL = fmt.Sprintf("http://localhost:%d%s", oauthCallbackPort, callbackPath)
+	config.RedirectURL = getOAuthCallbackURL()
 	return config, nil
 }
 

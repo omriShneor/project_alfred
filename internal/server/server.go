@@ -24,7 +24,8 @@ type Server struct {
 	httpSrv         *http.Server
 	port            int
 	devMode         bool
-	resendAPIKey    string // For checking email availability
+	resendAPIKey    string        // For checking email availability
+	oauthCodeChan   chan string   // Channel to receive OAuth code from callback
 }
 
 func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, devMode bool, resendAPIKey string) *Server {
@@ -83,6 +84,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gcal/status", s.handleGCalStatus)
 	mux.HandleFunc("GET /api/gcal/calendars", s.handleGCalListCalendars)
 	mux.HandleFunc("POST /api/gcal/connect", s.handleGCalConnect)
+	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
 
 	// Events Page (separate from Admin)
 	mux.HandleFunc("GET /events", s.handleEventsPage)

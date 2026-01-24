@@ -287,33 +287,61 @@ func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start the callback server to receive the OAuth code
-	redirectURL := fmt.Sprintf("http://localhost:%d/onboarding", s.port)
-	codeChan, errChan := s.gcalClient.StartCallbackServer(context.Background(), redirectURL)
+	// Check if we're using main server callback (production) or separate server (local)
+	baseURL := os.Getenv("ALFRED_BASE_URL")
+	if baseURL != "" {
+		// Production mode: use main server's /oauth/callback endpoint
+		s.oauthCodeChan = make(chan string, 1)
 
-	// Listen for the OAuth code in a goroutine
-	go func() {
-		select {
-		case code := <-codeChan:
-			// Exchange code for token
-			if err := s.gcalClient.ExchangeCode(context.Background(), code); err != nil {
-				fmt.Printf("Failed to exchange OAuth code: %v\n", err)
-				if s.onboardingState != nil {
-					s.onboardingState.SetGCalError(fmt.Sprintf("Failed to authenticate: %v", err))
+		// Listen for the OAuth code in a goroutine
+		go func() {
+			select {
+			case code := <-s.oauthCodeChan:
+				if err := s.gcalClient.ExchangeCode(context.Background(), code); err != nil {
+					fmt.Printf("Failed to exchange OAuth code: %v\n", err)
+					if s.onboardingState != nil {
+						s.onboardingState.SetGCalError(fmt.Sprintf("Failed to authenticate: %v", err))
+					}
+					return
 				}
-				return
+				fmt.Println("Google Calendar connected successfully!")
+				if s.onboardingState != nil {
+					s.onboardingState.SetGCalStatus("connected")
+				}
+			case <-time.After(5 * time.Minute):
+				fmt.Println("OAuth timeout - no callback received")
+				if s.onboardingState != nil {
+					s.onboardingState.SetGCalError("Authorization timeout. Please try again.")
+				}
 			}
-			fmt.Println("Google Calendar connected successfully!")
-			if s.onboardingState != nil {
-				s.onboardingState.SetGCalStatus("connected")
+		}()
+	} else {
+		// Local mode: start separate callback server
+		redirectURL := fmt.Sprintf("http://localhost:%d/onboarding", s.port)
+		codeChan, errChan := s.gcalClient.StartCallbackServer(context.Background(), redirectURL)
+
+		go func() {
+			select {
+			case code := <-codeChan:
+				if err := s.gcalClient.ExchangeCode(context.Background(), code); err != nil {
+					fmt.Printf("Failed to exchange OAuth code: %v\n", err)
+					if s.onboardingState != nil {
+						s.onboardingState.SetGCalError(fmt.Sprintf("Failed to authenticate: %v", err))
+					}
+					return
+				}
+				fmt.Println("Google Calendar connected successfully!")
+				if s.onboardingState != nil {
+					s.onboardingState.SetGCalStatus("connected")
+				}
+			case err := <-errChan:
+				fmt.Printf("OAuth callback error: %v\n", err)
+				if s.onboardingState != nil {
+					s.onboardingState.SetGCalError(fmt.Sprintf("Authorization failed: %v", err))
+				}
 			}
-		case err := <-errChan:
-			fmt.Printf("OAuth callback error: %v\n", err)
-			if s.onboardingState != nil {
-				s.onboardingState.SetGCalError(fmt.Sprintf("Authorization failed: %v", err))
-			}
-		}
-	}()
+		}()
+	}
 
 	// Return the auth URL for the frontend to open
 	authURL := s.gcalClient.GetAuthURL()
@@ -322,6 +350,51 @@ func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 		"auth_url": authURL,
 		"message":  "Open this URL to authorize Google Calendar access",
 	})
+}
+
+// handleOAuthCallback handles the OAuth callback from Google (used in production)
+func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		respondError(w, http.StatusBadRequest, "No authorization code received")
+		return
+	}
+
+	// Send code to waiting goroutine
+	if s.oauthCodeChan != nil {
+		select {
+		case s.oauthCodeChan <- code:
+			// Code sent successfully
+		default:
+			// Channel full or closed, try direct exchange
+			if err := s.gcalClient.ExchangeCode(context.Background(), code); err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to exchange code: %v", err))
+				return
+			}
+			if s.onboardingState != nil {
+				s.onboardingState.SetGCalStatus("connected")
+			}
+		}
+	} else {
+		// No waiting goroutine, do direct exchange
+		if s.gcalClient != nil {
+			if err := s.gcalClient.ExchangeCode(context.Background(), code); err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to exchange code: %v", err))
+				return
+			}
+			if s.onboardingState != nil {
+				s.onboardingState.SetGCalStatus("connected")
+			}
+		}
+	}
+
+	// Redirect to onboarding page
+	baseURL := os.Getenv("ALFRED_BASE_URL")
+	if baseURL != "" {
+		http.Redirect(w, r, baseURL+"/onboarding", http.StatusFound)
+	} else {
+		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/onboarding", s.port), http.StatusFound)
+	}
 }
 
 // Events Page

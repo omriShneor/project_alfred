@@ -10,15 +10,29 @@ go run main.go              # Start the application
 go build -o alfred && ./alfred  # Build and run
 ```
 
+### Railway Deployment
+```bash
+railway login               # Login to Railway
+railway up                  # Deploy to Railway
+railway logs                # View deployment logs
+railway domain              # Get/create public URL
+```
+
 ### Important URLs (default port 8080)
 - `http://localhost:8080/onboarding` - Initial setup (WhatsApp QR + Google OAuth)
 - `http://localhost:8080/admin` - Channel management
 - `http://localhost:8080/events` - Review and confirm detected events
+- `http://localhost:8080/settings` - Notification preferences
+- `http://localhost:8080/health` - Health check endpoint
+
+### Production URL
+- https://alfred-production-d2c9.up.railway.app
 
 ### Required Environment
 ```bash
 export ANTHROPIC_API_KEY="sk-..."  # Required for event detection
 # Place credentials.json in project root for Google Calendar
+# Or set GOOGLE_CREDENTIALS_JSON env var with JSON content
 ```
 
 ---
@@ -48,6 +62,8 @@ gcal/events.go (sync to Google Calendar)
 ```
 project_alfred/
 ├── main.go                      # Entry point, initialization, shutdown
+├── Dockerfile                   # Multi-stage Docker build for Railway
+├── railway.toml                 # Railway deployment configuration
 ├── internal/
 │   ├── config/
 │   │   └── env.go               # Environment configuration
@@ -56,14 +72,16 @@ project_alfred/
 │   │   ├── channels.go          # Channel CRUD
 │   │   ├── messages.go          # Message history storage
 │   │   ├── events.go            # Calendar event CRUD
-│   │   └── attendees.go         # Event attendee management
+│   │   ├── attendees.go         # Event attendee management
+│   │   └── notifications.go     # User notification preferences
 │   ├── server/
-│   │   ├── server.go            # HTTP server, routing
+│   │   ├── server.go            # HTTP server, routing, CORS middleware
 │   │   ├── handlers.go          # All HTTP handlers
 │   │   └── static/
 │   │       ├── admin.html       # Channel management UI
 │   │       ├── events.html      # Event review UI
-│   │       └── onboarding.html  # Setup flow UI
+│   │       ├── onboarding.html  # Setup flow UI
+│   │       └── settings.html    # Notification settings UI
 │   ├── whatsapp/
 │   │   ├── client.go            # WhatsApp connection
 │   │   ├── handler.go           # Message filtering
@@ -71,7 +89,7 @@ project_alfred/
 │   │   └── qr.go                # QR code generation
 │   ├── gcal/
 │   │   ├── client.go            # Google Calendar client
-│   │   ├── auth.go              # OAuth2 flow
+│   │   ├── auth.go              # OAuth2 flow (supports env var credentials)
 │   │   ├── calendars.go         # List calendars
 │   │   └── events.go            # Event CRUD
 │   ├── claude/
@@ -80,6 +98,10 @@ project_alfred/
 │   ├── processor/
 │   │   ├── processor.go         # Message processing loop
 │   │   └── history.go           # Message storage helper
+│   ├── notify/
+│   │   ├── notifier.go          # Notification interface
+│   │   ├── resend.go            # Email notifications via Resend
+│   │   └── service.go           # Notification service orchestrator
 │   ├── onboarding/
 │   │   ├── onboarding.go        # Setup orchestration
 │   │   └── clients.go           # Client container
@@ -162,6 +184,7 @@ type FilteredMessage struct {
 | `message_history` | Last N messages per channel (context for Claude) |
 | `calendar_events` | Detected events with status lifecycle |
 | `event_attendees` | Event participants |
+| `user_notification_preferences` | Email/push/SMS notification settings |
 
 ### Event Status Lifecycle
 ```
@@ -174,13 +197,19 @@ rejected
 
 ## HTTP API Endpoints
 
+### Health & System
+| Path | Handler | Description |
+|------|---------|-------------|
+| GET `/health` | handleHealthCheck | Health check (DB, WhatsApp, GCal status) |
+
 ### UI Pages
 | Path | Handler | Description |
 |------|---------|-------------|
-| GET `/` | handleDashboard | Stats JSON |
+| GET `/` | handleAdminPage | Redirects to admin |
 | GET `/admin` | handleAdminPage | Channel management |
 | GET `/events` | handleEventsPage | Event review |
 | GET `/onboarding` | handleOnboardingPage | Setup flow |
+| GET `/settings` | handleSettingsPage | Notification settings |
 
 ### Onboarding API
 | Path | Handler | Description |
@@ -219,6 +248,12 @@ rejected
 |------|---------|-------------|
 | POST `/api/whatsapp/reconnect` | handleWhatsAppReconnect | Trigger new QR |
 
+### Notification API
+| Path | Handler | Description |
+|------|---------|-------------|
+| GET `/api/notifications/preferences` | handleGetNotificationPrefs | Get notification settings |
+| PUT `/api/notifications/email` | handleUpdateEmailPrefs | Update email preferences |
+
 ---
 
 ## Environment Variables
@@ -226,15 +261,20 @@ rejected
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ANTHROPIC_API_KEY` | - | Claude API key (required) |
-| `GOOGLE_CREDENTIALS_FILE` | `./credentials.json` | OAuth credentials |
+| `GOOGLE_CREDENTIALS_FILE` | `./credentials.json` | OAuth credentials file path |
+| `GOOGLE_CREDENTIALS_JSON` | - | OAuth credentials as JSON string (alternative to file) |
 | `GOOGLE_TOKEN_FILE` | `./token.json` | OAuth token storage |
-| `ALFRED_DB_PATH` | `./alfred.db` | SQLite database |
-| `ALFRED_HTTP_PORT` | `8080` | HTTP server port |
+| `ALFRED_DB_PATH` | `./alfred.db` | SQLite database path |
+| `ALFRED_WHATSAPP_DB_PATH` | `./whatsapp.db` | WhatsApp session database path |
+| `PORT` | `8080` | HTTP server port (Railway sets this) |
+| `ALFRED_HTTP_PORT` | `8080` | HTTP server port (fallback) |
 | `ALFRED_DEBUG_ALL_MESSAGES` | `false` | Log all messages |
 | `ALFRED_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Model for detection |
 | `ALFRED_CLAUDE_TEMPERATURE` | `0.1` | Lower = more deterministic |
 | `ALFRED_MESSAGE_HISTORY_SIZE` | `25` | Messages kept per channel |
 | `ALFRED_DEV_MODE` | `false` | Hot reload static files |
+| `ALFRED_RESEND_API_KEY` | - | Resend API key for email notifications |
+| `ALFRED_EMAIL_FROM` | `Alfred <onboarding@resend.dev>` | Email sender address |
 
 ---
 
@@ -344,3 +384,49 @@ parseEventTime(s string) // Handles RFC3339, ISO, local formats
 | Google Calendar | `gcal/events.go` |
 | WhatsApp | `whatsapp/handler.go` |
 | Configuration | `config/env.go` |
+| Notifications | `notify/service.go`, `notify/resend.go` |
+| Deployment | `Dockerfile`, `railway.toml` |
+
+---
+
+## Railway Deployment
+
+### Deployment Files
+- `Dockerfile` - Multi-stage build with CGO for SQLite
+- `railway.toml` - Railway configuration with health check
+
+### Setup Steps
+1. Install Railway CLI: `brew install railway`
+2. Login: `railway login`
+3. Initialize project: `railway init`
+4. Link service: `railway link`
+5. Create volume: `railway volume add --mount-path /data`
+6. Set environment variables:
+   ```bash
+   railway variables set ANTHROPIC_API_KEY="sk-..."
+   railway variables set ALFRED_DB_PATH="/data/alfred.db"
+   railway variables set ALFRED_WHATSAPP_DB_PATH="/data/whatsapp.db"
+   railway variables set GOOGLE_CREDENTIALS_FILE="/data/credentials.json"
+   railway variables set GOOGLE_TOKEN_FILE="/data/token.json"
+   railway variables set GOOGLE_CREDENTIALS_JSON='{"web":{...}}'  # Alternative to file
+   ```
+7. Deploy: `railway up`
+8. Get domain: `railway domain`
+
+### Persistent Storage
+Railway volume mounted at `/data` stores:
+- `alfred.db` - Application database
+- `whatsapp.db` - WhatsApp session (preserves login)
+- `token.json` - Google OAuth token
+
+### Google OAuth for Production
+Add Railway callback URL to Google Cloud Console:
+```
+https://alfred-production-d2c9.up.railway.app/oauth/callback
+```
+
+### Health Check
+Railway uses `GET /health` endpoint which returns:
+```json
+{"status":"healthy","whatsapp":"connected|disconnected","gcal":"connected|disconnected"}
+```

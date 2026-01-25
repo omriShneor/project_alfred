@@ -13,6 +13,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/onboarding"
 	"github.com/omriShneor/project_alfred/internal/processor"
 	"github.com/omriShneor/project_alfred/internal/server"
@@ -35,7 +36,7 @@ func main() {
 	// Create SSE state for onboarding
 	state := sse.NewState()
 
-	srv := server.New(db, nil, nil, cfg.HTTPPort, state, cfg.DevMode)
+	srv := server.New(db, nil, nil, cfg.HTTPPort, state, cfg.DevMode, cfg.ResendAPIKey)
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
@@ -59,7 +60,23 @@ func main() {
 		fmt.Println("Warning: ANTHROPIC_API_KEY not set, event detection disabled")
 	}
 
-	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize)
+	// Initialize email notifier (server-side config only)
+	var emailNotifier notify.Notifier
+	if cfg.ResendAPIKey != "" {
+		emailNotifier = notify.NewResendNotifier(
+			cfg.ResendAPIKey,
+			cfg.EmailFrom,
+			fmt.Sprintf("http://localhost:%d", cfg.HTTPPort),
+		)
+		if emailNotifier != nil && emailNotifier.IsConfigured() {
+			fmt.Println("Email notification service configured (Resend)")
+		}
+	}
+
+	// Create notification service
+	notifyService := notify.NewService(db, emailNotifier)
+
+	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)
 	if err := proc.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
 	}

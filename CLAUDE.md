@@ -19,11 +19,11 @@ railway domain              # Get/create public URL
 ```
 
 ### Important URLs (default port 8080)
-- `http://localhost:8080/onboarding` - Initial setup (WhatsApp QR + Google OAuth)
+- `http://localhost:8080/settings` - Integrations (WhatsApp + Google Calendar) and notification preferences
 - `http://localhost:8080/admin` - Channel management
 - `http://localhost:8080/events` - Review and confirm detected events
-- `http://localhost:8080/settings` - Notification preferences
 - `http://localhost:8080/health` - Health check endpoint
+- `/` redirects to `/settings`
 
 ### Production URL
 - https://alfred-production-d2c9.up.railway.app
@@ -80,8 +80,7 @@ project_alfred/
 │   │   └── static/
 │   │       ├── admin.html       # Channel management UI
 │   │       ├── events.html      # Event review UI
-│   │       ├── onboarding.html  # Setup flow UI
-│   │       └── settings.html    # Notification settings UI
+│   │       └── settings.html    # Integrations + notification settings UI
 │   ├── whatsapp/
 │   │   ├── client.go            # WhatsApp connection
 │   │   ├── handler.go           # Message filtering
@@ -205,17 +204,16 @@ rejected
 ### UI Pages
 | Path | Handler | Description |
 |------|---------|-------------|
-| GET `/` | handleAdminPage | Redirects to admin |
+| GET `/` | handleRootRedirect | Redirects to settings |
 | GET `/admin` | handleAdminPage | Channel management |
 | GET `/events` | handleEventsPage | Event review |
-| GET `/onboarding` | handleOnboardingPage | Setup flow |
-| GET `/settings` | handleSettingsPage | Notification settings |
+| GET `/settings` | handleSettingsPage | Integrations + notification settings |
 
-### Onboarding API
+### Integration Status API
 | Path | Handler | Description |
 |------|---------|-------------|
-| GET `/api/onboarding/status` | handleOnboardingStatus | Current setup state |
-| GET `/api/onboarding/stream` | handleOnboardingSSE | SSE status updates |
+| GET `/api/onboarding/status` | handleOnboardingStatus | Current integration status |
+| GET `/api/onboarding/stream` | handleOnboardingSSE | SSE status updates for integrations |
 
 ### Channel API
 | Path | Handler | Description |

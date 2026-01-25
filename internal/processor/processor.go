@@ -9,6 +9,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/claude"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
@@ -18,11 +19,12 @@ const (
 
 // Processor handles incoming WhatsApp messages and detects calendar events
 type Processor struct {
-	db          *database.DB
-	gcalClient  *gcal.Client
-	claudeClient *claude.Client
-	msgChan     <-chan whatsapp.FilteredMessage
-	historySize int
+	db            *database.DB
+	gcalClient    *gcal.Client
+	claudeClient  *claude.Client
+	msgChan       <-chan whatsapp.FilteredMessage
+	historySize   int
+	notifyService *notify.Service
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -36,6 +38,7 @@ func New(
 	claudeClient *claude.Client,
 	msgChan <-chan whatsapp.FilteredMessage,
 	historySize int,
+	notifyService *notify.Service,
 ) *Processor {
 	if historySize <= 0 {
 		historySize = defaultHistorySize
@@ -44,13 +47,14 @@ func New(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Processor{
-		db:           db,
-		gcalClient:   gcalClient,
-		claudeClient: claudeClient,
-		msgChan:      msgChan,
-		historySize:  historySize,
-		ctx:          ctx,
-		cancel:       cancel,
+		db:            db,
+		gcalClient:    gcalClient,
+		claudeClient:  claudeClient,
+		msgChan:       msgChan,
+		historySize:   historySize,
+		notifyService: notifyService,
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 }
 
@@ -238,6 +242,11 @@ func (p *Processor) createPendingEvent(
 
 	fmt.Printf("Created pending event: %s (ID: %d, Action: %s)\n",
 		created.Title, created.ID, created.ActionType)
+
+	// Send notification (non-blocking, don't fail event creation)
+	if p.notifyService != nil {
+		go p.notifyService.NotifyPendingEvent(context.Background(), created)
+	}
 
 	return nil
 }

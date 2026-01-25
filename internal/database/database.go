@@ -95,6 +95,23 @@ func (d *DB) migrate() error {
 			FOREIGN KEY(event_id) REFERENCES calendar_events(id) ON DELETE CASCADE
 		)`,
 		`CREATE INDEX IF NOT EXISTS idx_event_attendees_event ON event_attendees(event_id)`,
+
+		// User notification preferences - stores per-method settings
+		// Single row table (id=1) for all notification preferences
+		`CREATE TABLE IF NOT EXISTS user_notification_preferences (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			email_enabled BOOLEAN DEFAULT 0,
+			email_address TEXT,
+			push_enabled BOOLEAN DEFAULT 0,
+			push_token TEXT,
+			sms_enabled BOOLEAN DEFAULT 0,
+			sms_phone TEXT,
+			webhook_enabled BOOLEAN DEFAULT 0,
+			webhook_url TEXT,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Insert default row if not exists
+		`INSERT OR IGNORE INTO user_notification_preferences (id) VALUES (1)`,
 	}
 
 	for _, migration := range migrations {

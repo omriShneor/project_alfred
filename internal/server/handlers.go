@@ -88,6 +88,12 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, data)
 }
 
+// Root redirect
+
+func (s *Server) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings", http.StatusFound)
+}
+
 // Admin Page
 
 func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {
@@ -317,7 +323,7 @@ func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 		}()
 	} else {
 		// Local mode: start separate callback server
-		redirectURL := fmt.Sprintf("http://localhost:%d/onboarding", s.port)
+		redirectURL := fmt.Sprintf("http://localhost:%d/settings", s.port)
 		codeChan, errChan := s.gcalClient.StartCallbackServer(context.Background(), redirectURL)
 
 		go func() {
@@ -388,12 +394,12 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Redirect to onboarding page
+	// Redirect to settings page
 	baseURL := os.Getenv("ALFRED_BASE_URL")
 	if baseURL != "" {
-		http.Redirect(w, r, baseURL+"/onboarding", http.StatusFound)
+		http.Redirect(w, r, baseURL+"/settings", http.StatusFound)
 	} else {
-		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/onboarding", s.port), http.StatusFound)
+		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/settings", s.port), http.StatusFound)
 	}
 }
 
@@ -753,17 +759,7 @@ func (s *Server) handleWhatsAppReconnect(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// Onboarding Handlers
-
-func (s *Server) handleOnboardingPage(w http.ResponseWriter, r *http.Request) {
-	// If onboarding is complete, redirect to admin
-	if s.onboardingState != nil && s.onboardingState.IsComplete() {
-		http.Redirect(w, r, "/admin", http.StatusFound)
-		return
-	}
-
-	s.serveStaticFile(w, "onboarding.html")
-}
+// Onboarding API Handlers
 
 func (s *Server) handleOnboardingStatus(w http.ResponseWriter, r *http.Request) {
 	if s.onboardingState == nil {

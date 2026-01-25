@@ -13,7 +13,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
-//go:embed static/admin.html static/events.html static/onboarding.html static/settings.html
+//go:embed static/admin.html static/events.html static/settings.html
 var staticFiles embed.FS
 
 type Server struct {
@@ -57,14 +57,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
 
-	// Main page (admin)
-	mux.HandleFunc("GET /", s.handleAdminPage)
+	// Main page (settings)
+	mux.HandleFunc("GET /", s.handleRootRedirect)
 
 	// Admin Page
 	mux.HandleFunc("GET /admin", s.handleAdminPage)
 
-	// Onboarding
-	mux.HandleFunc("GET /onboarding", s.handleOnboardingPage)
+	// Onboarding API (still used by settings page for SSE)
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
 	mux.HandleFunc("GET /api/onboarding/stream", s.handleOnboardingSSE)
 

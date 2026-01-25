@@ -6,81 +6,109 @@
     <title>Settings - Project Alfred</title>
     <style>
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-            min-height: 100vh;
-            color: #fff;
-            padding: 40px 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
         }
 
         .container {
             max-width: 800px;
             margin: 0 auto;
+            padding: 2rem;
         }
 
-        .back-link {
-            display: inline-block;
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
             margin-bottom: 1.5rem;
-            color: #60a5fa;
+        }
+
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #7f8c8d;
+        }
+
+        .header-link {
+            color: #3498db;
             text-decoration: none;
             font-size: 0.9rem;
         }
 
-        .back-link:hover {
+        .header-link:hover {
             text-decoration: underline;
         }
 
-        h1 {
-            margin-bottom: 10px;
-            font-size: 2rem;
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0;
         }
 
-        .subtitle {
-            color: #8892b0;
-            margin-bottom: 40px;
+        .tab {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            color: #7f8c8d;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #2c3e50;
+        }
+
+        .tab.active {
+            color: #3498db;
+            border-bottom-color: #3498db;
+            font-weight: 500;
         }
 
         .section {
-            margin-bottom: 40px;
+            display: block;
         }
 
-        .section-title {
-            font-size: 0.875rem;
-            font-weight: 600;
-            color: #8892b0;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 16px;
+        .section.hidden {
+            display: none;
         }
 
+        /* Cards */
         .cards {
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 1rem;
         }
 
         .card {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 16px;
-            padding: 24px;
-            transition: all 0.3s ease;
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
 
         .card.connected {
-            border-color: #4ade80;
-            background: rgba(74, 222, 128, 0.05);
+            border-left: 4px solid #4caf50;
         }
 
         .card.error {
-            border-color: #f87171;
-            background: rgba(248, 113, 113, 0.05);
+            border-left: 4px solid #ef5350;
         }
 
         .card.disabled {
@@ -90,7 +118,7 @@
         .card-header {
             display: flex;
             align-items: center;
-            gap: 12px;
+            gap: 0.75rem;
         }
 
         .card-icon {
@@ -98,16 +126,25 @@
         }
 
         .card-title {
-            font-size: 1.125rem;
+            font-size: 1.1rem;
             font-weight: 600;
+            color: #2c3e50;
             flex: 1;
         }
 
-        .card-status {
-            font-size: 0.875rem;
-            color: #8892b0;
+        .card-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 1.5rem 0 0 0;
         }
 
+        .card-content.hidden {
+            display: none;
+        }
+
+        /* Status badges */
         .status-badge {
             display: inline-flex;
             align-items: center;
@@ -119,57 +156,47 @@
         }
 
         .status-connected {
-            background: rgba(74, 222, 128, 0.2);
-            color: #4ade80;
+            background: #d5f5e3;
+            color: #27ae60;
         }
 
         .status-waiting {
-            background: rgba(251, 191, 36, 0.2);
-            color: #fbbf24;
+            background: #fef9e7;
+            color: #f39c12;
         }
 
         .status-error {
-            background: rgba(248, 113, 113, 0.2);
-            color: #f87171;
+            background: #fadbd8;
+            color: #e74c3c;
         }
 
         .status-checking {
-            background: rgba(96, 165, 250, 0.2);
-            color: #60a5fa;
+            background: #e8f4fc;
+            color: #3498db;
         }
 
         .status-coming-soon {
-            background: rgba(148, 163, 184, 0.2);
-            color: #94a3b8;
+            background: #eaecee;
+            color: #7f8c8d;
         }
 
         .status-available {
-            background: rgba(74, 222, 128, 0.2);
-            color: #4ade80;
+            background: #d5f5e3;
+            color: #27ae60;
         }
 
         .status-unavailable {
-            background: rgba(248, 113, 113, 0.2);
-            color: #f87171;
+            background: #fadbd8;
+            color: #e74c3c;
         }
 
-        .card-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 24px 0 0 0;
-        }
-
-        .card-content.hidden {
-            display: none;
-        }
-
+        /* QR Code */
         .qr-container {
             background: #fff;
             padding: 16px;
             border-radius: 12px;
             margin-bottom: 16px;
+            border: 2px solid #e0e0e0;
         }
 
         .qr-container img {
@@ -180,46 +207,51 @@
 
         .qr-instructions {
             text-align: center;
-            color: #8892b0;
+            color: #7f8c8d;
             font-size: 0.875rem;
             line-height: 1.5;
         }
 
+        /* Success/Error states */
         .success-icon {
             font-size: 48px;
             margin-bottom: 12px;
+            color: #4caf50;
         }
 
         .success-text {
             font-size: 1rem;
-            color: #4ade80;
+            color: #27ae60;
+            font-weight: 500;
         }
 
         .error-text {
-            color: #f87171;
+            color: #e74c3c;
             font-size: 0.875rem;
             text-align: center;
         }
 
         .not-configured-text {
-            color: #8892b0;
+            color: #7f8c8d;
             font-size: 0.875rem;
             text-align: center;
             line-height: 1.6;
         }
 
         .not-configured-text code {
-            background: rgba(255, 255, 255, 0.1);
+            background: #f8f9fa;
             padding: 2px 6px;
             border-radius: 4px;
             font-family: monospace;
+            color: #2c3e50;
         }
 
+        /* Spinner */
         .spinner {
             width: 40px;
             height: 40px;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #60a5fa;
+            border: 3px solid #e0e0e0;
+            border-top-color: #3498db;
             border-radius: 50%;
             animation: spin 1s linear infinite;
             margin-bottom: 12px;
@@ -230,10 +262,11 @@
         }
 
         .checking-text {
-            color: #60a5fa;
+            color: #3498db;
             font-size: 0.875rem;
         }
 
+        /* Buttons */
         .btn {
             display: inline-flex;
             align-items: center;
@@ -249,13 +282,12 @@
 
         .btn-retry {
             margin-top: 16px;
-            background: linear-gradient(135deg, #25d366 0%, #128c7e 100%);
+            background: #4caf50;
             color: #fff;
         }
 
         .btn-retry:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(37, 211, 102, 0.4);
+            background: #43a047;
         }
 
         .google-signin-btn {
@@ -264,18 +296,18 @@
             gap: 12px;
             padding: 12px 24px;
             background: #fff;
-            border: 1px solid #dadce0;
-            border-radius: 4px;
-            font-family: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
             font-size: 14px;
             font-weight: 500;
-            color: #3c4043;
+            color: #333;
             cursor: pointer;
             transition: all 0.2s ease;
         }
 
         .google-signin-btn:hover {
-            background: #f7f8f8;
+            background: #f8f9fa;
             border-color: #c6c6c6;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
@@ -288,7 +320,7 @@
         /* Notification form styles */
         .notification-form {
             width: 100%;
-            padding-top: 16px;
+            padding-top: 1rem;
         }
 
         .toggle-row {
@@ -318,7 +350,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(255, 255, 255, 0.2);
+            background-color: #e0e0e0;
             transition: 0.3s;
             border-radius: 26px;
         }
@@ -333,10 +365,11 @@
             background-color: white;
             transition: 0.3s;
             border-radius: 50%;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
 
         input:checked + .slider {
-            background-color: #4ade80;
+            background-color: #4caf50;
         }
 
         input:checked + .slider:before {
@@ -349,7 +382,7 @@
         }
 
         .toggle-label {
-            color: #e2e8f0;
+            color: #333;
         }
 
         .input-group {
@@ -359,7 +392,7 @@
         .input-group label {
             display: block;
             margin-bottom: 0.5rem;
-            color: #94a3b8;
+            color: #666;
             font-size: 0.875rem;
             font-weight: 500;
         }
@@ -368,30 +401,31 @@
         .input-group input[type="text"] {
             width: 100%;
             padding: 0.75rem;
-            border: 1px solid rgba(255, 255, 255, 0.2);
+            border: 2px solid #e0e0e0;
             border-radius: 8px;
             font-size: 1rem;
-            background: rgba(255, 255, 255, 0.05);
-            color: #fff;
+            background: white;
+            color: #333;
             transition: border-color 0.2s;
         }
 
         .input-group input:focus {
             outline: none;
-            border-color: #60a5fa;
+            border-color: #3498db;
         }
 
         .input-group input:disabled {
             opacity: 0.5;
             cursor: not-allowed;
+            background: #f8f9fa;
         }
 
         .input-group input::placeholder {
-            color: #64748b;
+            color: #999;
         }
 
         .btn-primary {
-            background: #3b82f6;
+            background: #3498db;
             color: white;
             padding: 0.75rem 1.5rem;
             border: none;
@@ -403,7 +437,7 @@
         }
 
         .btn-primary:hover {
-            background: #2563eb;
+            background: #2980b9;
         }
 
         .btn-primary:disabled {
@@ -419,15 +453,15 @@
         }
 
         .message.success {
-            background: rgba(74, 222, 128, 0.2);
-            color: #4ade80;
-            border: 1px solid rgba(74, 222, 128, 0.3);
+            background: #d5f5e3;
+            color: #27ae60;
+            border: 1px solid #a9dfbf;
         }
 
         .message.error {
-            background: rgba(248, 113, 113, 0.2);
-            color: #f87171;
-            border: 1px solid rgba(248, 113, 113, 0.3);
+            background: #fadbd8;
+            color: #e74c3c;
+            border: 1px solid #f5b7b1;
         }
 
         .message.hidden {
@@ -435,37 +469,43 @@
         }
 
         .server-notice {
-            background: rgba(251, 191, 36, 0.2);
-            color: #fbbf24;
+            background: #fef9e7;
+            color: #b7950b;
             padding: 0.75rem 1rem;
             border-radius: 8px;
-            margin-bottom: 1rem;
+            margin: 1rem 0;
             font-size: 0.875rem;
-            border: 1px solid rgba(251, 191, 36, 0.3);
+            border: 1px solid #f9e79f;
         }
 
-        .loading {
-            text-align: center;
-            padding: 2rem;
-            color: #8892b0;
+        .hidden {
+            display: none !important;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <a href="/admin" class="back-link">&larr; Back to Admin</a>
+        <header>
+            <div>
+                <h1>Settings</h1>
+                <p class="subtitle">Setup and preferences</p>
+            </div>
+            <a href="/" class="header-link">&larr; Home</a>
+        </header>
 
-        <h1>Settings</h1>
-        <p class="subtitle">Configure integrations and notifications</p>
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-section="integrations">Integrations</button>
+            <button class="tab" data-section="notifications">Notifications</button>
+        </div>
 
         <!-- Integrations Section -->
-        <div class="section">
-            <div class="section-title">Integrations</div>
+        <section id="integrations" class="section">
             <div class="cards">
                 <!-- WhatsApp Card -->
                 <div class="card" id="whatsapp-card">
                     <div class="card-header">
-                        <span class="card-icon">&#128172;</span>
+                        <span class="card-icon">📱</span>
                         <span class="card-title">WhatsApp</span>
                         <span class="status-badge status-checking" id="whatsapp-badge">Checking...</span>
                     </div>
@@ -478,7 +518,7 @@
                 <!-- Google Calendar Card -->
                 <div class="card" id="gcal-card">
                     <div class="card-header">
-                        <span class="card-icon">&#128197;</span>
+                        <span class="card-icon">📅</span>
                         <span class="card-title">Google Calendar</span>
                         <span class="status-badge status-checking" id="gcal-badge">Checking...</span>
                     </div>
@@ -488,21 +528,20 @@
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
 
         <!-- Notifications Section -->
-        <div class="section">
-            <div class="section-title">Notifications</div>
+        <section id="notifications" class="section hidden">
             <div class="cards">
                 <!-- Email Notifications -->
                 <div class="card" id="email-card">
                     <div class="card-header">
-                        <span class="card-icon">&#9993;</span>
+                        <span class="card-icon">✉️</span>
                         <span class="card-title">Email Notifications</span>
                         <span class="status-badge status-checking" id="email-badge">Checking...</span>
                     </div>
 
-                    <div id="email-server-notice" class="server-notice" style="display: none;">
+                    <div id="email-server-notice" class="server-notice hidden">
                         Email notifications require server configuration (ALFRED_RESEND_API_KEY). Contact your administrator.
                     </div>
 
@@ -529,7 +568,7 @@
                 <!-- Push Notifications (Coming Soon) -->
                 <div class="card disabled">
                     <div class="card-header">
-                        <span class="card-icon">&#128241;</span>
+                        <span class="card-icon">🔔</span>
                         <span class="card-title">Push Notifications</span>
                         <span class="status-badge status-coming-soon">Coming Soon</span>
                     </div>
@@ -538,7 +577,7 @@
                 <!-- SMS Notifications (Coming Soon) -->
                 <div class="card disabled">
                     <div class="card-header">
-                        <span class="card-icon">&#128241;</span>
+                        <span class="card-icon">💬</span>
                         <span class="card-title">SMS Notifications</span>
                         <span class="status-badge status-coming-soon">Coming Soon</span>
                     </div>
@@ -547,13 +586,13 @@
                 <!-- Webhook Notifications (Coming Soon) -->
                 <div class="card disabled">
                     <div class="card-header">
-                        <span class="card-icon">&#128279;</span>
+                        <span class="card-icon">🔗</span>
                         <span class="card-title">Webhook Notifications</span>
                         <span class="status-badge status-coming-soon">Coming Soon</span>
                     </div>
                 </div>
             </div>
-        </div>
+        </section>
     </div>
 
     <script>
@@ -566,13 +605,27 @@
         let notificationPrefs = null;
         let notificationAvailability = null;
 
+        // ===== Tab Navigation =====
+        const tabs = document.querySelectorAll('.tab');
+        const sections = document.querySelectorAll('.section');
+
+        tabs.forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabs.forEach(t => t.classList.remove('active'));
+                sections.forEach(s => s.classList.add('hidden'));
+
+                tab.classList.add('active');
+                document.getElementById(tab.dataset.section).classList.remove('hidden');
+            });
+        });
+
+        // ===== Initialize =====
         function init() {
             connectSSE();
             loadNotificationSettings();
         }
 
         // ===== Integration SSE =====
-
         function connectSSE() {
             eventSource = new EventSource('/api/onboarding/stream');
 
@@ -627,7 +680,7 @@
                     badge.className = 'status-badge status-connected';
                     badge.textContent = 'Connected';
                     content.innerHTML = `
-                        <div class="success-icon">&#10003;</div>
+                        <div class="success-icon">✓</div>
                         <div class="success-text">WhatsApp Connected</div>
                     `;
                     content.classList.remove('hidden');
@@ -695,7 +748,7 @@
                     badge.className = 'status-badge status-connected';
                     badge.textContent = 'Connected';
                     content.innerHTML = `
-                        <div class="success-icon">&#10003;</div>
+                        <div class="success-icon">✓</div>
                         <div class="success-text">Google Calendar Connected</div>
                     `;
                     content.classList.remove('hidden');
@@ -816,7 +869,6 @@
         }
 
         // ===== Notification Settings =====
-
         async function loadNotificationSettings() {
             try {
                 const response = await fetch('/api/notifications/preferences');
@@ -842,12 +894,12 @@
                 emailBadge.textContent = 'Available';
                 emailBadge.className = 'status-badge status-available';
                 emailEnabled.disabled = false;
-                emailNotice.style.display = 'none';
+                emailNotice.classList.add('hidden');
             } else {
                 emailBadge.textContent = 'Not Configured';
                 emailBadge.className = 'status-badge status-unavailable';
                 emailEnabled.disabled = true;
-                emailNotice.style.display = 'block';
+                emailNotice.classList.remove('hidden');
             }
 
             emailEnabled.checked = notificationPrefs.email_enabled;

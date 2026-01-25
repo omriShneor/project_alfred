@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Events - Project Alfred</title>
+    <title>Project Alfred</title>
     <style>
         * {
             box-sizing: border-box;
@@ -28,7 +28,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
         }
 
         h1 {
@@ -40,45 +40,101 @@
             color: #7f8c8d;
         }
 
-        .nav-link {
+        .header-link {
             color: #3498db;
             text-decoration: none;
             font-size: 0.9rem;
         }
 
-        .nav-link:hover {
+        .header-link:hover {
             text-decoration: underline;
         }
 
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 2px solid #e0e0e0;
+            padding-bottom: 0;
+        }
+
+        .tab {
+            padding: 0.75rem 1.5rem;
+            border: none;
+            background: transparent;
+            cursor: pointer;
+            font-size: 1rem;
+            color: #7f8c8d;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: #2c3e50;
+        }
+
+        .tab.active {
+            color: #3498db;
+            border-bottom-color: #3498db;
+            font-weight: 500;
+        }
+
+        .section {
+            display: block;
+        }
+
+        .section.hidden {
+            display: none;
+        }
+
+        /* Channel Section Controls */
         .controls {
             display: flex;
             gap: 1rem;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
             flex-wrap: wrap;
             align-items: center;
         }
 
-        .filter-group {
+        #search {
+            flex: 1;
+            min-width: 200px;
+            padding: 0.75rem 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            background: white;
+            transition: border-color 0.2s;
+        }
+
+        #search:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .type-filter {
             display: flex;
             gap: 0.5rem;
-            align-items: center;
         }
 
-        .filter-group label {
-            font-weight: 500;
-            color: #666;
-        }
-
-        select {
+        .filter-btn {
             padding: 0.5rem 1rem;
             border: 2px solid #e0e0e0;
-            border-radius: 6px;
-            font-size: 0.9rem;
             background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
-        select:focus {
-            outline: none;
+        .filter-btn:hover {
+            border-color: #3498db;
+        }
+
+        .filter-btn.active {
+            background: #3498db;
+            color: white;
             border-color: #3498db;
         }
 
@@ -86,7 +142,7 @@
             background: white;
             padding: 1rem;
             border-radius: 8px;
-            margin-bottom: 1.5rem;
+            margin-bottom: 1rem;
             display: flex;
             gap: 2rem;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
@@ -111,27 +167,201 @@
             color: #27ae60;
         }
 
-        .section {
-            margin-bottom: 2rem;
+        /* Table Styles */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
 
-        .section-title {
-            font-size: 1.25rem;
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
             color: #2c3e50;
-            margin-bottom: 1rem;
+        }
+
+        tr:hover {
+            background: #f8f9fa;
+        }
+
+        .type-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .type-badge.sender {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .type-badge.group {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .status {
             display: flex;
             align-items: center;
             gap: 0.5rem;
         }
 
-        .badge {
-            background: #f39c12;
-            color: white;
-            padding: 0.2rem 0.6rem;
-            border-radius: 20px;
-            font-size: 0.8rem;
+        .status-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
         }
 
+        .status-dot.tracked {
+            background: #4caf50;
+        }
+
+        .status-dot.untracked {
+            background: #9e9e9e;
+        }
+
+        .action-btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+
+        .action-btn.track {
+            background: #4caf50;
+            color: white;
+        }
+
+        .action-btn.track:hover {
+            background: #43a047;
+        }
+
+        .action-btn.untrack {
+            background: #ef5350;
+            color: white;
+        }
+
+        .action-btn.untrack:hover {
+            background: #e53935;
+        }
+
+        .action-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .calendar-select {
+            padding: 0.4rem;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            min-width: 120px;
+        }
+
+        .calendar-select:disabled {
+            background: #f5f5f5;
+            color: #999;
+        }
+
+        .calendar-na {
+            color: #999;
+            font-size: 0.85rem;
+        }
+
+        .identifier {
+            font-family: monospace;
+            font-size: 0.85rem;
+            color: #666;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #7f8c8d;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        #loading {
+            text-align: center;
+            padding: 2rem;
+            color: #7f8c8d;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Events Section Controls */
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .filter-group label {
+            font-weight: 500;
+            color: #666;
+        }
+
+        select {
+            padding: 0.5rem 1rem;
+            border: 2px solid #e0e0e0;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: white;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .refresh-btn {
+            background: #3498db;
+            color: white;
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+        }
+
+        .refresh-btn:hover {
+            background: #2980b9;
+        }
+
+        /* Event Cards */
         .event-card {
             background: white;
             border-radius: 8px;
@@ -302,6 +532,15 @@
             background: #c0392b;
         }
 
+        .btn-edit {
+            background: #3498db;
+            color: white;
+        }
+
+        .btn-edit:hover:not(:disabled) {
+            background: #2980b9;
+        }
+
         .btn-details {
             background: #ecf0f1;
             color: #34495e;
@@ -311,29 +550,20 @@
             background: #d5dbdb;
         }
 
-        .empty-state {
-            text-align: center;
-            padding: 3rem;
-            color: #7f8c8d;
-            background: white;
-            border-radius: 8px;
+        /* Event Attendees */
+        .event-attendees {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.25rem;
+            margin-top: 0.5rem;
         }
 
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 1rem;
-        }
-
-        .error {
-            background: #ffebee;
-            color: #c62828;
-            padding: 1rem;
-            border-radius: 8px;
-            margin-bottom: 1rem;
-        }
-
-        .hidden {
-            display: none !important;
+        .event-attendee-badge {
+            background: #ecf0f1;
+            color: #555;
+            padding: 0.2rem 0.5rem;
+            border-radius: 12px;
+            font-size: 0.8rem;
         }
 
         /* Modal styles */
@@ -370,6 +600,7 @@
         .modal-title {
             font-size: 1.25rem;
             font-weight: 600;
+            color: #2c3e50;
         }
 
         .modal-close {
@@ -422,35 +653,6 @@
             margin: 0.5rem 0;
         }
 
-        #loading {
-            text-align: center;
-            padding: 2rem;
-            color: #7f8c8d;
-        }
-
-        .refresh-btn {
-            background: #3498db;
-            color: white;
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 0.9rem;
-        }
-
-        .refresh-btn:hover {
-            background: #2980b9;
-        }
-
-        .btn-edit {
-            background: #3498db;
-            color: white;
-        }
-
-        .btn-edit:hover:not(:disabled) {
-            background: #2980b9;
-        }
-
         /* Edit form styles */
         .edit-form {
             display: flex;
@@ -477,6 +679,7 @@
             border-radius: 6px;
             font-size: 0.95rem;
             font-family: inherit;
+            background: white;
         }
 
         .form-group input:focus,
@@ -524,7 +727,7 @@
             background: #7f8c8d;
         }
 
-        /* Attendees styles */
+        /* Attendees in edit form */
         .attendees-section {
             margin-top: 0.5rem;
         }
@@ -580,72 +783,99 @@
         .btn-add-attendee:hover:not(:disabled) {
             background: #2980b9;
         }
-
-        .event-attendees {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.25rem;
-            margin-top: 0.5rem;
-        }
-
-        .event-attendee-badge {
-            background: #ecf0f1;
-            color: #555;
-            padding: 0.2rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.8rem;
-        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <div>
-                <h1>Event Management</h1>
-                <p class="subtitle">Review and confirm detected calendar events</p>
+                <h1>Project Alfred</h1>
+                <p class="subtitle">Your WhatsApp calendar assistant</p>
             </div>
-            <a href="/admin" class="nav-link">← Back to Admin</a>
+            <a href="/settings" class="header-link">Settings &rarr;</a>
         </header>
 
-        <div class="controls">
-            <div class="filter-group">
-                <label>Status:</label>
-                <select id="status-filter">
-                    <option value="">All</option>
-                    <option value="pending" selected>Pending</option>
-                    <option value="synced">Synced</option>
-                    <option value="rejected">Rejected</option>
-                    <option value="deleted">Deleted</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>Channel:</label>
-                <select id="channel-filter">
-                    <option value="">All Channels</option>
-                </select>
-            </div>
-            <button class="refresh-btn" onclick="loadEvents()">Refresh</button>
+        <!-- Navigation Tabs -->
+        <div class="tabs">
+            <button class="tab active" data-section="channels">Channels</button>
+            <button class="tab" data-section="events">Events</button>
         </div>
 
-        <div class="stats" id="stats">
-            <div class="stat-item">
-                <span class="stat-value pending" id="pending-count">0</span>
-                <span>Pending</span>
+        <!-- Channels Section -->
+        <section id="channels" class="section">
+            <div class="controls">
+                <input type="text" id="search" placeholder="Filter by name...">
+                <div class="type-filter">
+                    <button class="filter-btn active" data-type="all">All</button>
+                    <button class="filter-btn" data-type="sender">Contacts</button>
+                    <button class="filter-btn" data-type="group">Groups</button>
+                </div>
             </div>
-            <div class="stat-item">
-                <span class="stat-value synced" id="synced-count">0</span>
-                <span>Synced</span>
-            </div>
-            <div class="stat-item">
-                <span class="stat-value" id="total-count">0</span>
-                <span>Total</span>
-            </div>
-        </div>
 
-        <div id="error" class="error hidden"></div>
-        <div id="loading">Loading events...</div>
+            <div class="stats" id="channel-stats"></div>
 
-        <div id="events-container"></div>
+            <div id="channel-error" class="error hidden"></div>
+
+            <table id="channels-table">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Name</th>
+                        <th>Identifier</th>
+                        <th>Calendar</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="channels-body">
+                </tbody>
+            </table>
+
+            <div id="channel-loading">Loading channels...</div>
+        </section>
+
+        <!-- Events Section -->
+        <section id="events" class="section hidden">
+            <div class="controls">
+                <div class="filter-group">
+                    <label>Status:</label>
+                    <select id="status-filter">
+                        <option value="">All</option>
+                        <option value="pending" selected>Pending</option>
+                        <option value="synced">Synced</option>
+                        <option value="rejected">Rejected</option>
+                        <option value="deleted">Deleted</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Channel:</label>
+                    <select id="channel-filter">
+                        <option value="">All Channels</option>
+                    </select>
+                </div>
+                <button class="refresh-btn" onclick="loadEvents()">Refresh</button>
+            </div>
+
+            <div class="stats" id="event-stats">
+                <div class="stat-item">
+                    <span class="stat-value pending" id="pending-count">0</span>
+                    <span>Pending</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value synced" id="synced-count">0</span>
+                    <span>Synced</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-value" id="total-count">0</span>
+                    <span>Total</span>
+                </div>
+            </div>
+
+            <div id="event-error" class="error hidden"></div>
+            <div id="event-loading">Loading events...</div>
+
+            <div id="events-container"></div>
+        </section>
     </div>
 
     <!-- Message History Modal -->
@@ -714,44 +944,326 @@
 
     <script>
         (function() {
-            let allEvents = [];
-            let channels = [];
-            let currentAttendees = []; // Attendees being edited
+            // ===== State =====
+            let allChannels = [];
+            let availableCalendars = [];
+            let gcalConnected = false;
+            let currentTypeFilter = 'all';
 
+            let allEvents = [];
+            let trackedChannels = [];
+            let currentAttendees = [];
+
+            // ===== DOM Elements =====
+            const tabs = document.querySelectorAll('.tab');
+            const sections = document.querySelectorAll('.section');
+
+            // Channel elements
+            const searchInput = document.getElementById('search');
+            const channelTableBody = document.getElementById('channels-body');
+            const channelLoadingEl = document.getElementById('channel-loading');
+            const channelErrorEl = document.getElementById('channel-error');
+            const channelStatsEl = document.getElementById('channel-stats');
+            const filterBtns = document.querySelectorAll('.filter-btn');
+
+            // Event elements
             const statusFilter = document.getElementById('status-filter');
             const channelFilter = document.getElementById('channel-filter');
             const eventsContainer = document.getElementById('events-container');
-            const loadingEl = document.getElementById('loading');
-            const errorEl = document.getElementById('error');
+            const eventLoadingEl = document.getElementById('event-loading');
+            const eventErrorEl = document.getElementById('event-error');
 
+            // ===== Initialize =====
             document.addEventListener('DOMContentLoaded', init);
 
             async function init() {
+                setupTabs();
+                setupChannelEventListeners();
+                setupEventEventListeners();
+                await checkGCalStatus();
                 await loadChannels();
+                await loadTrackedChannels();
                 await loadEvents();
-                setupEventListeners();
             }
 
-            function setupEventListeners() {
-                statusFilter.addEventListener('change', renderEvents);
-                channelFilter.addEventListener('change', renderEvents);
+            // ===== Tab Navigation =====
+            function setupTabs() {
+                tabs.forEach(tab => {
+                    tab.addEventListener('click', () => {
+                        tabs.forEach(t => t.classList.remove('active'));
+                        sections.forEach(s => s.classList.add('hidden'));
+
+                        tab.classList.add('active');
+                        document.getElementById(tab.dataset.section).classList.remove('hidden');
+                    });
+                });
+            }
+
+            // ===== Channel Functions =====
+            function setupChannelEventListeners() {
+                let debounceTimer;
+                searchInput.addEventListener('input', () => {
+                    clearTimeout(debounceTimer);
+                    debounceTimer = setTimeout(renderChannelsTable, 150);
+                });
+
+                filterBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        filterBtns.forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                        currentTypeFilter = btn.dataset.type;
+                        renderChannelsTable();
+                    });
+                });
+            }
+
+            async function checkGCalStatus() {
+                try {
+                    const response = await fetch('/api/gcal/status');
+                    const status = await response.json();
+                    gcalConnected = status.connected;
+                    if (gcalConnected) {
+                        await loadCalendars();
+                    }
+                } catch (err) {
+                    console.error('Failed to check GCal status:', err);
+                }
+            }
+
+            async function loadCalendars() {
+                try {
+                    const response = await fetch('/api/gcal/calendars');
+                    if (!response.ok) throw new Error('Failed to load calendars');
+                    availableCalendars = await response.json();
+                } catch (err) {
+                    console.error('Failed to load calendars:', err);
+                }
             }
 
             async function loadChannels() {
                 try {
+                    channelLoadingEl.classList.remove('hidden');
+                    channelErrorEl.classList.add('hidden');
+
+                    const response = await fetch('/api/discovery/channels');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                    }
+
+                    allChannels = await response.json();
+                    renderChannelsTable();
+                    updateChannelStats();
+                } catch (err) {
+                    showChannelError(`Failed to load channels: ${err.message}`);
+                } finally {
+                    channelLoadingEl.classList.add('hidden');
+                }
+            }
+
+            function getFilteredChannels() {
+                const searchTerm = searchInput.value.toLowerCase().trim();
+
+                return allChannels
+                    .filter(channel => {
+                        if (currentTypeFilter !== 'all' && channel.type !== currentTypeFilter) {
+                            return false;
+                        }
+                        if (searchTerm && !channel.name.toLowerCase().includes(searchTerm)) {
+                            return false;
+                        }
+                        return true;
+                    })
+                    .sort((a, b) => {
+                        if (a.is_tracked !== b.is_tracked) {
+                            return a.is_tracked ? -1 : 1;
+                        }
+                        return a.name.localeCompare(b.name);
+                    });
+            }
+
+            function renderChannelsTable() {
+                const filtered = getFilteredChannels();
+
+                if (filtered.length === 0) {
+                    channelTableBody.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                No channels found matching your criteria
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                channelTableBody.innerHTML = filtered.map(channel => {
+                    const calendarSelect = gcalConnected
+                        ? `<select class="calendar-select"
+                                   onchange="updateChannelCalendar(${channel.channel_id}, this.value)"
+                                   ${!channel.is_tracked ? 'disabled' : ''}>
+                               <option value="primary">Primary</option>
+                               ${availableCalendars.map(cal => `
+                                   <option value="${escapeHtml(cal.id)}">${escapeHtml(cal.summary)}</option>
+                               `).join('')}
+                           </select>`
+                        : '<span class="calendar-na">-</span>';
+
+                    return `
+                        <tr data-identifier="${escapeHtml(channel.identifier)}">
+                            <td>
+                                <span class="type-badge ${channel.type}">
+                                    ${channel.type === 'sender' ? 'Contact' : 'Group'}
+                                </span>
+                            </td>
+                            <td>${escapeHtml(channel.name)}</td>
+                            <td class="identifier" title="${escapeHtml(channel.identifier)}">
+                                ${escapeHtml(channel.identifier)}
+                            </td>
+                            <td>${calendarSelect}</td>
+                            <td>
+                                <span class="status">
+                                    <span class="status-dot ${channel.is_tracked ? 'tracked' : 'untracked'}"></span>
+                                    ${channel.is_tracked ? 'Tracked' : 'Not tracked'}
+                                </span>
+                            </td>
+                            <td>
+                                ${channel.is_tracked
+                                    ? `<button class="action-btn untrack" onclick="untrackChannel(${channel.channel_id}, this)">
+                                           Untrack
+                                       </button>`
+                                    : `<button class="action-btn track" onclick="trackChannel('${escapeHtml(channel.type)}', '${escapeHtml(channel.identifier)}', '${escapeHtml(channel.name)}', this)">
+                                           Track
+                                       </button>`
+                                }
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            function updateChannelStats() {
+                const total = allChannels.length;
+                const contacts = allChannels.filter(c => c.type === 'sender').length;
+                const groups = allChannels.filter(c => c.type === 'group').length;
+                const tracked = allChannels.filter(c => c.is_tracked).length;
+
+                channelStatsEl.innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-value">${total}</span>
+                        <span>Total</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${contacts}</span>
+                        <span>Contacts</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${groups}</span>
+                        <span>Groups</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${tracked}</span>
+                        <span>Tracked</span>
+                    </div>
+                `;
+            }
+
+            // Global channel functions for onclick handlers
+            window.trackChannel = async function(type, identifier, name, btn) {
+                btn.disabled = true;
+                btn.textContent = 'Tracking...';
+
+                try {
+                    const response = await fetch('/api/channel', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ type, identifier, name })
+                    });
+
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.error || 'Failed to track channel');
+                    }
+
+                    await loadChannels();
+                    await loadTrackedChannels();
+                } catch (err) {
+                    showChannelError(`Failed to track channel: ${err.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Track';
+                }
+            };
+
+            window.untrackChannel = async function(channelId, btn) {
+                btn.disabled = true;
+                btn.textContent = 'Removing...';
+
+                try {
+                    const response = await fetch(`/api/channel/${channelId}`, {
+                        method: 'DELETE'
+                    });
+
+                    if (!response.ok) {
+                        const data = await response.json();
+                        throw new Error(data.error || 'Failed to untrack channel');
+                    }
+
+                    await loadChannels();
+                    await loadTrackedChannels();
+                } catch (err) {
+                    showChannelError(`Failed to untrack channel: ${err.message}`);
+                    btn.disabled = false;
+                    btn.textContent = 'Untrack';
+                }
+            };
+
+            window.updateChannelCalendar = async function(channelId, calendarId) {
+                try {
+                    const channelsResponse = await fetch('/api/channel');
+                    const channels = await channelsResponse.json();
+                    const channel = channels.find(c => c.id === channelId);
+
+                    if (!channel) return;
+
+                    await fetch(`/api/channel/${channelId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name: channel.name,
+                            calendar_id: calendarId,
+                            enabled: channel.enabled
+                        })
+                    });
+                } catch (err) {
+                    showChannelError(`Failed to update calendar: ${err.message}`);
+                }
+            };
+
+            function showChannelError(message) {
+                channelErrorEl.textContent = message;
+                channelErrorEl.classList.remove('hidden');
+                setTimeout(() => channelErrorEl.classList.add('hidden'), 5000);
+            }
+
+            // ===== Event Functions =====
+            function setupEventEventListeners() {
+                statusFilter.addEventListener('change', renderEvents);
+                channelFilter.addEventListener('change', renderEvents);
+            }
+
+            async function loadTrackedChannels() {
+                try {
                     const response = await fetch('/api/channel');
                     if (response.ok) {
-                        channels = await response.json();
+                        trackedChannels = await response.json();
                         populateChannelFilter();
                     }
                 } catch (err) {
-                    console.error('Failed to load channels:', err);
+                    console.error('Failed to load tracked channels:', err);
                 }
             }
 
             function populateChannelFilter() {
                 channelFilter.innerHTML = '<option value="">All Channels</option>';
-                channels.forEach(ch => {
+                trackedChannels.forEach(ch => {
                     const option = document.createElement('option');
                     option.value = ch.id;
                     option.textContent = ch.name;
@@ -761,8 +1273,8 @@
 
             window.loadEvents = async function() {
                 try {
-                    loadingEl.classList.remove('hidden');
-                    errorEl.classList.add('hidden');
+                    eventLoadingEl.classList.remove('hidden');
+                    eventErrorEl.classList.add('hidden');
 
                     const response = await fetch('/api/events');
                     if (!response.ok) {
@@ -770,16 +1282,16 @@
                     }
 
                     allEvents = await response.json() || [];
-                    updateStats();
+                    updateEventStats();
                     renderEvents();
                 } catch (err) {
-                    showError(`Failed to load events: ${err.message}`);
+                    showEventError(`Failed to load events: ${err.message}`);
                 } finally {
-                    loadingEl.classList.add('hidden');
+                    eventLoadingEl.classList.add('hidden');
                 }
             };
 
-            function updateStats() {
+            function updateEventStats() {
                 const pending = allEvents.filter(e => e.status === 'pending').length;
                 const synced = allEvents.filter(e => e.status === 'synced').length;
 
@@ -888,7 +1400,7 @@
 
                     await loadEvents();
                 } catch (err) {
-                    showError(`Failed to confirm event: ${err.message}`);
+                    showEventError(`Failed to confirm event: ${err.message}`);
                     btn.disabled = false;
                     btn.textContent = 'Confirm & Sync';
                 }
@@ -910,7 +1422,7 @@
 
                     await loadEvents();
                 } catch (err) {
-                    showError(`Failed to reject event: ${err.message}`);
+                    showEventError(`Failed to reject event: ${err.message}`);
                     btn.disabled = false;
                     btn.textContent = 'Reject';
                 }
@@ -944,7 +1456,7 @@
 
                     document.getElementById('modal-overlay').classList.remove('hidden');
                 } catch (err) {
-                    showError(`Failed to load message context: ${err.message}`);
+                    showEventError(`Failed to load message context: ${err.message}`);
                 }
             };
 
@@ -963,31 +1475,25 @@
             window.editEvent = function(eventId) {
                 const event = allEvents.find(e => e.id === eventId);
                 if (!event) {
-                    showError('Event not found');
+                    showEventError('Event not found');
                     return;
                 }
 
-                // Populate form fields
                 document.getElementById('edit-event-id').value = event.id;
                 document.getElementById('edit-title').value = event.title || '';
                 document.getElementById('edit-description').value = event.description || '';
                 document.getElementById('edit-location').value = event.location || '';
 
-                // Format datetime for input (YYYY-MM-DDTHH:MM)
                 document.getElementById('edit-start').value = formatDateTimeForInput(event.start_time);
                 document.getElementById('edit-end').value = event.end_time ? formatDateTimeForInput(event.end_time) : '';
 
-                // Populate attendees
                 currentAttendees = (event.attendees || []).map(a => ({
                     email: a.email,
                     display_name: a.display_name || ''
                 }));
                 renderAttendees();
 
-                // Clear the email input
                 document.getElementById('new-attendee-email').value = '';
-
-                // Show modal
                 document.getElementById('edit-modal-overlay').classList.remove('hidden');
             };
 
@@ -996,24 +1502,17 @@
                 currentAttendees = [];
             };
 
-            // Attendee management functions
             window.addAttendee = function() {
                 const emailInput = document.getElementById('new-attendee-email');
                 const email = emailInput.value.trim();
 
-                if (!email) {
-                    return;
-                }
-
-                // Basic email validation
+                if (!email) return;
                 if (!email.includes('@')) {
-                    showError('Please enter a valid email address');
+                    showEventError('Please enter a valid email address');
                     return;
                 }
-
-                // Check for duplicates
                 if (currentAttendees.some(a => a.email.toLowerCase() === email.toLowerCase())) {
-                    showError('This attendee has already been added');
+                    showEventError('This attendee has already been added');
                     return;
                 }
 
@@ -1064,9 +1563,7 @@
                 try {
                     const response = await fetch(`/api/events/${eventId}`, {
                         method: 'PUT',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(payload)
                     });
 
@@ -1078,24 +1575,12 @@
                     closeEditModal();
                     await loadEvents();
                 } catch (err) {
-                    showError(`Failed to save event: ${err.message}`);
+                    showEventError(`Failed to save event: ${err.message}`);
                 } finally {
                     saveBtn.disabled = false;
                     saveBtn.textContent = 'Save Changes';
                 }
             };
-
-            function formatDateTimeForInput(dateStr) {
-                if (!dateStr) return '';
-                const date = new Date(dateStr);
-                // Format as YYYY-MM-DDTHH:MM for datetime-local input
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                const hours = String(date.getHours()).padStart(2, '0');
-                const minutes = String(date.getMinutes()).padStart(2, '0');
-                return `${year}-${month}-${day}T${hours}:${minutes}`;
-            }
 
             // Close edit modal on overlay click
             document.getElementById('edit-modal-overlay').addEventListener('click', function(e) {
@@ -1112,12 +1597,13 @@
                 }
             });
 
-            function showError(message) {
-                errorEl.textContent = message;
-                errorEl.classList.remove('hidden');
-                setTimeout(() => errorEl.classList.add('hidden'), 5000);
+            function showEventError(message) {
+                eventErrorEl.textContent = message;
+                eventErrorEl.classList.remove('hidden');
+                setTimeout(() => eventErrorEl.classList.add('hidden'), 5000);
             }
 
+            // ===== Helper Functions =====
             function formatDateTime(dateStr) {
                 if (!dateStr) return '';
                 const date = new Date(dateStr);
@@ -1136,6 +1622,17 @@
                     hour: '2-digit',
                     minute: '2-digit'
                 });
+            }
+
+            function formatDateTimeForInput(dateStr) {
+                if (!dateStr) return '';
+                const date = new Date(dateStr);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}-${month}-${day}T${hours}:${minutes}`;
             }
 
             function escapeHtml(text) {

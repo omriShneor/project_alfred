@@ -88,16 +88,10 @@ func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, data)
 }
 
-// Root redirect
+// Main Page (Channels + Events)
 
-func (s *Server) handleRootRedirect(w http.ResponseWriter, r *http.Request) {
-	http.Redirect(w, r, "/settings", http.StatusFound)
-}
-
-// Admin Page
-
-func (s *Server) handleAdminPage(w http.ResponseWriter, r *http.Request) {
-	s.serveStaticFile(w, "admin.html")
+func (s *Server) handleMainPage(w http.ResponseWriter, r *http.Request) {
+	s.serveStaticFile(w, "index.html")
 }
 
 // WhatsApp Discovery API
@@ -401,12 +395,6 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/settings", s.port), http.StatusFound)
 	}
-}
-
-// Events Page
-
-func (s *Server) handleEventsPage(w http.ResponseWriter, r *http.Request) {
-	s.serveStaticFile(w, "events.html")
 }
 
 // Events API

@@ -13,7 +13,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
-//go:embed static/admin.html static/events.html static/settings.html
+//go:embed static/index.html static/settings.html
 var staticFiles embed.FS
 
 type Server struct {
@@ -24,8 +24,8 @@ type Server struct {
 	httpSrv         *http.Server
 	port            int
 	devMode         bool
-	resendAPIKey    string        // For checking email availability
-	oauthCodeChan   chan string   // Channel to receive OAuth code from callback
+	resendAPIKey    string      // For checking email availability
+	oauthCodeChan   chan string // Channel to receive OAuth code from callback
 }
 
 func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, devMode bool, resendAPIKey string) *Server {
@@ -57,13 +57,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
 
-	// Main page (settings)
-	mux.HandleFunc("GET /", s.handleRootRedirect)
+	// Main page (Channels + Events)
+	mux.HandleFunc("GET /", s.handleMainPage)
 
-	// Admin Page
-	mux.HandleFunc("GET /admin", s.handleAdminPage)
-
-	// Onboarding API (still used by settings page for SSE)
+	// Onboarding API (used by settings page for SSE)
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
 	mux.HandleFunc("GET /api/onboarding/stream", s.handleOnboardingSSE)
 
@@ -84,9 +81,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gcal/calendars", s.handleGCalListCalendars)
 	mux.HandleFunc("POST /api/gcal/connect", s.handleGCalConnect)
 	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
-
-	// Events Page (separate from Admin)
-	mux.HandleFunc("GET /events", s.handleEventsPage)
 
 	// Events API
 	mux.HandleFunc("GET /api/events", s.handleListEvents)

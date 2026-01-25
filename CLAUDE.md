@@ -18,14 +18,17 @@ railway logs                # View deployment logs
 railway domain              # Get/create public URL
 ```
 
-### Important URLs (default port 8080)
-- `http://localhost:8080/settings` - Integrations (WhatsApp + Google Calendar) and notification preferences
-- `http://localhost:8080/admin` - Channel management
-- `http://localhost:8080/events` - Review and confirm detected events
-- `http://localhost:8080/health` - Health check endpoint
-- `/` redirects to `/settings`
+### Important URLs
 
-### Production URL
+**Go Backend (port 8080):**
+- `http://localhost:8080/` - Web dashboard (WhatsApp QR, integration status)
+- `http://localhost:8080/settings` - Settings (Integrations + Notifications)
+- `http://localhost:8080/health` - Health check endpoint
+
+**Mobile App (port 8081):**
+- `http://localhost:8081/` - Expo web preview (Channels + Events)
+
+**Production:**
 - https://alfred-production-d2c9.up.railway.app
 
 ### Required Environment
@@ -50,10 +53,16 @@ claude/client.go (analyze for events)
     ↓
 database/events.go (create pending event)
     ↓
-User reviews at /events
+User reviews in Mobile App (Events tab)
     ↓
 gcal/events.go (sync to Google Calendar)
 ```
+
+### Web vs Mobile Split
+| Component | Platform | Purpose |
+|-----------|----------|---------|
+| Go Backend Web | `localhost:8080` | WhatsApp QR code, integration status, settings |
+| Mobile App | `localhost:8081` | Channel management, event review & approval |
 
 ---
 
@@ -78,9 +87,8 @@ project_alfred/
 │   │   ├── server.go            # HTTP server, routing, CORS middleware
 │   │   ├── handlers.go          # All HTTP handlers
 │   │   └── static/
-│   │       ├── admin.html       # Channel management UI
-│   │       ├── events.html      # Event review UI
-│   │       └── settings.html    # Integrations + notification settings UI
+│   │       ├── index.html       # Dashboard (WhatsApp QR, status)
+│   │       └── settings.html    # Settings (Integrations + Notifications)
 │   ├── whatsapp/
 │   │   ├── client.go            # WhatsApp connection
 │   │   ├── handler.go           # Message filtering
@@ -106,6 +114,24 @@ project_alfred/
 │   │   └── clients.go           # Client container
 │   └── sse/
 │       └── state.go             # Onboarding SSE state
+├── mobile/                      # React Native mobile app (Expo)
+│   ├── App.tsx                  # App entry point
+│   ├── app.config.ts            # Expo config (reads env vars)
+│   ├── package.json             # Dependencies
+│   ├── .env.local               # Local dev environment (not in git)
+│   └── src/
+│       ├── api/                 # API client functions
+│       ├── components/          # Reusable UI components
+│       │   ├── channels/        # Channel list, item, picker
+│       │   ├── events/          # Event card, list, modals
+│       │   ├── common/          # Button, Card, Modal, etc.
+│       │   └── layout/          # Header, ConnectionStatus
+│       ├── config/              # API configuration
+│       ├── hooks/               # React Query hooks
+│       ├── navigation/          # Tab navigation
+│       ├── screens/             # Channels and Events screens
+│       ├── theme/               # Colors, typography
+│       └── types/               # TypeScript types
 ```
 
 ---
@@ -201,13 +227,11 @@ rejected
 |------|---------|-------------|
 | GET `/health` | handleHealthCheck | Health check (DB, WhatsApp, GCal status) |
 
-### UI Pages
+### UI Pages (Web)
 | Path | Handler | Description |
 |------|---------|-------------|
-| GET `/` | handleRootRedirect | Redirects to settings |
-| GET `/admin` | handleAdminPage | Channel management |
-| GET `/events` | handleEventsPage | Event review |
-| GET `/settings` | handleSettingsPage | Integrations + notification settings |
+| GET `/` | handleMainPage | Dashboard (WhatsApp QR, integration status) |
+| GET `/settings` | handleSettingsPage | Settings (Integrations + Notifications) |
 
 ### Integration Status API
 | Path | Handler | Description |
@@ -376,7 +400,8 @@ parseEventTime(s string) // Handles RFC3339, ISO, local formats
 |------|---------------|
 | API changes | `server/handlers.go`, `server/server.go` |
 | Event detection | `claude/prompt.go`, `claude/client.go` |
-| UI changes | `server/static/*.html` |
+| Web UI changes | `server/static/*.html` |
+| Mobile UI changes | `mobile/src/components/**`, `mobile/src/screens/**` |
 | Database schema | `database/database.go` |
 | Message processing | `processor/processor.go` |
 | Google Calendar | `gcal/events.go` |
@@ -428,3 +453,46 @@ Railway uses `GET /health` endpoint which returns:
 ```json
 {"status":"healthy","whatsapp":"connected|disconnected","gcal":"connected|disconnected"}
 ```
+
+---
+
+## Mobile App Development
+
+### Quick Start
+```bash
+cd mobile
+npm install                    # Install dependencies
+npm run web                    # Start web preview (http://localhost:8081)
+```
+
+### Viewing Options
+| Method | Command | Notes |
+|--------|---------|-------|
+| Web browser | `npm run web` | Opens at http://localhost:8081 |
+| iOS Simulator | `npm run ios` | Requires Xcode |
+| Android Emulator | `npm run android` | Requires Android Studio |
+| iPhone (Expo Go) | `npm start` + scan QR | Phone + computer on same WiFi |
+
+### Environment Configuration
+The mobile app reads `EXPO_PUBLIC_API_BASE_URL` from environment:
+
+**Local development** (`mobile/.env.local`):
+```
+EXPO_PUBLIC_API_BASE_URL=http://localhost:8080
+```
+
+**Testing on physical device** - use your computer's IP:
+```
+EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8080
+```
+
+Find your IP: `ipconfig getifaddr en0`
+
+### Key Mobile Files
+| Task | Primary Files |
+|------|---------------|
+| API configuration | `src/config/api.ts` |
+| Channel list/sorting | `src/components/channels/ChannelList.tsx` |
+| Event management | `src/components/events/EventCard.tsx`, `EventList.tsx` |
+| Navigation | `src/navigation/TopTabs.tsx` |
+| API hooks | `src/hooks/useChannels.ts`, `useEvents.ts` |

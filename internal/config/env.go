@@ -31,6 +31,10 @@ type Config struct {
 	// Notification server config (API keys only - user prefs in database)
 	ResendAPIKey string
 	EmailFrom    string
+
+	// Gmail integration config (enable/disable is in database settings, not here)
+	GmailPollInterval int // minutes between polls
+	GmailMaxEmails    int // max emails to process per poll
 }
 
 func LoadFromEnv() *Config {
@@ -53,6 +57,10 @@ func LoadFromEnv() *Config {
 		// Notification server config (API keys only)
 		ResendAPIKey: os.Getenv("ALFRED_RESEND_API_KEY"),
 		EmailFrom:    getEnvOrDefault("ALFRED_EMAIL_FROM", "Alfred <onboarding@resend.dev>"),
+
+		// Gmail integration config (enable/disable is in database settings)
+		GmailPollInterval: getEnvAsIntOrDefault("ALFRED_GMAIL_POLL_INTERVAL", 5),
+		GmailMaxEmails:    getEnvAsIntOrDefault("ALFRED_GMAIL_MAX_EMAILS", 10),
 	}
 
 	return cfg

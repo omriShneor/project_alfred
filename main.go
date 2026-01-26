@@ -13,6 +13,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/onboarding"
 	"github.com/omriShneor/project_alfred/internal/processor"
@@ -88,10 +89,40 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
 	}
 
-	waitForShutdown(proc, srv, clients.WAClient)
+	// Initialize Gmail client and worker
+	var gmailWorker *gmail.Worker
+	if clients.GCalClient != nil && clients.GCalClient.IsAuthenticated() {
+		oauthConfig := clients.GCalClient.GetOAuthConfig()
+		oauthToken := clients.GCalClient.GetToken()
+		if oauthConfig != nil && oauthToken != nil {
+			gmailClient, err := gmail.NewClient(oauthConfig, oauthToken)
+			if err != nil {
+				fmt.Printf("Warning: Failed to create Gmail client: %v\n", err)
+			} else if gmailClient.IsAuthenticated() {
+				fmt.Println("Gmail client initialized")
+				srv.SetGmailClient(gmailClient)
+
+				// Create email processor for Gmail worker
+				emailProc := processor.NewEmailProcessor(db, claudeClient, notifyService)
+
+				// Create and start Gmail worker
+				gmailWorker = gmail.NewWorker(gmailClient, db, emailProc, gmail.WorkerConfig{
+					PollIntervalMinutes: cfg.GmailPollInterval,
+					MaxEmailsPerPoll:    cfg.GmailMaxEmails,
+				})
+				if err := gmailWorker.Start(); err != nil {
+					fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
+				}
+			} else {
+				fmt.Println("Gmail client created but not authenticated (may need re-authorization for Gmail scope)")
+			}
+		}
+	}
+
+	waitForShutdown(proc, srv, clients.WAClient, gmailWorker)
 }
 
-func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *whatsapp.Client) {
+func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *whatsapp.Client, gmailWorker *gmail.Worker) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
@@ -102,6 +133,9 @@ func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *wh
 	defer cancel()
 
 	proc.Stop()
+	if gmailWorker != nil {
+		gmailWorker.Stop()
+	}
 	srv.Shutdown(ctx)
 	waClient.Disconnect()
 }

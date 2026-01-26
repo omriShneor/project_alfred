@@ -112,14 +112,94 @@ func (d *DB) migrate() error {
 		)`,
 		// Insert default row if not exists
 		`INSERT OR IGNORE INTO user_notification_preferences (id) VALUES (1)`,
+
+		// Gmail settings - single row table for Gmail integration settings
+		`CREATE TABLE IF NOT EXISTS gmail_settings (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			enabled BOOLEAN DEFAULT 0,
+			poll_interval_minutes INTEGER DEFAULT 5,
+			last_poll_at DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Insert default row if not exists
+		`INSERT OR IGNORE INTO gmail_settings (id) VALUES (1)`,
+
+		// Processed emails - track which emails have been processed to avoid duplicates
+		`CREATE TABLE IF NOT EXISTS processed_emails (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			email_id TEXT UNIQUE NOT NULL,
+			processed_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_processed_emails_email_id ON processed_emails(email_id)`,
+
+		// Email sources - tracked email sources (similar to WhatsApp channels)
+		`CREATE TABLE IF NOT EXISTS email_sources (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			type TEXT NOT NULL CHECK(type IN ('category', 'sender', 'domain')),
+			identifier TEXT NOT NULL,
+			name TEXT NOT NULL,
+			enabled BOOLEAN DEFAULT 1,
+			calendar_id TEXT DEFAULT 'primary',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(type, identifier)
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_email_sources_type ON email_sources(type)`,
+		`CREATE INDEX IF NOT EXISTS idx_email_sources_identifier ON email_sources(identifier)`,
+
 	}
 
+	// Run standard migrations
 	for _, migration := range migrations {
 		if _, err := d.Exec(migration); err != nil {
 			return fmt.Errorf("migration failed: %w", err)
 		}
 	}
 
+	// Add source column to calendar_events if not exists (SQLite-compatible approach)
+	if err := d.addColumnIfNotExists("calendar_events", "source", "TEXT DEFAULT 'whatsapp'"); err != nil {
+		return fmt.Errorf("failed to add source column: %w", err)
+	}
+
+	// Add email_source_id column to calendar_events for linking events to email sources
+	if err := d.addColumnIfNotExists("calendar_events", "email_source_id", "INTEGER"); err != nil {
+		return fmt.Errorf("failed to add email_source_id column: %w", err)
+	}
+
+	return nil
+}
+
+// addColumnIfNotExists adds a column to a table if it doesn't already exist
+func (d *DB) addColumnIfNotExists(table, column, columnDef string) error {
+	// Check if column exists by querying the table info
+	rows, err := d.Query(fmt.Sprintf("PRAGMA table_info(%s)", table))
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	columnExists := false
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue interface{}
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		if name == column {
+			columnExists = true
+			break
+		}
+	}
+
+	if !columnExists {
+		_, err := d.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, columnDef))
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

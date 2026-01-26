@@ -18,7 +18,6 @@ import {
   useWhatsAppStatus,
   useGCalStatus,
   useGeneratePairingCode,
-  useDisconnectWhatsApp,
   useGetOAuthURL,
   useExchangeOAuthCode,
   usePushNotifications,
@@ -43,7 +42,6 @@ export function SettingsScreen() {
   const { data: waStatus, isLoading: waLoading, refetch: refetchWA } = useWhatsAppStatus();
   const { data: gcalStatus, isLoading: gcalLoading, refetch: refetchGCal } = useGCalStatus();
   const generateCode = useGeneratePairingCode();
-  const disconnectWA = useDisconnectWhatsApp();
   const getOAuthURL = useGetOAuthURL();
   const exchangeCode = useExchangeOAuthCode();
 
@@ -107,29 +105,6 @@ export function SettingsScreen() {
         error.response?.data?.error || 'Failed to generate pairing code'
       );
     }
-  };
-
-  const handleDisconnectWhatsApp = () => {
-    Alert.alert(
-      'Disconnect WhatsApp',
-      'Are you sure you want to disconnect WhatsApp? You will need to pair again.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await disconnectWA.mutateAsync();
-              setPairingCode(null);
-              refetchWA();
-            } catch (error: any) {
-              Alert.alert('Error', 'Failed to disconnect WhatsApp');
-            }
-          },
-        },
-      ]
-    );
   };
 
   const handleOAuthCallback = useCallback(
@@ -258,15 +233,7 @@ export function SettingsScreen() {
           </View>
         </View>
 
-        {waStatus?.connected ? (
-          <Button
-            title="Disconnect"
-            onPress={handleDisconnectWhatsApp}
-            variant="danger"
-            loading={disconnectWA.isPending}
-            style={styles.actionButton}
-          />
-        ) : pairingCode ? (
+        {waStatus?.connected ? null : pairingCode ? (
           <View>
             <View style={styles.codeDisplay}>
               <Text style={styles.codeLabel}>Pairing Code</Text>

@@ -33,8 +33,12 @@ export function SettingsScreen() {
   const [emailAvailable, setEmailAvailable] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushAvailable, setPushAvailable] = useState(false);
-  const [savingEmail, setSavingEmail] = useState(false);
-  const [savingPush, setSavingPush] = useState(false);
+  const [savingNotifications, setSavingNotifications] = useState(false);
+
+  // Track original values to detect changes
+  const [originalEmailEnabled, setOriginalEmailEnabled] = useState(false);
+  const [originalEmailAddress, setOriginalEmailAddress] = useState('');
+  const [originalPushEnabled, setOriginalPushEnabled] = useState(false);
 
   const { data: waStatus, isLoading: waLoading, refetch: refetchWA } = useWhatsAppStatus();
   const { data: gcalStatus, isLoading: gcalLoading, refetch: refetchGCal } = useGCalStatus();
@@ -69,10 +73,20 @@ export function SettingsScreen() {
       setEmailAvailable(prefs.available.email);
       setPushEnabled(prefs.preferences.push_enabled);
       setPushAvailable(prefs.available.push);
+      // Store original values
+      setOriginalEmailEnabled(prefs.preferences.email_enabled);
+      setOriginalEmailAddress(prefs.preferences.email_address || '');
+      setOriginalPushEnabled(prefs.preferences.push_enabled);
     } catch (error) {
       // Ignore errors
     }
   };
+
+  // Detect if there are unsaved notification changes
+  const hasNotificationChanges =
+    emailEnabled !== originalEmailEnabled ||
+    emailAddress !== originalEmailAddress ||
+    pushEnabled !== originalPushEnabled;
 
   const handleGeneratePairingCode = async () => {
     if (!phoneNumber.trim()) {
@@ -172,53 +186,50 @@ export function SettingsScreen() {
     }
   };
 
-  const handleSaveEmailPrefs = async () => {
+  const handleSaveNotificationSettings = async () => {
     if (emailEnabled && !emailAddress.trim()) {
       Alert.alert('Error', 'Please enter an email address');
       return;
     }
 
-    setSavingEmail(true);
+    setSavingNotifications(true);
     try {
+      // Save email settings
       await updateEmailPrefs(emailEnabled, emailAddress.trim());
-      Alert.alert('Success', 'Email preferences saved');
-    } catch (error: any) {
-      Alert.alert('Error', 'Failed to save email preferences');
-    }
-    setSavingEmail(false);
-  };
 
-  const handlePushToggle = async (enabled: boolean) => {
-    // If enabling and no token, request permissions first
-    if (enabled && !expoPushToken) {
-      if (permissionStatus === 'denied') {
-        Alert.alert(
-          'Permission Required',
-          'Push notifications are disabled. Please enable them in your device settings.',
-          [{ text: 'OK' }]
-        );
-        return;
+      // Save push settings (only if push is available)
+      if (pushAvailable) {
+        // If enabling push and no token, request permissions first
+        if (pushEnabled && !expoPushToken && originalPushEnabled !== pushEnabled) {
+          if (permissionStatus === 'denied') {
+            Alert.alert(
+              'Permission Required',
+              'Push notifications are disabled. Please enable them in your device settings.',
+              [{ text: 'OK' }]
+            );
+            setSavingNotifications(false);
+            return;
+          }
+          const success = await requestPermissions();
+          if (!success) {
+            setSavingNotifications(false);
+            return;
+          }
+        } else if (pushEnabled !== originalPushEnabled) {
+          await updatePushPrefs(pushEnabled);
+        }
       }
 
-      setSavingPush(true);
-      const success = await requestPermissions();
-      setSavingPush(false);
+      // Update originals after successful save
+      setOriginalEmailEnabled(emailEnabled);
+      setOriginalEmailAddress(emailAddress);
+      setOriginalPushEnabled(pushEnabled);
 
-      if (success) {
-        setPushEnabled(true);
-      }
-      return;
-    }
-
-    // Update backend preference
-    setSavingPush(true);
-    try {
-      await updatePushPrefs(enabled);
-      setPushEnabled(enabled);
+      Alert.alert('Success', 'Notification settings saved');
     } catch (error: any) {
-      Alert.alert('Error', 'Failed to update push preferences');
+      Alert.alert('Error', 'Failed to save notification settings');
     }
-    setSavingPush(false);
+    setSavingNotifications(false);
   };
 
   return (
@@ -360,46 +371,49 @@ export function SettingsScreen() {
               keyboardType="email-address"
               autoCapitalize="none"
             />
-            <Button
-              title="Save"
-              onPress={handleSaveEmailPrefs}
-              loading={savingEmail}
-              size="small"
-              style={styles.saveButton}
-            />
           </View>
         )}
-      </Card>
 
-      {/* Push Notifications */}
-      {Platform.OS !== 'web' && pushAvailable && (
-        <Card style={styles.pushCard}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Text style={styles.settingTitle}>Push Notifications</Text>
-              <Text style={styles.settingDescription}>
-                Get instant alerts on your phone
-              </Text>
-              {permissionStatus === 'denied' && (
-                <Text style={styles.unavailableText}>
-                  Permission denied - enable in device settings
+        {/* Push Notifications */}
+        {Platform.OS !== 'web' && pushAvailable && (
+          <View style={styles.pushSection}>
+            <View style={styles.settingRow}>
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingTitle}>Push Notifications</Text>
+                <Text style={styles.settingDescription}>
+                  Get instant alerts on your phone
                 </Text>
+                {permissionStatus === 'denied' && (
+                  <Text style={styles.unavailableText}>
+                    Permission denied - enable in device settings
+                  </Text>
+                )}
+              </View>
+              {isRegistering ? (
+                <LoadingSpinner size="small" />
+              ) : (
+                <Switch
+                  value={pushEnabled}
+                  onValueChange={setPushEnabled}
+                  disabled={!pushAvailable}
+                  trackColor={{ false: colors.border, true: colors.primary }}
+                  thumbColor="#ffffff"
+                />
               )}
             </View>
-            {(savingPush || isRegistering) ? (
-              <LoadingSpinner size="small" />
-            ) : (
-              <Switch
-                value={pushEnabled}
-                onValueChange={handlePushToggle}
-                disabled={!pushAvailable}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#ffffff"
-              />
-            )}
           </View>
-        </Card>
-      )}
+        )}
+
+        {/* Unified Save Button */}
+        {hasNotificationChanges && (
+          <Button
+            title="Save Notification Settings"
+            onPress={handleSaveNotificationSettings}
+            loading={savingNotifications}
+            style={styles.notificationSaveButton}
+          />
+        )}
+      </Card>
 
       {/* About Section */}
       <Text style={styles.sectionTitle}>About</Text>
@@ -531,12 +545,14 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  saveButton: {
-    marginTop: 12,
-    alignSelf: 'flex-end',
+  pushSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
-  pushCard: {
-    marginTop: 12,
+  notificationSaveButton: {
+    marginTop: 20,
   },
   aboutRow: {
     flexDirection: 'row',

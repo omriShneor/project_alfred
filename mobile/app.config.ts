@@ -51,5 +51,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   plugins: ['expo-web-browser'],
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8080',
+    eas: {
+      projectId: '99a272ff-7079-42d1-b71f-eb5078191f7e',
+    },
   },
 });

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { registerPushToken, updatePushPrefs } from '../api/notifications';
 
 export interface PushNotificationState {
@@ -97,7 +98,10 @@ export function usePushNotifications() {
       }
 
       // Get the Expo push token
-      const tokenData = await Notifications.getExpoPushTokenAsync();
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+      const tokenData = await Notifications.getExpoPushTokenAsync({
+        projectId: projectId,
+      });
       const token = tokenData.data;
 
       // Register token with backend

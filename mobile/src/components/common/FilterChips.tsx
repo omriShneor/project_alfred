@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { colors } from '../../theme/colors';
 
 interface FilterOption {
@@ -15,11 +15,7 @@ interface FilterChipsProps {
 
 export function FilterChips({ options, selected, onSelect }: FilterChipsProps) {
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.container}
-    >
+    <View style={styles.container}>
       {options.map((option) => {
         const isSelected = option.value === selected;
         return (
@@ -35,21 +31,24 @@ export function FilterChips({ options, selected, onSelect }: FilterChipsProps) {
           </TouchableOpacity>
         );
       })}
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 10,
     marginBottom: 12,
     paddingVertical: 4,
+    height: 44,
   },
   chip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    width: 100,
+    height: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 18,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
@@ -59,9 +58,9 @@ const styles = StyleSheet.create({
     borderColor: colors.primary,
   },
   chipText: {
-    fontSize: 13,
+    fontSize: 14,
     color: colors.text,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   chipTextSelected: {
     color: '#ffffff',

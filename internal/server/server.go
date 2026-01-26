@@ -8,6 +8,7 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
@@ -17,6 +18,7 @@ type Server struct {
 	db              *database.DB
 	waClient        *whatsapp.Client
 	gcalClient      *gcal.Client
+	gmailClient     *gmail.Client
 	onboardingState *sse.State
 	notifyService   *notify.Service
 	httpSrv         *http.Server
@@ -93,6 +95,23 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/notifications/email", s.handleUpdateEmailPrefs)
 	mux.HandleFunc("POST /api/notifications/push/register", s.handleRegisterPushToken)
 	mux.HandleFunc("PUT /api/notifications/push", s.handleUpdatePushPrefs)
+
+	// Gmail API
+	mux.HandleFunc("GET /api/gmail/status", s.handleGmailStatus)
+	mux.HandleFunc("GET /api/gmail/settings", s.handleGmailSettings)
+	mux.HandleFunc("PUT /api/gmail/settings", s.handleUpdateGmailSettings)
+
+	// Gmail Discovery API
+	mux.HandleFunc("GET /api/gmail/discover/categories", s.handleDiscoverGmailCategories)
+	mux.HandleFunc("GET /api/gmail/discover/senders", s.handleDiscoverGmailSenders)
+	mux.HandleFunc("GET /api/gmail/discover/domains", s.handleDiscoverGmailDomains)
+
+	// Email Sources API (similar to WhatsApp channels)
+	mux.HandleFunc("GET /api/gmail/sources", s.handleListEmailSources)
+	mux.HandleFunc("POST /api/gmail/sources", s.handleCreateEmailSource)
+	mux.HandleFunc("GET /api/gmail/sources/{id}", s.handleGetEmailSource)
+	mux.HandleFunc("PUT /api/gmail/sources/{id}", s.handleUpdateEmailSource)
+	mux.HandleFunc("DELETE /api/gmail/sources/{id}", s.handleDeleteEmailSource)
 }
 
 func (s *Server) Start() error {

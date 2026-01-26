@@ -1,6 +1,6 @@
 # Project Alfred
 
-WhatsApp-to-Google Calendar assistant that uses Claude AI to detect calendar events from conversations, creates pending events for review, and syncs confirmed events to Google Calendar.
+Multi-source calendar assistant that uses Claude AI to detect calendar events from WhatsApp messages and Gmail emails, creates pending events for review, and syncs confirmed events to Google Calendar.
 
 ## Quick Reference
 
@@ -46,6 +46,7 @@ export ANTHROPIC_API_KEY="sk-..."  # Required for event detection
 
 ## Architecture Overview
 
+### WhatsApp Flow
 ```
 WhatsApp Message
     ↓
@@ -54,6 +55,23 @@ whatsapp/handler.go (filter by tracked channel)
 processor/processor.go (store message, call Claude)
     ↓
 claude/client.go (analyze for events)
+    ↓
+database/events.go (create pending event)
+    ↓
+User reviews in Mobile App (Events tab)
+    ↓
+gcal/events.go (sync to Google Calendar)
+```
+
+### Gmail Flow
+```
+Gmail Email (polled by worker)
+    ↓
+gmail/scanner.go (filter by tracked email sources)
+    ↓
+processor/email_processor.go (call Claude)
+    ↓
+claude/client.go (analyze email for events)
     ↓
 database/events.go (create pending event)
     ↓
@@ -100,10 +118,13 @@ project_alfred/
 │   │   ├── messages.go          # Message history storage
 │   │   ├── events.go            # Calendar event CRUD
 │   │   ├── attendees.go         # Event attendee management
-│   │   └── notifications.go     # User notification preferences
+│   │   ├── notifications.go     # User notification preferences
+│   │   ├── gmail.go             # Gmail settings CRUD
+│   │   └── email_sources.go     # Email source tracking
 │   ├── server/
 │   │   ├── server.go            # HTTP server, routing, CORS middleware
-│   │   └── handlers.go          # All HTTP handlers (API only, no static files)
+│   │   ├── handlers.go          # All HTTP handlers (API only, no static files)
+│   │   └── gmail_handlers.go    # Gmail API handlers
 │   ├── whatsapp/
 │   │   ├── client.go            # WhatsApp connection
 │   │   ├── handler.go           # Message filtering
@@ -111,14 +132,21 @@ project_alfred/
 │   │   └── qr.go                # QR code generation
 │   ├── gcal/
 │   │   ├── client.go            # Google Calendar client
-│   │   ├── auth.go              # OAuth2 flow (supports env var credentials)
+│   │   ├── auth.go              # OAuth2 flow (includes Gmail scope)
 │   │   ├── calendars.go         # List calendars
 │   │   └── events.go            # Event CRUD
+│   ├── gmail/
+│   │   ├── client.go            # Gmail API client
+│   │   ├── scanner.go           # Email scanning by tracked sources
+│   │   ├── parser.go            # HTML-to-text, email parsing
+│   │   ├── discovery.go         # Discover categories, senders, domains
+│   │   └── worker.go            # Background email polling
 │   ├── claude/
 │   │   ├── client.go            # Claude API client
 │   │   └── prompt.go            # System prompt for event detection
 │   ├── processor/
-│   │   ├── processor.go         # Message processing loop
+│   │   ├── processor.go         # WhatsApp message processing
+│   │   ├── email_processor.go   # Gmail email processing
 │   │   └── history.go           # Message storage helper
 │   ├── notify/
 │   │   ├── notifier.go          # Notification interface
@@ -241,6 +269,9 @@ type FilteredMessage struct {
 | `calendar_events` | Detected events with status lifecycle |
 | `event_attendees` | Event participants |
 | `user_notification_preferences` | Email/push/SMS notification settings |
+| `gmail_settings` | Gmail integration settings (enabled, poll interval) |
+| `email_sources` | Tracked email sources (categories, senders, domains) |
+| `processed_emails` | Track processed emails to avoid duplicates |
 
 ### Event Status Lifecycle
 ```
@@ -306,6 +337,29 @@ rejected
 | GET `/api/notifications/preferences` | handleGetNotificationPrefs | Get notification settings |
 | PUT `/api/notifications/email` | handleUpdateEmailPrefs | Update email preferences |
 
+### Gmail API
+| Path | Handler | Description |
+|------|---------|-------------|
+| GET `/api/gmail/status` | handleGmailStatus | Gmail connection status |
+| GET `/api/gmail/settings` | handleGmailSettings | Get Gmail settings |
+| PUT `/api/gmail/settings` | handleUpdateGmailSettings | Update Gmail settings |
+
+### Gmail Discovery API
+| Path | Handler | Description |
+|------|---------|-------------|
+| GET `/api/gmail/discover/categories` | handleDiscoverGmailCategories | List Gmail categories |
+| GET `/api/gmail/discover/senders` | handleDiscoverGmailSenders | List frequent senders |
+| GET `/api/gmail/discover/domains` | handleDiscoverGmailDomains | List frequent domains |
+
+### Email Sources API
+| Path | Handler | Description |
+|------|---------|-------------|
+| GET `/api/gmail/sources` | handleListEmailSources | List tracked email sources |
+| POST `/api/gmail/sources` | handleCreateEmailSource | Add email source to track |
+| GET `/api/gmail/sources/{id}` | handleGetEmailSource | Get email source |
+| PUT `/api/gmail/sources/{id}` | handleUpdateEmailSource | Update email source |
+| DELETE `/api/gmail/sources/{id}` | handleDeleteEmailSource | Remove email source |
+
 ---
 
 ## Environment Variables
@@ -326,6 +380,10 @@ rejected
 | `ALFRED_MESSAGE_HISTORY_SIZE` | `25` | Messages kept per channel |
 | `ALFRED_RESEND_API_KEY` | - | Resend API key for email notifications |
 | `ALFRED_EMAIL_FROM` | `Alfred <onboarding@resend.dev>` | Email sender address |
+| `ALFRED_GMAIL_POLL_INTERVAL` | `5` | Minutes between email checks |
+| `ALFRED_GMAIL_MAX_EMAILS` | `10` | Max emails to process per poll |
+
+**Note:** Gmail integration is enabled/disabled via the Settings UI (stored in database), not via environment variable.
 
 ---
 
@@ -375,13 +433,22 @@ rejected
 
 ### claude/
 - `NewClient()` - Create with API key, model, temperature
-- `AnalyzeMessages()` - Send context to Claude, parse EventAnalysis
+- `AnalyzeMessages()` - Analyze WhatsApp messages for events
+- `AnalyzeEmail()` - Analyze email content for events
 
 ### gcal/
 - `NewClient()` - Load OAuth config and token
 - `CreateEvent()`, `UpdateEvent()`, `DeleteEvent()`
 - `ListCalendars()`, `GetAuthURL()`, `GetAuthURLWithRedirect()`
 - `ExchangeCode()`, `ExchangeCodeWithRedirect()` - Exchange OAuth code for token
+- `GetOAuthConfig()`, `GetToken()` - Share OAuth credentials with Gmail
+
+### gmail/
+- `NewClient()` - Create Gmail client from OAuth config/token
+- `ListMessages()`, `GetMessage()` - Fetch emails
+- `DiscoverCategories()`, `DiscoverSenders()`, `DiscoverDomains()` - Find email sources
+- `NewScanner()`, `ScanForEmails()` - Scan emails by tracked sources
+- `NewWorker()`, `Start()`, `Stop()` - Background email polling
 
 ### whatsapp/
 - `NewClient()` - Create with message handler
@@ -434,7 +501,9 @@ parseEventTime(s string) // Handles RFC3339, ISO, local formats
 | Mobile UI changes | `mobile/src/components/**`, `mobile/src/screens/**` |
 | Onboarding flow | `mobile/src/screens/onboarding/**`, `mobile/src/navigation/RootNavigator.tsx` |
 | Database schema | `database/database.go` |
-| Message processing | `processor/processor.go` |
+| WhatsApp processing | `processor/processor.go` |
+| Gmail processing | `processor/email_processor.go`, `gmail/worker.go` |
+| Gmail scanning | `gmail/scanner.go`, `gmail/discovery.go` |
 | Google Calendar | `gcal/events.go`, `gcal/client.go` |
 | WhatsApp | `whatsapp/handler.go`, `whatsapp/client.go` |
 | Configuration | `config/env.go` |

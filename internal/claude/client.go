@@ -300,3 +300,111 @@ func findJSONEnd(text string, start int) int {
 func (c *Client) IsConfigured() bool {
 	return c.apiKey != ""
 }
+
+// EmailContent represents an email for analysis
+type EmailContent struct {
+	Subject string
+	From    string
+	To      string
+	Date    string
+	Body    string
+}
+
+// AnalyzeEmail sends email content to Claude for event detection
+func (c *Client) AnalyzeEmail(ctx context.Context, email EmailContent) (*EventAnalysis, error) {
+	// Build the user prompt with email content
+	userPrompt := c.buildEmailPrompt(email)
+
+	// Create the API request
+	req := anthropicRequest{
+		Model:       c.model,
+		MaxTokens:   defaultMaxTokens,
+		Temperature: c.temperature,
+		System:      EmailSystemPrompt,
+		Messages: []anthropicMessage{
+			{Role: "user", Content: userPrompt},
+		},
+	}
+
+	reqBody, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	// Make the HTTP request
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", c.apiURL, bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-api-key", c.apiKey)
+	httpReq.Header.Set("anthropic-version", anthropicVersion)
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+	}
+
+	var apiResp anthropicResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if apiResp.Error != nil {
+		return nil, fmt.Errorf("API error: %s - %s", apiResp.Error.Type, apiResp.Error.Message)
+	}
+
+	if len(apiResp.Content) == 0 {
+		return nil, fmt.Errorf("empty response from API")
+	}
+
+	// Parse the JSON response from Claude
+	var analysis EventAnalysis
+	responseText := apiResp.Content[0].Text
+
+	// Try to extract JSON from the response (Claude might wrap it in markdown)
+	jsonStr := extractJSON(responseText)
+	if err := json.Unmarshal([]byte(jsonStr), &analysis); err != nil {
+		return nil, fmt.Errorf("failed to parse analysis JSON: %w (response: %s)", err, responseText)
+	}
+
+	return &analysis, nil
+}
+
+// buildEmailPrompt constructs the prompt with email content
+func (c *Client) buildEmailPrompt(email EmailContent) string {
+	var prompt bytes.Buffer
+
+	prompt.WriteString("## Email to Analyze\n\n")
+	prompt.WriteString(fmt.Sprintf("**From:** %s\n", email.From))
+	prompt.WriteString(fmt.Sprintf("**To:** %s\n", email.To))
+	prompt.WriteString(fmt.Sprintf("**Date:** %s\n", email.Date))
+	prompt.WriteString(fmt.Sprintf("**Subject:** %s\n\n", email.Subject))
+	prompt.WriteString("**Body:**\n")
+
+	// Truncate body if too long (keep it reasonable for the API)
+	body := email.Body
+	const maxBodyLen = 8000
+	if len(body) > maxBodyLen {
+		body = body[:maxBodyLen] + "\n\n[... content truncated ...]"
+	}
+	prompt.WriteString(body)
+
+	prompt.WriteString("\n\n## Current Date/Time Reference\n\n")
+	prompt.WriteString(fmt.Sprintf("Current time: %s\n", time.Now().Format("2006-01-02 15:04 (Monday)")))
+
+	prompt.WriteString("\nAnalyze this email and respond with your JSON analysis.")
+
+	return prompt.String()
+}

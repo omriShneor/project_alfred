@@ -133,8 +133,8 @@ func (p *Processor) processMessage(msg whatsapp.FilteredMessage) error {
 		return fmt.Errorf("failed to get message history: %w", err)
 	}
 
-	// Get existing synced events for this channel
-	existingEvents, err := p.db.GetExistingEventsForChannel(msg.SourceID)
+	// Get existing active events (pending + synced) for this channel
+	existingEvents, err := p.db.GetActiveEventsForChannel(msg.SourceID)
 	if err != nil {
 		fmt.Printf("Warning: failed to get existing events: %v\n", err)
 		existingEvents = []database.CalendarEvent{}
@@ -162,7 +162,7 @@ func (p *Processor) processMessage(msg whatsapp.FilteredMessage) error {
 	return nil
 }
 
-// createPendingEvent creates a pending event from Claude's analysis
+// createPendingEvent creates or updates a pending event from Claude's analysis
 func (p *Processor) createPendingEvent(
 	channel *database.Channel,
 	messageID int64,
@@ -202,6 +202,37 @@ func (p *Processor) createPendingEvent(
 		endTime = &et
 	}
 
+	// Check if we should update an existing pending event
+	if analysis.Event.AlfredEventRef != 0 {
+		existing, err := p.db.GetEventByID(analysis.Event.AlfredEventRef)
+		if err == nil && existing.Status == database.EventStatusPending {
+			// Handle delete action on pending event
+			if analysis.Action == "delete" {
+				if err := p.db.UpdateEventStatus(existing.ID, database.EventStatusRejected); err != nil {
+					return fmt.Errorf("failed to reject pending event: %w", err)
+				}
+				fmt.Printf("Rejected pending event: %s (ID: %d) - user cancelled\n",
+					existing.Title, existing.ID)
+				return nil
+			}
+
+			// Update the existing pending event
+			if err := p.db.UpdatePendingEvent(
+				existing.ID,
+				analysis.Event.Title,
+				analysis.Event.Description,
+				startTime,
+				endTime,
+				analysis.Event.Location,
+			); err != nil {
+				return fmt.Errorf("failed to update pending event: %w", err)
+			}
+			fmt.Printf("Updated pending event: %s (ID: %d)\n",
+				analysis.Event.Title, existing.ID)
+			return nil
+		}
+	}
+
 	// Determine action type
 	var actionType database.EventActionType
 	switch analysis.Action {
@@ -215,7 +246,7 @@ func (p *Processor) createPendingEvent(
 		return fmt.Errorf("unknown action type: %s", analysis.Action)
 	}
 
-	// For updates/deletes, store the reference to the existing event
+	// For updates/deletes of synced events, store the Google event ID reference
 	var googleEventID *string
 	if analysis.Event.UpdateRef != "" {
 		googleEventID = &analysis.Event.UpdateRef

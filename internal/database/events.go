@@ -296,9 +296,75 @@ func (d *DB) DeleteEvent(id int64) error {
 }
 
 // GetExistingEventsForChannel retrieves synced events for a channel (used for Claude context)
+// Deprecated: Use GetActiveEventsForChannel instead which includes pending events
 func (d *DB) GetExistingEventsForChannel(channelID int64) ([]CalendarEvent, error) {
 	status := EventStatusSynced
 	return d.ListEvents(&status, &channelID)
+}
+
+// GetActiveEventsForChannel retrieves both pending and synced events for a channel
+// This is used for Claude context so it can reference and update pending events
+func (d *DB) GetActiveEventsForChannel(channelID int64) ([]CalendarEvent, error) {
+	query := `
+		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+			e.description, e.start_time, e.end_time, e.location, e.status,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			c.name as channel_name
+		FROM calendar_events e
+		JOIN channels c ON e.channel_id = c.id
+		WHERE e.channel_id = ? AND e.status IN (?, ?)
+		ORDER BY e.start_time ASC
+	`
+
+	rows, err := d.Query(query, channelID, EventStatusPending, EventStatusSynced)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list active events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []CalendarEvent
+	for rows.Next() {
+		var event CalendarEvent
+		var googleEventID sql.NullString
+		var endTimeNull sql.NullTime
+		var origMsgIDNull sql.NullInt64
+
+		if err := rows.Scan(
+			&event.ID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ChannelName,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan event: %w", err)
+		}
+
+		if googleEventID.Valid {
+			event.GoogleEventID = &googleEventID.String
+		}
+		if endTimeNull.Valid {
+			event.EndTime = &endTimeNull.Time
+		}
+		if origMsgIDNull.Valid {
+			event.OriginalMsgID = &origMsgIDNull.Int64
+		}
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating events: %w", err)
+	}
+
+	// Fetch attendees for each event
+	for i := range events {
+		attendees, err := d.GetEventAttendees(events[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get attendees for event %d: %w", events[i].ID, err)
+		}
+		events[i].Attendees = attendees
+	}
+
+	return events, nil
 }
 
 // CountPendingEvents returns the number of pending events

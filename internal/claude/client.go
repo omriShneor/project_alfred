@@ -59,12 +59,13 @@ type EventAnalysis struct {
 
 // EventData contains the extracted event details
 type EventData struct {
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	StartTime   string `json:"start_time"` // ISO 8601 format
-	EndTime     string `json:"end_time,omitempty"`
-	Location    string `json:"location,omitempty"`
-	UpdateRef   string `json:"update_ref,omitempty"` // Google event ID for updates/deletes
+	Title          string `json:"title"`
+	Description    string `json:"description,omitempty"`
+	StartTime      string `json:"start_time"` // ISO 8601 format
+	EndTime        string `json:"end_time,omitempty"`
+	Location       string `json:"location,omitempty"`
+	UpdateRef      string `json:"update_ref,omitempty"`       // Google event ID for updates/deletes of synced events
+	AlfredEventRef int64  `json:"alfred_event_ref,omitempty"` // Internal DB ID for updates/deletes of pending events
 }
 
 // anthropicRequest represents the API request structure
@@ -226,12 +227,14 @@ func (c *Client) buildUserPrompt(
 			if event.EndTime != nil {
 				endStr = fmt.Sprintf(" - %s", event.EndTime.Format("2006-01-02 15:04"))
 			}
-			googleID := ""
-			if event.GoogleEventID != nil {
+			googleID := "none"
+			if event.GoogleEventID != nil && *event.GoogleEventID != "" {
 				googleID = *event.GoogleEventID
 			}
-			prompt.WriteString(fmt.Sprintf("- [ID: %s] %s @ %s%s",
+			prompt.WriteString(fmt.Sprintf("- [AlfredID: %d, GoogleID: %s, Status: %s] %s @ %s%s",
+				event.ID,
 				googleID,
+				event.Status,
 				event.Title,
 				event.StartTime.Format("2006-01-02 15:04"),
 				endStr,

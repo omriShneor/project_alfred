@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TextInput, StyleSheet, Alert } from 'react-native';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
+import { DateTimePicker } from '../common/DateTimePicker';
 import { useUpdateEvent } from '../../hooks/useEvents';
 import { colors } from '../../theme/colors';
 import type { CalendarEvent } from '../../types/event';
@@ -16,8 +17,8 @@ export function EditEventModal({ visible, onClose, event }: EditEventModalProps)
   const [title, setTitle] = useState('');
   const [location, setLocation] = useState('');
   const [description, setDescription] = useState('');
-  const [startTime, setStartTime] = useState('');
-  const [endTime, setEndTime] = useState('');
+  const [startTime, setStartTime] = useState<Date | null>(null);
+  const [endTime, setEndTime] = useState<Date | null>(null);
 
   const updateEvent = useUpdateEvent();
 
@@ -26,50 +27,16 @@ export function EditEventModal({ visible, onClose, event }: EditEventModalProps)
       setTitle(event.title);
       setLocation(event.location || '');
       setDescription(event.description || '');
-      setStartTime(formatDateForInput(event.start_time));
-      setEndTime(event.end_time ? formatDateForInput(event.end_time) : '');
+      setStartTime(new Date(event.start_time));
+      setEndTime(event.end_time ? new Date(event.end_time) : null);
     }
   }, [event]);
-
-  const formatDateForInput = (dateString: string) => {
-    const date = new Date(dateString);
-    // Format: YYYY-MM-DD HH:MM
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
-  };
-
-  const parseInputDate = (input: string): string | null => {
-    // Parse YYYY-MM-DD HH:MM format
-    const match = input.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/);
-    if (!match) return null;
-
-    const [, year, month, day, hours, minutes] = match;
-    const date = new Date(
-      parseInt(year),
-      parseInt(month) - 1,
-      parseInt(day),
-      parseInt(hours),
-      parseInt(minutes)
-    );
-    return date.toISOString();
-  };
 
   const handleSave = () => {
     if (!event) return;
 
-    const parsedStart = parseInputDate(startTime);
-    if (!parsedStart) {
-      Alert.alert('Invalid Date', 'Please enter start time as YYYY-MM-DD HH:MM');
-      return;
-    }
-
-    const parsedEnd = endTime ? parseInputDate(endTime) : undefined;
-    if (endTime && !parsedEnd) {
-      Alert.alert('Invalid Date', 'Please enter end time as YYYY-MM-DD HH:MM');
+    if (!startTime) {
+      Alert.alert('Invalid Date', 'Please select a start time');
       return;
     }
 
@@ -80,8 +47,8 @@ export function EditEventModal({ visible, onClose, event }: EditEventModalProps)
           title,
           location: location || undefined,
           description: description || undefined,
-          start_time: parsedStart,
-          end_time: parsedEnd,
+          start_time: startTime.toISOString(),
+          end_time: endTime ? endTime.toISOString() : undefined,
         },
       },
       {
@@ -108,25 +75,19 @@ export function EditEventModal({ visible, onClose, event }: EditEventModalProps)
           />
         </View>
 
-        <View style={styles.field}>
-          <Text style={styles.label}>Start Time (YYYY-MM-DD HH:MM)</Text>
-          <TextInput
-            style={styles.input}
-            value={startTime}
-            onChangeText={setStartTime}
-            placeholder="2024-01-15 14:00"
-          />
-        </View>
+        <DateTimePicker
+          label="Start Time"
+          value={startTime}
+          onChange={setStartTime}
+          placeholder="Select start time"
+        />
 
-        <View style={styles.field}>
-          <Text style={styles.label}>End Time (YYYY-MM-DD HH:MM)</Text>
-          <TextInput
-            style={styles.input}
-            value={endTime}
-            onChangeText={setEndTime}
-            placeholder="2024-01-15 15:00"
-          />
-        </View>
+        <DateTimePicker
+          label="End Time"
+          value={endTime}
+          onChange={setEndTime}
+          placeholder="Select end time (optional)"
+        />
 
         <View style={styles.field}>
           <Text style={styles.label}>Location</Text>

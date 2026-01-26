@@ -17,6 +17,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'com.alfred.mobile',
+    infoPlist: {
+      CFBundleURLTypes: [
+        {
+          CFBundleURLSchemes: ['alfred'],
+        },
+      ],
+    },
   },
   android: {
     adaptiveIcon: {
@@ -24,11 +31,24 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: '#3498db',
     },
     package: 'com.alfred.mobile',
+    intentFilters: [
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          {
+            scheme: 'alfred',
+          },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+    ],
   },
   web: {
     favicon: './assets/favicon.png',
   },
   scheme: 'alfred',
+  plugins: ['expo-web-browser'],
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8080',
   },

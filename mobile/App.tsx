@@ -4,10 +4,22 @@ import { StyleSheet, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import * as Notifications from 'expo-notifications';
 
 import { Header } from './src/components/layout/Header';
-import { TopTabs } from './src/navigation/TopTabs';
+import { RootNavigator } from './src/navigation/RootNavigator';
 import { colors } from './src/theme/colors';
+
+// Configure notification handler for foreground notifications
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
+  }),
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -30,7 +42,7 @@ export default function App() {
           <View style={styles.container}>
             <StatusBar style="dark" />
             <Header />
-            <TopTabs />
+            <RootNavigator />
           </View>
         </NavigationContainer>
       </SafeAreaProvider>

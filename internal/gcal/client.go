@@ -79,6 +79,15 @@ func (c *Client) GetAuthURL() string {
 	return c.config.AuthCodeURL("state-token", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 }
 
+// GetAuthURLWithRedirect returns the OAuth authorization URL with a custom redirect URI
+// This is used for mobile apps that use deep links for OAuth callbacks
+func (c *Client) GetAuthURLWithRedirect(redirectURI string) string {
+	// Create a copy of the config with the custom redirect URI
+	configCopy := *c.config
+	configCopy.RedirectURL = redirectURI
+	return configCopy.AuthCodeURL("state-token", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+}
+
 // initService initializes the Calendar service with the current token
 func (c *Client) initService(ctx context.Context) error {
 	if c.token == nil {
@@ -98,6 +107,26 @@ func (c *Client) initService(ctx context.Context) error {
 // ExchangeCode exchanges an authorization code for a token and saves it
 func (c *Client) ExchangeCode(ctx context.Context, code string) error {
 	token, err := c.config.Exchange(ctx, code)
+	if err != nil {
+		return fmt.Errorf("failed to exchange code for token: %w", err)
+	}
+
+	c.token = token
+	if err := saveToken(c.tokenFile, token); err != nil {
+		return fmt.Errorf("failed to save token: %w", err)
+	}
+
+	return c.initService(ctx)
+}
+
+// ExchangeCodeWithRedirect exchanges an authorization code for a token using a custom redirect URI
+// This is used for mobile apps that use deep links for OAuth callbacks
+func (c *Client) ExchangeCodeWithRedirect(ctx context.Context, code, redirectURI string) error {
+	// Create a copy of the config with the custom redirect URI
+	configCopy := *c.config
+	configCopy.RedirectURL = redirectURI
+
+	token, err := configCopy.Exchange(ctx, code)
 	if err != nil {
 		return fmt.Errorf("failed to exchange code for token: %w", err)
 	}

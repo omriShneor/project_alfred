@@ -6,30 +6,34 @@ WhatsApp-to-Google Calendar assistant that uses Claude AI to detect calendar eve
 
 ### Key Commands
 ```bash
-go run main.go              # Start the application
-go build -o alfred && ./alfred  # Build and run
+# Development (see docs/DEVELOPMENT.md)
+./scripts/dev.sh setup      # First-time setup
+./scripts/dev.sh start      # Start backend + mobile app
+./scripts/dev.sh check      # Health checks
+
+# Production (see docs/DEPLOYMENT.md)
+./scripts/deploy.sh         # Deploy to Railway
+./scripts/deploy.sh test    # Production health checks
+./scripts/deploy.sh mobile  # Configure mobile for production
 ```
 
-### Railway Deployment
+### Manual Commands
 ```bash
-railway login               # Login to Railway
-railway up                  # Deploy to Railway
-railway logs                # View deployment logs
-railway domain              # Get/create public URL
+go run main.go              # Start backend only
+cd mobile && npm run web    # Start mobile app only
 ```
 
 ### Important URLs
 
 **Go Backend (port 8080):**
-- `http://localhost:8080/` - Web dashboard (WhatsApp QR, integration status)
-- `http://localhost:8080/settings` - Settings (Integrations + Notifications)
 - `http://localhost:8080/health` - Health check endpoint
+- `http://localhost:8080/api/*` - API endpoints (no web UI)
 
 **Mobile App (port 8081):**
-- `http://localhost:8081/` - Expo web preview (Channels + Events)
+- `http://localhost:8081/` - Expo web preview (all UI)
 
 **Production:**
-- https://alfred-production-d2c9.up.railway.app
+- https://alfred-production-d2c9.up.railway.app (API only)
 
 ### Required Environment
 ```bash
@@ -58,11 +62,17 @@ User reviews in Mobile App (Events tab)
 gcal/events.go (sync to Google Calendar)
 ```
 
-### Web vs Mobile Split
+### Mobile-Only UI
+All UI functionality is in the mobile app. The Go backend is API-only.
+
 | Component | Platform | Purpose |
 |-----------|----------|---------|
-| Go Backend Web | `localhost:8080` | WhatsApp QR code, integration status, settings |
-| Mobile App | `localhost:8081` | Channel management, event review & approval |
+| Go Backend | `localhost:8080` | API endpoints, WhatsApp connection, event detection |
+| Mobile App | `localhost:8081` | All UI: onboarding, channels, events, settings |
+
+**WhatsApp Connection:** Uses pairing codes (not QR scanning) - user enters phone number in app, gets 8-digit code to enter in WhatsApp.
+
+**Google Calendar OAuth:** Uses deep link callback (`alfred://oauth/callback`) - app opens browser for auth, captures redirect back to app.
 
 ---
 
@@ -73,6 +83,14 @@ project_alfred/
 ├── main.go                      # Entry point, initialization, shutdown
 ├── Dockerfile                   # Multi-stage Docker build for Railway
 ├── railway.toml                 # Railway deployment configuration
+├── scripts/
+│   ├── dev.sh                   # Local development script
+│   ├── deploy.sh                # Production deployment script
+│   └── README.md                # Scripts documentation
+├── docs/
+│   ├── DEVELOPMENT.md           # Local development guide
+│   ├── DEPLOYMENT.md            # Production deployment guide
+│   └── README.md                # Documentation index
 ├── internal/
 │   ├── config/
 │   │   └── env.go               # Environment configuration
@@ -85,10 +103,7 @@ project_alfred/
 │   │   └── notifications.go     # User notification preferences
 │   ├── server/
 │   │   ├── server.go            # HTTP server, routing, CORS middleware
-│   │   ├── handlers.go          # All HTTP handlers
-│   │   └── static/
-│   │       ├── index.html       # Dashboard (WhatsApp QR, status)
-│   │       └── settings.html    # Settings (Integrations + Notifications)
+│   │   └── handlers.go          # All HTTP handlers (API only, no static files)
 │   ├── whatsapp/
 │   │   ├── client.go            # WhatsApp connection
 │   │   ├── handler.go           # Message filtering
@@ -115,12 +130,17 @@ project_alfred/
 │   └── sse/
 │       └── state.go             # Onboarding SSE state
 ├── mobile/                      # React Native mobile app (Expo)
-│   ├── App.tsx                  # App entry point
-│   ├── app.config.ts            # Expo config (reads env vars)
+│   ├── App.tsx                  # App entry point with RootNavigator
+│   ├── app.config.ts            # Expo config (deep linking, scheme: alfred)
 │   ├── package.json             # Dependencies
 │   ├── .env.local               # Local dev environment (not in git)
 │   └── src/
 │       ├── api/                 # API client functions
+│       │   ├── client.ts        # Axios client with base URL
+│       │   ├── whatsapp.ts      # WhatsApp pairing code API
+│       │   ├── gcal.ts          # Google Calendar OAuth API
+│       │   ├── notifications.ts # Notification preferences API
+│       │   └── onboarding.ts    # Onboarding status API
 │       ├── components/          # Reusable UI components
 │       │   ├── channels/        # Channel list, item, picker
 │       │   ├── events/          # Event card, list, modals
@@ -128,8 +148,19 @@ project_alfred/
 │       │   └── layout/          # Header, ConnectionStatus
 │       ├── config/              # API configuration
 │       ├── hooks/               # React Query hooks
-│       ├── navigation/          # Tab navigation
-│       ├── screens/             # Channels and Events screens
+│       │   └── useOnboardingStatus.ts  # WhatsApp/GCal status hooks
+│       ├── navigation/
+│       │   ├── RootNavigator.tsx    # Switches onboarding/main tabs
+│       │   └── TopTabs.tsx          # Channels, Events, Settings tabs
+│       ├── screens/
+│       │   ├── ChannelsScreen.tsx
+│       │   ├── EventsScreen.tsx
+│       │   ├── SettingsScreen.tsx   # WhatsApp/GCal/Notifications
+│       │   └── onboarding/          # Setup flow screens
+│       │       ├── WelcomeScreen.tsx
+│       │       ├── WhatsAppSetupScreen.tsx
+│       │       ├── GoogleCalendarSetupScreen.tsx
+│       │       └── NotificationSetupScreen.tsx
 │       ├── theme/               # Colors, typography
 │       └── types/               # TypeScript types
 ```
@@ -227,17 +258,19 @@ rejected
 |------|---------|-------------|
 | GET `/health` | handleHealthCheck | Health check (DB, WhatsApp, GCal status) |
 
-### UI Pages (Web)
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/` | handleMainPage | Dashboard (WhatsApp QR, integration status) |
-| GET `/settings` | handleSettingsPage | Settings (Integrations + Notifications) |
-
 ### Integration Status API
 | Path | Handler | Description |
 |------|---------|-------------|
 | GET `/api/onboarding/status` | handleOnboardingStatus | Current integration status |
 | GET `/api/onboarding/stream` | handleOnboardingSSE | SSE status updates for integrations |
+
+### WhatsApp API
+| Path | Handler | Description |
+|------|---------|-------------|
+| GET `/api/whatsapp/status` | handleWhatsAppStatus | Connection status |
+| POST `/api/whatsapp/pair` | handleWhatsAppPair | Generate pairing code (phone number linking) |
+| POST `/api/whatsapp/reconnect` | handleWhatsAppReconnect | Trigger reconnect |
+| POST `/api/whatsapp/disconnect` | handleWhatsAppDisconnect | Disconnect WhatsApp |
 
 ### Channel API
 | Path | Handler | Description |
@@ -253,7 +286,9 @@ rejected
 |------|---------|-------------|
 | GET `/api/gcal/status` | handleGCalStatus | Connection status |
 | GET `/api/gcal/calendars` | handleGCalListCalendars | Available calendars |
-| POST `/api/gcal/connect` | handleGCalConnect | Get OAuth URL |
+| POST `/api/gcal/connect` | handleGCalConnect | Get OAuth URL (accepts custom redirect_uri) |
+| POST `/api/gcal/callback` | handleGCalExchangeCode | Exchange OAuth code for token (mobile deep link) |
+| GET `/oauth/callback` | handleOAuthCallback | OAuth callback (shows success page) |
 
 ### Events API
 | Path | Handler | Description |
@@ -264,11 +299,6 @@ rejected
 | POST `/api/events/{id}/confirm` | handleConfirmEvent | Sync to Google Calendar |
 | POST `/api/events/{id}/reject` | handleRejectEvent | Reject event |
 | GET `/api/events/channel/{id}/history` | handleGetChannelHistory | Message context |
-
-### WhatsApp API
-| Path | Handler | Description |
-|------|---------|-------------|
-| POST `/api/whatsapp/reconnect` | handleWhatsAppReconnect | Trigger new QR |
 
 ### Notification API
 | Path | Handler | Description |
@@ -294,7 +324,6 @@ rejected
 | `ALFRED_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Model for detection |
 | `ALFRED_CLAUDE_TEMPERATURE` | `0.1` | Lower = more deterministic |
 | `ALFRED_MESSAGE_HISTORY_SIZE` | `25` | Messages kept per channel |
-| `ALFRED_DEV_MODE` | `false` | Hot reload static files |
 | `ALFRED_RESEND_API_KEY` | - | Resend API key for email notifications |
 | `ALFRED_EMAIL_FROM` | `Alfred <onboarding@resend.dev>` | Email sender address |
 
@@ -351,12 +380,14 @@ rejected
 ### gcal/
 - `NewClient()` - Load OAuth config and token
 - `CreateEvent()`, `UpdateEvent()`, `DeleteEvent()`
-- `ListCalendars()`, `GetAuthURL()`
+- `ListCalendars()`, `GetAuthURL()`, `GetAuthURLWithRedirect()`
+- `ExchangeCode()`, `ExchangeCodeWithRedirect()` - Exchange OAuth code for token
 
 ### whatsapp/
 - `NewClient()` - Create with message handler
 - `HandleEvent()` - Dispatch WhatsApp events
 - `GetDiscoverableChannels()` - List contacts and groups
+- `PairWithPhone()` - Generate pairing code for phone-number linking
 
 ### sse/
 - `NewState()` - Create onboarding state manager
@@ -400,15 +431,17 @@ parseEventTime(s string) // Handles RFC3339, ISO, local formats
 |------|---------------|
 | API changes | `server/handlers.go`, `server/server.go` |
 | Event detection | `claude/prompt.go`, `claude/client.go` |
-| Web UI changes | `server/static/*.html` |
 | Mobile UI changes | `mobile/src/components/**`, `mobile/src/screens/**` |
+| Onboarding flow | `mobile/src/screens/onboarding/**`, `mobile/src/navigation/RootNavigator.tsx` |
 | Database schema | `database/database.go` |
 | Message processing | `processor/processor.go` |
-| Google Calendar | `gcal/events.go` |
-| WhatsApp | `whatsapp/handler.go` |
+| Google Calendar | `gcal/events.go`, `gcal/client.go` |
+| WhatsApp | `whatsapp/handler.go`, `whatsapp/client.go` |
 | Configuration | `config/env.go` |
 | Notifications | `notify/service.go`, `notify/resend.go` |
-| Deployment | `Dockerfile`, `railway.toml` |
+| Deployment | `Dockerfile`, `railway.toml`, `scripts/deploy.sh` |
+| Development scripts | `scripts/dev.sh`, `scripts/deploy.sh` |
+| Documentation | `docs/*.md`, `CLAUDE.md` |
 
 ---
 
@@ -442,11 +475,13 @@ Railway volume mounted at `/data` stores:
 - `whatsapp.db` - WhatsApp session (preserves login)
 - `token.json` - Google OAuth token
 
-### Google OAuth for Production
-Add Railway callback URL to Google Cloud Console:
+### Google OAuth Configuration
+Add these redirect URIs to Google Cloud Console:
 ```
 https://alfred-production-d2c9.up.railway.app/oauth/callback
+alfred://oauth/callback
 ```
+The `alfred://` URI is for mobile app deep link OAuth flow.
 
 ### Health Check
 Railway uses `GET /health` endpoint which returns:
@@ -491,8 +526,10 @@ Find your IP: `ipconfig getifaddr en0`
 ### Key Mobile Files
 | Task | Primary Files |
 |------|---------------|
-| API configuration | `src/config/api.ts` |
+| API configuration | `src/config/api.ts`, `src/api/client.ts` |
 | Channel list/sorting | `src/components/channels/ChannelList.tsx` |
 | Event management | `src/components/events/EventCard.tsx`, `EventList.tsx` |
-| Navigation | `src/navigation/TopTabs.tsx` |
-| API hooks | `src/hooks/useChannels.ts`, `useEvents.ts` |
+| Navigation | `src/navigation/RootNavigator.tsx`, `TopTabs.tsx` |
+| Onboarding | `src/screens/onboarding/*`, `src/hooks/useOnboardingStatus.ts` |
+| Settings | `src/screens/SettingsScreen.tsx` |
+| API hooks | `src/hooks/useChannels.ts`, `useEvents.ts`, `useOnboardingStatus.ts` |

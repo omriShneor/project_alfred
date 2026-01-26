@@ -11,14 +11,15 @@ import (
 type Service struct {
 	db            *database.DB
 	emailNotifier Notifier
-	// Future: pushNotifier, smsNotifier, webhookNotifier
+	pushNotifier  Notifier
 }
 
 // NewService creates a notification service
-func NewService(db *database.DB, emailNotifier Notifier) *Service {
+func NewService(db *database.DB, emailNotifier Notifier, pushNotifier Notifier) *Service {
 	return &Service{
 		db:            db,
 		emailNotifier: emailNotifier,
+		pushNotifier:  pushNotifier,
 	}
 }
 
@@ -52,8 +53,21 @@ func (s *Service) NotifyPendingEvent(ctx context.Context, event *database.Calend
 		fmt.Println("Notification: Email not enabled or no address configured")
 	}
 
-	// Future: Push notification
-	// if prefs.PushEnabled && prefs.PushToken != "" && s.pushNotifier != nil { ... }
+	// Push notification
+	if prefs.PushEnabled && prefs.PushToken != "" {
+		if s.pushNotifier != nil && s.pushNotifier.IsConfigured() {
+			fmt.Printf("Notification: Sending push to token %s...\n", prefs.PushToken[:20]+"...")
+			if err := s.pushNotifier.Send(ctx, event, prefs.PushToken); err != nil {
+				fmt.Printf("Notification: Push failed: %v\n", err)
+			} else {
+				fmt.Printf("Notification: Push sent successfully\n")
+			}
+		} else {
+			fmt.Println("Notification: Push enabled but notifier not configured")
+		}
+	} else {
+		fmt.Println("Notification: Push not enabled or no token registered")
+	}
 
 	// Future: SMS notification
 	// if prefs.SMSEnabled && prefs.SMSPhone != "" && s.smsNotifier != nil { ... }
@@ -65,4 +79,9 @@ func (s *Service) NotifyPendingEvent(ctx context.Context, event *database.Calend
 // IsEmailAvailable returns true if email notifications can be used
 func (s *Service) IsEmailAvailable() bool {
 	return s.emailNotifier != nil && s.emailNotifier.IsConfigured()
+}
+
+// IsPushAvailable returns true if push notifications can be used
+func (s *Service) IsPushAvailable() bool {
+	return s.pushNotifier != nil && s.pushNotifier.IsConfigured()
 }

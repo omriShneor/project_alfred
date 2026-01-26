@@ -2,40 +2,37 @@ package server
 
 import (
 	"context"
-	"embed"
 	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
-
-//go:embed static/index.html static/settings.html
-var staticFiles embed.FS
 
 type Server struct {
 	db              *database.DB
 	waClient        *whatsapp.Client
 	gcalClient      *gcal.Client
 	onboardingState *sse.State
+	notifyService   *notify.Service
 	httpSrv         *http.Server
 	port            int
-	devMode         bool
 	resendAPIKey    string      // For checking email availability
 	oauthCodeChan   chan string // Channel to receive OAuth code from callback
 }
 
-func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, devMode bool, resendAPIKey string) *Server {
+func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, resendAPIKey string, notifyService *notify.Service) *Server {
 	s := &Server{
 		db:              db,
 		waClient:        waClient,
 		gcalClient:      gcalClient,
 		onboardingState: onboardingState,
+		notifyService:   notifyService,
 		port:            port,
-		devMode:         devMode,
 		resendAPIKey:    resendAPIKey,
 	}
 
@@ -57,15 +54,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
 
-	// Main page (Channels + Events)
-	mux.HandleFunc("GET /", s.handleMainPage)
-
-	// Onboarding API (used by settings page for SSE)
+	// Onboarding API
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
 	mux.HandleFunc("GET /api/onboarding/stream", s.handleOnboardingSSE)
 
 	// WhatsApp API
+	mux.HandleFunc("GET /api/whatsapp/status", s.handleWhatsAppStatus)
+	mux.HandleFunc("POST /api/whatsapp/pair", s.handleWhatsAppPair)
 	mux.HandleFunc("POST /api/whatsapp/reconnect", s.handleWhatsAppReconnect)
+	mux.HandleFunc("POST /api/whatsapp/disconnect", s.handleWhatsAppDisconnect)
 
 	// Discovery API
 	mux.HandleFunc("GET /api/discovery/channels", s.handleDiscoverChannels)
@@ -80,6 +77,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gcal/status", s.handleGCalStatus)
 	mux.HandleFunc("GET /api/gcal/calendars", s.handleGCalListCalendars)
 	mux.HandleFunc("POST /api/gcal/connect", s.handleGCalConnect)
+	mux.HandleFunc("POST /api/gcal/callback", s.handleGCalExchangeCode)
 	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
 
 	// Events API
@@ -90,12 +88,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/events/{id}/reject", s.handleRejectEvent)
 	mux.HandleFunc("GET /api/events/channel/{channelId}/history", s.handleGetChannelHistory)
 
-	// Settings Page
-	mux.HandleFunc("GET /settings", s.handleSettingsPage)
-
 	// Notification Preferences API
 	mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
 	mux.HandleFunc("PUT /api/notifications/email", s.handleUpdateEmailPrefs)
+	mux.HandleFunc("POST /api/notifications/push/register", s.handleRegisterPushToken)
+	mux.HandleFunc("PUT /api/notifications/push", s.handleUpdatePushPrefs)
 }
 
 func (s *Server) Start() error {
@@ -111,6 +108,11 @@ func (s *Server) Shutdown(ctx context.Context) error {
 func (s *Server) SetClients(waClient *whatsapp.Client, gcalClient *gcal.Client) {
 	s.waClient = waClient
 	s.gcalClient = gcalClient
+}
+
+// SetNotifyService sets the notification service
+func (s *Server) SetNotifyService(notifyService *notify.Service) {
+	s.notifyService = notifyService
 }
 
 // corsMiddleware adds CORS headers to allow mobile app requests

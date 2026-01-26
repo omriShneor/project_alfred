@@ -48,6 +48,27 @@ func (c *Client) Disconnect() {
 	c.WAClient.Disconnect()
 }
 
+// PairWithPhone generates a pairing code for phone-number-based linking.
+// This allows mobile apps to link without QR code scanning.
+// phone should be in international format without '+' (e.g., "1234567890" for +1234567890)
+func (c *Client) PairWithPhone(ctx context.Context, phone string) (string, error) {
+	// Connect first if not connected
+	if !c.WAClient.IsConnected() {
+		if err := c.WAClient.Connect(); err != nil {
+			return "", fmt.Errorf("failed to connect: %w", err)
+		}
+	}
+
+	// Generate pairing code using whatsmeow's PairPhone
+	// The parameters are: context, phone number, show push notification, client type, client display name
+	code, err := c.WAClient.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Alfred")
+	if err != nil {
+		return "", fmt.Errorf("failed to generate pairing code: %w", err)
+	}
+
+	return code, nil
+}
+
 func (c *Client) IsLoggedIn() bool {
 	return c.WAClient.Store.ID != nil
 }

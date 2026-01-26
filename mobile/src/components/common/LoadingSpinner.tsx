@@ -1,15 +1,17 @@
 import React from 'react';
-import { View, ActivityIndicator, Text, StyleSheet } from 'react-native';
+import { View, ActivityIndicator, Text, StyleSheet, ViewStyle } from 'react-native';
 import { colors } from '../../theme/colors';
 
 interface LoadingSpinnerProps {
   message?: string;
+  size?: 'small' | 'large';
+  style?: ViewStyle;
 }
 
-export function LoadingSpinner({ message }: LoadingSpinnerProps) {
+export function LoadingSpinner({ message, size = 'large', style }: LoadingSpinnerProps) {
   return (
-    <View style={styles.container}>
-      <ActivityIndicator size="large" color={colors.primary} />
+    <View style={[styles.container, style]}>
+      <ActivityIndicator size={size} color={colors.primary} />
       {message && <Text style={styles.message}>{message}</Text>}
     </View>
   );

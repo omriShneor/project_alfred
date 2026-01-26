@@ -7,8 +7,9 @@ This guide covers deploying Project Alfred to Railway and testing the mobile app
 ## Table of Contents
 
 1. [Railway Deployment](#railway-deployment)
-2. [Testing on iPhone with Expo Go](#testing-on-iphone-with-expo-go)
-3. [End-to-End Production Testing](#end-to-end-production-testing)
+2. [Google Cloud Console Setup](#google-cloud-console-setup)
+3. [Testing on iPhone with Expo Go](#testing-on-iphone-with-expo-go)
+4. [End-to-End Production Testing](#end-to-end-production-testing)
 
 ---
 
@@ -48,13 +49,16 @@ railway variables set GOOGLE_TOKEN_FILE="/data/token.json"
 
 ### Step 3: Verify Production Backend
 
-Open in browser:
+Test the API is running:
 
-| URL | What to Check |
-|-----|---------------|
-| https://alfred-production-d2c9.up.railway.app | Dashboard loads |
-| https://alfred-production-d2c9.up.railway.app/settings | Settings page loads |
-| https://alfred-production-d2c9.up.railway.app/health | Returns `{"status":"healthy",...}` |
+```bash
+curl https://alfred-production-d2c9.up.railway.app/health
+```
+
+**Expected response:**
+```json
+{"status":"healthy","whatsapp":"disconnected","gcal":"disconnected"}
+```
 
 ### Step 4: Check Logs
 
@@ -64,26 +68,27 @@ railway logs
 
 Look for:
 - `HTTP server starting on :8080`
-- `WhatsApp client connected` (after QR scan)
 - No error messages
 
-### Step 5: Connect WhatsApp
+---
 
-1. Open https://alfred-production-d2c9.up.railway.app
-2. Scan QR code with WhatsApp on your phone
-3. Wait for "Connected" status
+## Google Cloud Console Setup
 
-### Step 6: Connect Google Calendar
+For the mobile app OAuth flow to work, you need to configure redirect URIs in Google Cloud Console.
 
-1. Go to https://alfred-production-d2c9.up.railway.app/settings
-2. Click "Connect Google Calendar"
-3. Complete OAuth flow
-4. Verify "Connected" status
+### Add Redirect URIs
 
-**Note:** Ensure your Google Cloud Console has the Railway callback URL:
-```
-https://alfred-production-d2c9.up.railway.app/oauth/callback
-```
+1. Go to [Google Cloud Console](https://console.cloud.google.com)
+2. Select your project
+3. Navigate to APIs & Services > Credentials
+4. Edit your OAuth 2.0 Client ID
+5. Add these Authorized redirect URIs:
+   ```
+   https://alfred-production-d2c9.up.railway.app/oauth/callback
+   alfred://oauth/callback
+   ```
+
+The `alfred://` URI is required for the mobile app deep link OAuth flow.
 
 ---
 
@@ -195,40 +200,57 @@ If QR scanning doesn't work:
    curl https://alfred-production-d2c9.up.railway.app/health
    ```
 
-3. **Connect WhatsApp** - Scan QR on production dashboard
-
-4. **Connect Google Calendar** - Complete OAuth on settings page
-
-5. **Configure mobile app for production**
+3. **Configure mobile app for production**
    ```bash
    # mobile/.env.local
    EXPO_PUBLIC_API_BASE_URL=https://alfred-production-d2c9.up.railway.app
    ```
 
-6. **Start mobile app**
+4. **Start mobile app**
    ```bash
    cd mobile && npm start
    ```
 
-7. **Open on iPhone** - Scan QR with Camera
+5. **Open on iPhone** - Scan QR with Camera
 
-8. **Test channel tracking**
+6. **Complete onboarding in mobile app**:
+
+   a. **WhatsApp Setup**
+      - Enter your phone number
+      - Tap "Generate Pairing Code"
+      - Open WhatsApp > Settings > Linked Devices
+      - Tap "Link a Device"
+      - Select "Link with phone number instead"
+      - Enter the 8-digit code
+      - Wait for "Connected" status in app
+
+   b. **Google Calendar Setup**
+      - Tap "Connect Google Calendar"
+      - Complete OAuth in browser
+      - App receives callback via deep link
+      - Verify "Connected" status
+
+   c. **Notifications** (optional)
+      - Configure email notifications
+      - Tap "Complete Setup"
+
+7. **Test channel tracking**
    - Open Channels tab
    - Find a WhatsApp contact/group
    - Enable tracking, select calendar
 
-9. **Test event detection**
+8. **Test event detection**
    - Send a message with event details to tracked contact/group
    - Example: "Let's meet tomorrow at 3pm at the coffee shop"
    - Wait for Claude to detect the event
 
-10. **Review event in mobile app**
-    - Open Events tab
-    - Find the pending event
-    - Review details, edit if needed
-    - Confirm the event
+9. **Review event in mobile app**
+   - Open Events tab
+   - Find the pending event
+   - Review details, edit if needed
+   - Confirm the event
 
-11. **Verify Google Calendar**
+10. **Verify Google Calendar**
     - Open Google Calendar
     - Confirm event appears on selected calendar
 
@@ -237,17 +259,26 @@ If QR scanning doesn't work:
 #### Backend
 - [ ] Railway deployment successful
 - [ ] Health endpoint returns healthy
-- [ ] WhatsApp connected (QR scanned)
-- [ ] Google Calendar connected (OAuth complete)
 - [ ] Logs show no errors
 
-#### Mobile App
+#### Mobile App - Onboarding
 - [ ] Connects to production backend
+- [ ] WhatsApp pairing code generates
+- [ ] WhatsApp connects after entering code
+- [ ] Google Calendar OAuth completes
+- [ ] Deep link callback works
+
+#### Mobile App - Main Features
 - [ ] Channel list loads
 - [ ] Can track/untrack channels
 - [ ] Events list loads
 - [ ] Can confirm/reject events
 - [ ] Events sync to Google Calendar
+
+#### Settings
+- [ ] WhatsApp shows "Connected"
+- [ ] Google Calendar shows "Connected"
+- [ ] Can reconnect if needed
 
 ---
 
@@ -282,3 +313,19 @@ ipconfig getifaddr en0
 |-------------|----------------|
 | Web Preview | http://localhost:8081 |
 | Expo Go | exp://YOUR_IP:8081 |
+
+---
+
+## Deep Link Configuration
+
+The mobile app uses the `alfred://` URL scheme for OAuth callbacks.
+
+| Platform | Configuration |
+|----------|---------------|
+| iOS | `CFBundleURLSchemes` in `app.config.ts` |
+| Android | `intentFilters` in `app.config.ts` |
+
+Required Google Cloud Console redirect URI:
+```
+alfred://oauth/callback
+```

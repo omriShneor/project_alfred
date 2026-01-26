@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -14,28 +13,6 @@ import (
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
-
-// serveStaticFile serves a static file from filesystem (dev mode) or embedded (production)
-func (s *Server) serveStaticFile(w http.ResponseWriter, filename string) {
-	var html []byte
-	var err error
-
-	if s.devMode {
-		// In dev mode, read from filesystem for hot reloading
-		path := filepath.Join("internal", "server", "static", filename)
-		html, err = os.ReadFile(path)
-	} else {
-		// In production, use embedded files
-		html, err = staticFiles.ReadFile("static/" + filename)
-	}
-
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to load %s", filename))
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(html)
-}
 
 // Health Check
 
@@ -62,36 +39,6 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, status)
-}
-
-// Dashboard
-
-func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
-	channels, _ := s.db.ListChannels()
-
-	senderCount := 0
-	groupCount := 0
-	for _, ch := range channels {
-		if ch.Type == "sender" {
-			senderCount++
-		} else if ch.Type == "group" {
-			groupCount++
-		}
-	}
-
-	data := map[string]interface{}{
-		"tracked_channels": len(channels),
-		"tracked_senders":  senderCount,
-		"tracked_groups":   groupCount,
-	}
-
-	respondJSON(w, http.StatusOK, data)
-}
-
-// Main Page (Channels + Events)
-
-func (s *Server) handleMainPage(w http.ResponseWriter, r *http.Request) {
-	s.serveStaticFile(w, "index.html")
 }
 
 // WhatsApp Discovery API
@@ -287,6 +234,25 @@ func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if a custom redirect URI is provided (for mobile deep links)
+	var req struct {
+		RedirectURI string `json:"redirect_uri"` // e.g., "alfred://oauth/callback"
+	}
+	// Try to decode, but don't fail if no body (for backward compatibility)
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	// If a custom redirect URI is provided, use it and return the auth URL
+	// The mobile app will handle the callback via deep link
+	if req.RedirectURI != "" {
+		authURL := s.gcalClient.GetAuthURLWithRedirect(req.RedirectURI)
+		respondJSON(w, http.StatusOK, map[string]string{
+			"auth_url":     authURL,
+			"redirect_uri": req.RedirectURI,
+			"message":      "Open this URL to authorize Google Calendar access. After authorization, the app will handle the callback.",
+		})
+		return
+	}
+
 	// Check if we're using main server callback (production) or separate server (local)
 	baseURL := os.Getenv("ALFRED_BASE_URL")
 	if baseURL != "" {
@@ -388,13 +354,74 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Redirect to settings page
-	baseURL := os.Getenv("ALFRED_BASE_URL")
-	if baseURL != "" {
-		http.Redirect(w, r, baseURL+"/settings", http.StatusFound)
-	} else {
-		http.Redirect(w, r, fmt.Sprintf("http://localhost:%d/settings", s.port), http.StatusFound)
+	// Return success page - user should return to the mobile app
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(`<!DOCTYPE html>
+<html>
+<head>
+    <title>Connected!</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+        .container { text-align: center; padding: 40px; background: white; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #27ae60; margin-bottom: 16px; }
+        p { color: #666; margin-bottom: 24px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Google Calendar Connected!</h1>
+        <p>You can now close this window and return to the Alfred app.</p>
+    </div>
+</body>
+</html>`))
+}
+
+// handleGCalExchangeCode handles OAuth code exchange from mobile apps
+// Mobile apps receive the code via deep link and send it to this endpoint
+func (s *Server) handleGCalExchangeCode(w http.ResponseWriter, r *http.Request) {
+	if s.gcalClient == nil {
+		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured")
+		return
 	}
+
+	var req struct {
+		Code        string `json:"code"`
+		RedirectURI string `json:"redirect_uri"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.Code == "" {
+		respondError(w, http.StatusBadRequest, "code is required")
+		return
+	}
+
+	if req.RedirectURI == "" {
+		respondError(w, http.StatusBadRequest, "redirect_uri is required")
+		return
+	}
+
+	// Exchange the code with the custom redirect URI
+	if err := s.gcalClient.ExchangeCodeWithRedirect(context.Background(), req.Code, req.RedirectURI); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to exchange code: %v", err))
+		return
+	}
+
+	// Update onboarding state
+	if s.onboardingState != nil {
+		s.onboardingState.SetGCalStatus("connected")
+	}
+
+	fmt.Println("Google Calendar connected successfully via mobile!")
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"connected": true,
+		"message":   "Google Calendar connected successfully",
+	})
 }
 
 // Events API
@@ -747,6 +774,98 @@ func (s *Server) handleWhatsAppReconnect(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// handleWhatsAppStatus returns the WhatsApp connection status
+func (s *Server) handleWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
+	status := map[string]interface{}{
+		"connected": false,
+		"message":   "Not connected",
+	}
+
+	if s.waClient != nil && s.waClient.IsLoggedIn() {
+		status["connected"] = true
+		status["message"] = "Connected"
+	} else if s.waClient != nil {
+		status["message"] = "Not authenticated"
+	} else {
+		status["message"] = "WhatsApp client not initialized"
+	}
+
+	respondJSON(w, http.StatusOK, status)
+}
+
+// handleWhatsAppPair generates a pairing code for phone-number-based WhatsApp linking
+func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
+	if s.waClient == nil {
+		respondError(w, http.StatusServiceUnavailable, "WhatsApp client not initialized")
+		return
+	}
+
+	var req struct {
+		PhoneNumber string `json:"phone_number"` // e.g., "+1234567890" or "1234567890"
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.PhoneNumber == "" {
+		respondError(w, http.StatusBadRequest, "phone_number is required")
+		return
+	}
+
+	// Remove leading '+' if present
+	phone := req.PhoneNumber
+	if len(phone) > 0 && phone[0] == '+' {
+		phone = phone[1:]
+	}
+
+	// Update onboarding state
+	if s.onboardingState != nil {
+		s.onboardingState.SetWhatsAppStatus("pairing")
+	}
+
+	// Generate pairing code
+	code, err := s.waClient.PairWithPhone(r.Context(), phone)
+	if err != nil {
+		if s.onboardingState != nil {
+			s.onboardingState.SetWhatsAppError(fmt.Sprintf("Failed to generate pairing code: %v", err))
+		}
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to generate pairing code: %v", err))
+		return
+	}
+
+	// Format code as XXXX-XXXX for display
+	formattedCode := code
+	if len(code) == 8 {
+		formattedCode = code[:4] + "-" + code[4:]
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"code":    formattedCode,
+		"message": "Enter this code in WhatsApp > Linked Devices > Link with phone number",
+	})
+}
+
+// handleWhatsAppDisconnect disconnects WhatsApp and clears session
+func (s *Server) handleWhatsAppDisconnect(w http.ResponseWriter, r *http.Request) {
+	if s.waClient == nil {
+		respondError(w, http.StatusServiceUnavailable, "WhatsApp client not initialized")
+		return
+	}
+
+	s.waClient.Disconnect()
+
+	if s.onboardingState != nil {
+		s.onboardingState.SetWhatsAppStatus("disconnected")
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"status":  "disconnected",
+		"message": "WhatsApp disconnected",
+	})
+}
+
 // Onboarding API Handlers
 
 func (s *Server) handleOnboardingStatus(w http.ResponseWriter, r *http.Request) {
@@ -804,12 +923,6 @@ func (s *Server) handleOnboardingSSE(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Settings Page
-
-func (s *Server) handleSettingsPage(w http.ResponseWriter, r *http.Request) {
-	s.serveStaticFile(w, "settings.html")
-}
-
 // Notification Preferences API
 
 func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Request) {
@@ -819,12 +932,18 @@ func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Determine push availability
+	pushAvailable := false
+	if s.notifyService != nil {
+		pushAvailable = s.notifyService.IsPushAvailable()
+	}
+
 	// Include server-side availability info
 	response := map[string]interface{}{
 		"preferences": prefs,
 		"available": map[string]bool{
 			"email":   s.resendAPIKey != "",
-			"push":    false,
+			"push":    pushAvailable,
 			"sms":     false,
 			"webhook": false,
 		},
@@ -849,6 +968,51 @@ func (s *Server) handleUpdateEmailPrefs(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := s.db.UpdateEmailPrefs(req.Enabled, req.Address); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	prefs, _ := s.db.GetUserNotificationPrefs()
+	respondJSON(w, http.StatusOK, prefs)
+}
+
+// handleRegisterPushToken stores the Expo push token from mobile app
+func (s *Server) handleRegisterPushToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.Token == "" {
+		respondError(w, http.StatusBadRequest, "token is required")
+		return
+	}
+
+	if err := s.db.UpdatePushToken(req.Token); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	fmt.Printf("Push token registered: %s...\n", req.Token[:min(20, len(req.Token))])
+	respondJSON(w, http.StatusOK, map[string]string{"status": "registered"})
+}
+
+// handleUpdatePushPrefs enables/disables push notifications
+func (s *Server) handleUpdatePushPrefs(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if err := s.db.UpdatePushPrefs(req.Enabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

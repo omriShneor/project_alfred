@@ -63,3 +63,29 @@ func (d *DB) UpdateEmailPrefs(enabled bool, address string) error {
 	}
 	return nil
 }
+
+// UpdatePushPrefs enables/disables push notifications
+func (d *DB) UpdatePushPrefs(enabled bool) error {
+	_, err := d.Exec(`
+		UPDATE user_notification_preferences
+		SET push_enabled = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`, enabled)
+	if err != nil {
+		return fmt.Errorf("failed to update push prefs: %w", err)
+	}
+	return nil
+}
+
+// UpdatePushToken stores the Expo push token
+func (d *DB) UpdatePushToken(token string) error {
+	_, err := d.Exec(`
+		UPDATE user_notification_preferences
+		SET push_token = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = 1
+	`, token)
+	if err != nil {
+		return fmt.Errorf("failed to update push token: %w", err)
+	}
+	return nil
+}

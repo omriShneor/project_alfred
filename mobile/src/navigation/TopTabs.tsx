@@ -2,6 +2,7 @@ import React from 'react';
 import { createMaterialTopTabNavigator } from '@react-navigation/material-top-tabs';
 import { ChannelsScreen } from '../screens/ChannelsScreen';
 import { EventsScreen } from '../screens/EventsScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 import { colors } from '../theme/colors';
 
 const Tab = createMaterialTopTabNavigator();
@@ -40,6 +41,11 @@ export function TopTabs() {
         name="Events"
         component={EventsScreen}
         options={{ tabBarLabel: 'Events' }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ tabBarLabel: 'Settings' }}
       />
     </Tab.Navigator>
   );

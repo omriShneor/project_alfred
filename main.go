@@ -36,7 +36,7 @@ func main() {
 	// Create SSE state for onboarding
 	state := sse.NewState()
 
-	srv := server.New(db, nil, nil, cfg.HTTPPort, state, cfg.DevMode, cfg.ResendAPIKey)
+	srv := server.New(db, nil, nil, cfg.HTTPPort, state, cfg.ResendAPIKey, nil)
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
@@ -73,8 +73,15 @@ func main() {
 		}
 	}
 
+	// Initialize push notifier (always available - Expo doesn't require server credentials)
+	pushNotifier := notify.NewExpoPushNotifier()
+	fmt.Println("Push notification service configured (Expo)")
+
 	// Create notification service
-	notifyService := notify.NewService(db, emailNotifier)
+	notifyService := notify.NewService(db, emailNotifier, pushNotifier)
+
+	// Set notify service on server for API handlers
+	srv.SetNotifyService(notifyService)
 
 	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)
 	if err := proc.Start(); err != nil {

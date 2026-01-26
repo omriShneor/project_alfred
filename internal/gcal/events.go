@@ -114,3 +114,70 @@ func (c *Client) DeleteEvent(calendarID, eventID string) error {
 
 	return nil
 }
+
+// TodayEvent represents a calendar event for today's schedule display
+type TodayEvent struct {
+	ID          string     `json:"id"`
+	Summary     string     `json:"summary"`
+	Description string     `json:"description,omitempty"`
+	Location    string     `json:"location,omitempty"`
+	StartTime   time.Time  `json:"start_time"`
+	EndTime     time.Time  `json:"end_time"`
+	AllDay      bool       `json:"all_day"`
+	CalendarID  string     `json:"calendar_id"`
+}
+
+// ListTodayEvents returns events from now until end of day for the specified calendar
+func (c *Client) ListTodayEvents(calendarID string) ([]TodayEvent, error) {
+	if c.service == nil {
+		return nil, fmt.Errorf("calendar service not initialized")
+	}
+
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+
+	// Get current time and end of day
+	now := time.Now()
+	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+
+	events, err := c.service.Events.List(calendarID).
+		TimeMin(now.Format(time.RFC3339)).
+		TimeMax(endOfDay.Format(time.RFC3339)).
+		SingleEvents(true).
+		OrderBy("startTime").
+		Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list today's events: %w", err)
+	}
+
+	result := make([]TodayEvent, 0, len(events.Items))
+	for _, item := range events.Items {
+		event := TodayEvent{
+			ID:          item.Id,
+			Summary:     item.Summary,
+			Description: item.Description,
+			Location:    item.Location,
+			CalendarID:  calendarID,
+		}
+
+		// Handle all-day events (date only, no time)
+		if item.Start.Date != "" {
+			event.AllDay = true
+			startDate, _ := time.Parse("2006-01-02", item.Start.Date)
+			endDate, _ := time.Parse("2006-01-02", item.End.Date)
+			event.StartTime = startDate
+			event.EndTime = endDate
+		} else {
+			// Regular timed event
+			startTime, _ := time.Parse(time.RFC3339, item.Start.DateTime)
+			endTime, _ := time.Parse(time.RFC3339, item.End.DateTime)
+			event.StartTime = startTime
+			event.EndTime = endTime
+		}
+
+		result = append(result, event)
+	}
+
+	return result, nil
+}

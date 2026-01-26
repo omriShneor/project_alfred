@@ -228,6 +228,27 @@ func (s *Server) handleGCalListCalendars(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, calendars)
 }
 
+func (s *Server) handleListTodayEvents(w http.ResponseWriter, r *http.Request) {
+	if s.gcalClient == nil || !s.gcalClient.IsAuthenticated() {
+		respondError(w, http.StatusServiceUnavailable, "Google Calendar not connected")
+		return
+	}
+
+	// Use primary calendar by default, or allow override via query param
+	calendarID := r.URL.Query().Get("calendar_id")
+	if calendarID == "" {
+		calendarID = "primary"
+	}
+
+	events, err := s.gcalClient.ListTodayEvents(calendarID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, events)
+}
+
 func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 	if s.gcalClient == nil {
 		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured. Check credentials.json.")

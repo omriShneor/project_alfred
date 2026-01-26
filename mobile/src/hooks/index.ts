@@ -12,3 +12,4 @@ export {
   useExchangeOAuthCode,
 } from './useOnboardingStatus';
 export { usePushNotifications } from './usePushNotifications';
+export { useTodayEvents } from './useTodayEvents';

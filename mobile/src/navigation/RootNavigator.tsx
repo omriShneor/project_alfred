@@ -9,7 +9,8 @@ import {
   GoogleCalendarSetupScreen,
   NotificationSetupScreen,
 } from '../screens/onboarding';
-import { TopTabs } from './TopTabs';
+import { DrawerNavigator } from './DrawerNavigator';
+import { useAppState } from '../context/AppStateContext';
 import { colors } from '../theme/colors';
 import { LoadingSpinner } from '../components/common';
 
@@ -60,6 +61,7 @@ export function RootNavigator() {
   const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
   const { data: status, isLoading, isError } = useOnboardingStatus();
   const exchangeCode = useExchangeOAuthCode();
+  const { setShowDrawerToggle } = useAppState();
 
   // Check if onboarding should be shown
   useEffect(() => {
@@ -72,8 +74,9 @@ export function RootNavigator() {
       // Or if user has completed onboarding before (stored locally)
       // For now, just check connection status
       setOnboardingComplete(hasAnyConnection);
+      setShowDrawerToggle(hasAnyConnection);
     }
-  }, [status]);
+  }, [status, setShowDrawerToggle]);
 
   // Handle OAuth callback deep link globally
   const handleOAuthCallback = useCallback(
@@ -109,6 +112,7 @@ export function RootNavigator() {
 
   const handleOnboardingComplete = () => {
     setOnboardingComplete(true);
+    setShowDrawerToggle(true);
   };
 
   // Show loading state while checking status
@@ -139,7 +143,7 @@ export function RootNavigator() {
     return <OnboardingNavigator onComplete={handleOnboardingComplete} />;
   }
 
-  return <TopTabs />;
+  return <DrawerNavigator />;
 }
 
 const styles = StyleSheet.create({

@@ -81,7 +81,7 @@ export function EditEventModal({ visible, onClose, event }: EditEventModalProps)
           location: location || undefined,
           description: description || undefined,
           start_time: parsedStart,
-          end_time: parsedEnd,
+          end_time: parsedEnd ?? undefined,
         },
       },
       {

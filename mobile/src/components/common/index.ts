@@ -6,3 +6,4 @@ export { FilterChips } from './FilterChips';
 export { Select } from './Select';
 export { Modal } from './Modal';
 export { LoadingSpinner } from './LoadingSpinner';
+export { IconButton } from './IconButton';

@@ -76,6 +76,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Google Calendar API
 	mux.HandleFunc("GET /api/gcal/status", s.handleGCalStatus)
 	mux.HandleFunc("GET /api/gcal/calendars", s.handleGCalListCalendars)
+	mux.HandleFunc("GET /api/gcal/events/today", s.handleListTodayEvents)
 	mux.HandleFunc("POST /api/gcal/connect", s.handleGCalConnect)
 	mux.HandleFunc("POST /api/gcal/callback", s.handleGCalExchangeCode)
 	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)

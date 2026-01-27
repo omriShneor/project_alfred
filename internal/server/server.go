@@ -27,22 +27,35 @@ type Server struct {
 	oauthCodeChan   chan string // Channel to receive OAuth code from callback
 }
 
-func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, port int, onboardingState *sse.State, resendAPIKey string, notifyService *notify.Service) *Server {
+// ServerConfig holds configuration for initial server creation (onboarding-capable)
+type ServerConfig struct {
+	DB              *database.DB
+	OnboardingState *sse.State
+	Port            int
+	ResendAPIKey    string
+}
+
+// ClientsConfig holds configuration for completing initialization after onboarding
+type ClientsConfig struct {
+	WAClient      *whatsapp.Client
+	GCalClient    *gcal.Client
+	GmailClient   *gmail.Client
+	NotifyService *notify.Service
+}
+
+func New(cfg ServerConfig) *Server {
 	s := &Server{
-		db:              db,
-		waClient:        waClient,
-		gcalClient:      gcalClient,
-		onboardingState: onboardingState,
-		notifyService:   notifyService,
-		port:            port,
-		resendAPIKey:    resendAPIKey,
+		db:              cfg.DB,
+		onboardingState: cfg.OnboardingState,
+		port:            cfg.Port,
+		resendAPIKey:    cfg.ResendAPIKey,
 	}
 
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
 	s.httpSrv = &http.Server{
-		Addr:         fmt.Sprintf(":%d", port),
+		Addr:         fmt.Sprintf(":%d", cfg.Port),
 		Handler:      s.corsMiddleware(mux),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 15 * time.Second,
@@ -50,6 +63,14 @@ func New(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client, po
 	}
 
 	return s
+}
+
+// InitializeClients completes server initialization after onboarding
+func (s *Server) InitializeClients(cfg ClientsConfig) {
+	s.waClient = cfg.WAClient
+	s.gcalClient = cfg.GCalClient
+	s.gmailClient = cfg.GmailClient
+	s.notifyService = cfg.NotifyService
 }
 
 func (s *Server) registerRoutes(mux *http.ServeMux) {
@@ -124,16 +145,6 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	return s.httpSrv.Shutdown(ctx)
 }
 
-// SetClients updates the WhatsApp and GCal clients after onboarding completes
-func (s *Server) SetClients(waClient *whatsapp.Client, gcalClient *gcal.Client) {
-	s.waClient = waClient
-	s.gcalClient = gcalClient
-}
-
-// SetNotifyService sets the notification service
-func (s *Server) SetNotifyService(notifyService *notify.Service) {
-	s.notifyService = notifyService
-}
 
 // corsMiddleware adds CORS headers to allow mobile app requests
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {

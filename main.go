@@ -25,43 +25,76 @@ import (
 func main() {
 	cfg := config.LoadFromEnv()
 
-	db, err := database.New(cfg.DBPath)
+	// Phase 1: Core infrastructure
+	db, err := initDatabase(cfg)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating database: %v\n", err)
-		os.Exit(1)
+		fatal("creating database", err)
 	}
 	defer db.Close()
 
-	ctx := context.Background()
-
-	// Create SSE state for onboarding
 	state := sse.NewState()
 
-	srv := server.New(db, nil, nil, cfg.HTTPPort, state, cfg.ResendAPIKey, nil)
+	// Phase 2: Start server (handles onboarding endpoints)
+	srv := server.New(server.ServerConfig{
+		DB:              db,
+		OnboardingState: state,
+		Port:            cfg.HTTPPort,
+		ResendAPIKey:    cfg.ResendAPIKey,
+	})
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
 			fmt.Fprintf(os.Stderr, "HTTP server error: %v\n", err)
 		}
 	}()
 
-	clients, err := onboarding.Initialize(ctx, db, cfg, state, func(waClient *whatsapp.Client, gcalClient *gcal.Client) {
-		// Set clients on server immediately so they're available during onboarding
-		srv.SetClients(waClient, gcalClient)
-	})
+	// Phase 3: Initialize clients (may block for onboarding)
+	ctx := context.Background()
+	clients, err := onboarding.Initialize(ctx, db, cfg, state)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Initialization failed: %v\n", err)
-		os.Exit(1)
+		fatal("initialization", err)
 	}
 
-	var claudeClient *claude.Client
-	if cfg.AnthropicAPIKey != "" {
-		claudeClient = claude.NewClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, cfg.ClaudeTemperature)
-		fmt.Println("Claude API configured for event detection")
-	} else {
+	// Phase 4: Create dependent services
+	claudeClient := initClaudeClient(cfg)
+	notifyService := initNotifyService(db, cfg)
+	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, claudeClient, notifyService, cfg)
+
+	// Phase 5: Complete server initialization
+	srv.InitializeClients(server.ClientsConfig{
+		WAClient:      clients.WAClient,
+		GCalClient:    clients.GCalClient,
+		GmailClient:   gmailClient,
+		NotifyService: notifyService,
+	})
+
+	// Phase 6: Start background processors
+	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)
+	if err := proc.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
+	}
+
+	// Phase 7: Wait for shutdown
+	waitForShutdown(proc, srv, clients.WAClient, gmailWorker)
+}
+
+// initDatabase creates and initializes the SQLite database
+func initDatabase(cfg *config.Config) (*database.DB, error) {
+	return database.New(cfg.DBPath)
+}
+
+// initClaudeClient creates the Claude API client for event detection
+func initClaudeClient(cfg *config.Config) *claude.Client {
+	if cfg.AnthropicAPIKey == "" {
 		fmt.Println("Warning: ANTHROPIC_API_KEY not set, event detection disabled")
+		return nil
 	}
+	client := claude.NewClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, cfg.ClaudeTemperature)
+	fmt.Println("Claude API configured for event detection")
+	return client
+}
 
-	// Initialize email notifier (server-side config only)
+// initNotifyService creates the notification service with email and push notifiers
+func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	var emailNotifier notify.Notifier
 	if cfg.ResendAPIKey != "" {
 		emailNotifier = notify.NewResendNotifier(
@@ -74,52 +107,55 @@ func main() {
 		}
 	}
 
-	// Initialize push notifier (always available - Expo doesn't require server credentials)
 	pushNotifier := notify.NewExpoPushNotifier()
 	fmt.Println("Push notification service configured (Expo)")
 
-	// Create notification service
-	notifyService := notify.NewService(db, emailNotifier, pushNotifier)
+	return notify.NewService(db, emailNotifier, pushNotifier)
+}
 
-	// Set notify service on server for API handlers
-	srv.SetNotifyService(notifyService)
-
-	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)
-	if err := proc.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
+// initGmail creates the Gmail client and worker if GCal is authenticated
+func initGmail(gcalClient *gcal.Client, db *database.DB, claudeClient *claude.Client, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
+	if gcalClient == nil || !gcalClient.IsAuthenticated() {
+		return nil, nil
 	}
 
-	// Initialize Gmail client and worker
-	var gmailWorker *gmail.Worker
-	if clients.GCalClient != nil && clients.GCalClient.IsAuthenticated() {
-		oauthConfig := clients.GCalClient.GetOAuthConfig()
-		oauthToken := clients.GCalClient.GetToken()
-		if oauthConfig != nil && oauthToken != nil {
-			gmailClient, err := gmail.NewClient(oauthConfig, oauthToken)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create Gmail client: %v\n", err)
-			} else if gmailClient.IsAuthenticated() {
-				fmt.Println("Gmail client initialized")
-				srv.SetGmailClient(gmailClient)
-
-				// Create email processor for Gmail worker
-				emailProc := processor.NewEmailProcessor(db, claudeClient, notifyService)
-
-				// Create and start Gmail worker
-				gmailWorker = gmail.NewWorker(gmailClient, db, emailProc, gmail.WorkerConfig{
-					PollIntervalMinutes: cfg.GmailPollInterval,
-					MaxEmailsPerPoll:    cfg.GmailMaxEmails,
-				})
-				if err := gmailWorker.Start(); err != nil {
-					fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
-				}
-			} else {
-				fmt.Println("Gmail client created but not authenticated (may need re-authorization for Gmail scope)")
-			}
-		}
+	oauthConfig := gcalClient.GetOAuthConfig()
+	oauthToken := gcalClient.GetToken()
+	if oauthConfig == nil || oauthToken == nil {
+		return nil, nil
 	}
 
-	waitForShutdown(proc, srv, clients.WAClient, gmailWorker)
+	gmailClient, err := gmail.NewClient(oauthConfig, oauthToken)
+	if err != nil {
+		fmt.Printf("Warning: Failed to create Gmail client: %v\n", err)
+		return nil, nil
+	}
+
+	if !gmailClient.IsAuthenticated() {
+		fmt.Println("Gmail client created but not authenticated (may need re-authorization for Gmail scope)")
+		return nil, nil
+	}
+
+	fmt.Println("Gmail client initialized")
+
+	emailProc := processor.NewEmailProcessor(db, claudeClient, notifyService)
+	gmailWorker := gmail.NewWorker(gmailClient, db, emailProc, gmail.WorkerConfig{
+		PollIntervalMinutes: cfg.GmailPollInterval,
+		MaxEmailsPerPoll:    cfg.GmailMaxEmails,
+	})
+
+	if err := gmailWorker.Start(); err != nil {
+		fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
+		return gmailClient, nil
+	}
+
+	return gmailClient, gmailWorker
+}
+
+// fatal prints an error message and exits
+func fatal(context string, err error) {
+	fmt.Fprintf(os.Stderr, "Error %s: %v\n", context, err)
+	os.Exit(1)
 }
 
 func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *whatsapp.Client, gmailWorker *gmail.Worker) {

@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"github.com/omriShneor/project_alfred/internal/database"
-	"github.com/omriShneor/project_alfred/internal/gmail"
 )
 
 // Gmail Status API
@@ -299,7 +298,3 @@ func (s *Server) handleDeleteEmailSource(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
-// SetGmailClient sets the Gmail client after OAuth authentication
-func (s *Server) SetGmailClient(client *gmail.Client) {
-	s.gmailClient = client
-}

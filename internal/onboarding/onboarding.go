@@ -11,11 +11,8 @@ import (
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
-// ClientsReadyCallback is called when clients are created but before onboarding completes
-type ClientsReadyCallback func(waClient *whatsapp.Client, gcalClient *gcal.Client)
-
 // Initialize creates WhatsApp and GCal clients, runs onboarding if needed, returns Clients
-func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State, onClientsReady ClientsReadyCallback) (*Clients, error) {
+func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State) (*Clients, error) {
 	// 1. Create WhatsApp handler and client
 	handler := whatsapp.NewHandler(db, cfg.DebugAllMessages)
 	waClient, err := whatsapp.NewClient(handler, cfg.WhatsAppDBPath)
@@ -29,12 +26,7 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 		return nil, fmt.Errorf("failed to create Google Calendar client: %w", err)
 	}
 
-	// 3. Notify that clients are ready (so server can use them during onboarding)
-	if onClientsReady != nil {
-		onClientsReady(waClient, gcalClient)
-	}
-
-	// 4. Run onboarding if needed
+	// 3. Run onboarding if needed
 	if NeedsSetup(waClient, gcalClient) {
 		fmt.Printf("\n=== Setup Required ===\n")
 		fmt.Printf("Visit http://localhost:%d/onboarding to complete setup\n\n", cfg.HTTPPort)

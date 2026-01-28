@@ -12,8 +12,9 @@ import (
 )
 
 type Client struct {
-	WAClient *whatsmeow.Client
-	handler  *Handler
+	WAClient  *whatsmeow.Client
+	handler   *Handler
+	container *sqlstore.Container
 }
 
 func NewClient(handler *Handler, dbPath string) (*Client, error) {
@@ -33,8 +34,9 @@ func NewClient(handler *Handler, dbPath string) (*Client, error) {
 	waClient := whatsmeow.NewClient(deviceStore, clientLog)
 
 	c := &Client{
-		WAClient: waClient,
-		handler:  handler,
+		WAClient:  waClient,
+		handler:   handler,
+		container: container,
 	}
 
 	if handler != nil {
@@ -45,7 +47,7 @@ func NewClient(handler *Handler, dbPath string) (*Client, error) {
 }
 
 func (c *Client) Disconnect() {
-	// Logout clears the session so it won't auto-reconnect
+	// Logout clears the session and deletes device store
 	if c.WAClient.Store.ID != nil {
 		// Ensure we're connected before trying to logout (required to notify WhatsApp servers)
 		if !c.WAClient.IsConnected() {
@@ -53,19 +55,62 @@ func (c *Client) Disconnect() {
 				fmt.Printf("Warning: could not connect for logout: %v\n", err)
 			}
 		}
+		// Logout() internally: 1) notifies WhatsApp servers, 2) deletes device store, 3) sets Store.ID = nil
+		// Don't call Delete() manually - Logout() handles it and needs device data to notify servers
 		if err := c.WAClient.Logout(context.Background()); err != nil {
 			fmt.Printf("Warning: logout failed: %v\n", err)
 		} else {
 			fmt.Println("WhatsApp logged out successfully")
 		}
 	}
+
 	c.WAClient.Disconnect()
+}
+
+// ReinitializeDevice creates a fresh device store for new pairing.
+// This deletes any existing stale devices first to ensure a clean state.
+func (c *Client) ReinitializeDevice() error {
+	ctx := context.Background()
+
+	// Delete all existing devices to clear any stale data
+	devices, err := c.container.GetAllDevices(ctx)
+	if err != nil {
+		fmt.Printf("Warning: could not get existing devices: %v\n", err)
+	} else {
+		for _, dev := range devices {
+			if err := c.container.DeleteDevice(ctx, dev); err != nil {
+				fmt.Printf("Warning: failed to delete device %v: %v\n", dev.ID, err)
+			}
+		}
+	}
+
+	// Now GetFirstDevice will create a fresh device since we deleted all existing ones
+	deviceStore, err := c.container.GetFirstDevice(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get new device store: %w", err)
+	}
+
+	clientLog := waLog.Stdout("Client", "ERROR", true)
+	c.WAClient = whatsmeow.NewClient(deviceStore, clientLog)
+
+	if c.handler != nil {
+		c.WAClient.AddEventHandler(c.handler.HandleEvent)
+	}
+
+	return nil
 }
 
 // PairWithPhone generates a pairing code for phone-number-based linking.
 // This allows mobile apps to link without QR code scanning.
 // phone should be in international format without '+' (e.g., "1234567890" for +1234567890)
 func (c *Client) PairWithPhone(ctx context.Context, phone string) (string, error) {
+	// If device was deleted (after disconnect), reinitialize
+	if c.WAClient.Store == nil || c.WAClient.Store.ID == nil {
+		if err := c.ReinitializeDevice(); err != nil {
+			return "", fmt.Errorf("failed to reinitialize device: %w", err)
+		}
+	}
+
 	// Connect first if not connected
 	if !c.WAClient.IsConnected() {
 		if err := c.WAClient.Connect(); err != nil {

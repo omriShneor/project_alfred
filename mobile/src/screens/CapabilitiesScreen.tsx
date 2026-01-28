@@ -16,6 +16,8 @@ import {
   useFeatures,
   useUpdateSmartCalendar,
   usePushNotifications,
+  useWhatsAppStatus,
+  useGCalStatus,
 } from '../hooks';
 import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs } from '../api';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
@@ -39,6 +41,8 @@ export function CapabilitiesScreen() {
 
   const { data: features, isLoading: featuresLoading } = useFeatures();
   const updateSmartCalendar = useUpdateSmartCalendar();
+  const { data: waStatus } = useWhatsAppStatus();
+  const { data: gcalStatus } = useGCalStatus();
 
   const {
     expoPushToken,
@@ -76,12 +80,41 @@ export function CapabilitiesScreen() {
 
   const handleToggleSmartCalendar = async (enabled: boolean) => {
     if (enabled) {
-      // Navigate to setup flow when enabling
-      navigation.navigate('SmartCalendarStack' as any, { screen: 'Setup' });
+      // Check if all required integrations are already connected
+      const inputs = features?.smart_calendar?.inputs;
+      const calendars = features?.smart_calendar?.calendars;
+
+      const needsWhatsApp = inputs?.whatsapp?.enabled ?? false;
+      const needsGmail = inputs?.email?.enabled ?? false;
+      const needsGoogleCalendar = calendars?.google_calendar?.enabled ?? false;
+
+      // Google account is needed for either Gmail or Google Calendar
+      const needsGoogle = needsGmail || needsGoogleCalendar;
+
+      const whatsAppConnected = waStatus?.connected ?? false;
+      const googleConnected = gcalStatus?.connected ?? false;
+
+      // Check if all required integrations are already connected
+      const allConnected =
+        (!needsWhatsApp || whatsAppConnected) &&
+        (!needsGoogle || googleConnected);
+
+      if (allConnected) {
+        // All integrations are already connected, enable directly and go to Home
+        try {
+          await updateSmartCalendar.mutateAsync({ enabled: true, setup_complete: true });
+          navigation.navigate('Home');
+        } catch (error: any) {
+          Alert.alert('Error', error.message || 'Failed to enable Smart Calendar');
+        }
+      } else {
+        // Some integrations need to be connected, go to setup flow
+        navigation.navigate('SmartCalendarStack' as any, { screen: 'Setup' });
+      }
     } else {
-      // Disable Smart Calendar
+      // Disable Smart Calendar - clear both enabled and setup_complete
       try {
-        await updateSmartCalendar.mutateAsync({ enabled: false });
+        await updateSmartCalendar.mutateAsync({ enabled: false, setup_complete: false });
       } catch (error: any) {
         Alert.alert('Error', error.message || 'Failed to disable Smart Calendar');
       }

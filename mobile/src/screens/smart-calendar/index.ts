@@ -1,3 +1,5 @@
 export { SmartCalendarSetupScreen } from './SetupScreen';
 export { SmartCalendarPermissionsScreen } from './PermissionsScreen';
-export { SmartCalendarScreen } from './SmartCalendarScreen';
+export { InputIntegrationsScreen } from './InputIntegrationsScreen';
+export { WhatsAppPreferencesScreen } from './WhatsAppPreferencesScreen';
+export { GmailPreferencesScreen } from './GmailPreferencesScreen';

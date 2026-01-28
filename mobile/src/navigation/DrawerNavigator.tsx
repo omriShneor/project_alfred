@@ -4,9 +4,11 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { HomeScreen } from '../screens/HomeScreen';
 import { CapabilitiesScreen } from '../screens/CapabilitiesScreen';
 import {
-  SmartCalendarScreen,
   SmartCalendarSetupScreen,
   SmartCalendarPermissionsScreen,
+  InputIntegrationsScreen,
+  WhatsAppPreferencesScreen,
+  GmailPreferencesScreen,
 } from '../screens/smart-calendar';
 import { DrawerContent } from '../components/layout/DrawerContent';
 import { colors } from '../theme/colors';
@@ -14,20 +16,26 @@ import { colors } from '../theme/colors';
 export type DrawerParamList = {
   Home: undefined;
   Capabilities: undefined;
-  SmartCalendar: undefined;
+  SmartCalendarHub: undefined;
   SmartCalendarStack: undefined;
 };
 
 export type SmartCalendarStackParamList = {
   Setup: undefined;
   Permissions: undefined;
-  SmartCalendarMain: undefined;
+};
+
+export type SmartCalendarHubStackParamList = {
+  InputIntegrations: undefined;
+  WhatsAppPreferences: undefined;
+  GmailPreferences: undefined;
 };
 
 const Drawer = createDrawerNavigator<DrawerParamList>();
 const SmartCalendarStack = createNativeStackNavigator<SmartCalendarStackParamList>();
+const SmartCalendarHubStack = createNativeStackNavigator<SmartCalendarHubStackParamList>();
 
-// Stack navigator for Smart Calendar setup flow
+// Stack navigator for Smart Calendar setup flow (onboarding)
 function SmartCalendarStackNavigator() {
   return (
     <SmartCalendarStack.Navigator
@@ -47,12 +55,36 @@ function SmartCalendarStackNavigator() {
         component={SmartCalendarPermissionsScreen}
         options={{ title: 'Connect Your Accounts' }}
       />
-      <SmartCalendarStack.Screen
-        name="SmartCalendarMain"
-        component={SmartCalendarScreen}
-        options={{ title: 'Smart Calendar', headerShown: false }}
-      />
     </SmartCalendarStack.Navigator>
+  );
+}
+
+// Stack navigator for Smart Calendar hub (input integrations)
+function SmartCalendarHubNavigator() {
+  return (
+    <SmartCalendarHubStack.Navigator
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.background },
+        headerShadowVisible: false,
+        headerTintColor: colors.text,
+      }}
+    >
+      <SmartCalendarHubStack.Screen
+        name="InputIntegrations"
+        component={InputIntegrationsScreen}
+        options={{ title: 'Smart Calendar' }}
+      />
+      <SmartCalendarHubStack.Screen
+        name="WhatsAppPreferences"
+        component={WhatsAppPreferencesScreen}
+        options={{ title: 'WhatsApp Preferences' }}
+      />
+      <SmartCalendarHubStack.Screen
+        name="GmailPreferences"
+        component={GmailPreferencesScreen}
+        options={{ title: 'Gmail Preferences' }}
+      />
+    </SmartCalendarHubStack.Navigator>
   );
 }
 
@@ -82,8 +114,8 @@ export function DrawerNavigator() {
         options={{ title: 'Assistant Capabilities' }}
       />
       <Drawer.Screen
-        name="SmartCalendar"
-        component={SmartCalendarScreen}
+        name="SmartCalendarHub"
+        component={SmartCalendarHubNavigator}
         options={{ title: 'Smart Calendar' }}
       />
       <Drawer.Screen

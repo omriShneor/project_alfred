@@ -27,7 +27,7 @@ type SmartCalendarInputs struct {
 
 // SmartCalendarCalendars represents the calendar settings for Smart Calendar
 type SmartCalendarCalendars struct {
-	Alfred         IntegrationStatus `json:"alfred"`          // Local Alfred calendar (always available)
+	Alfred         IntegrationStatus `json:"alfred"` // Local Alfred calendar (always available)
 	GoogleCalendar IntegrationStatus `json:"google_calendar"`
 	Outlook        IntegrationStatus `json:"outlook"`
 }
@@ -228,7 +228,7 @@ func (s *Server) handleGetSmartCalendarStatus(w http.ResponseWriter, r *http.Req
 		}
 		integrations = append(integrations, map[string]interface{}{
 			"type":    "input",
-			"name":    "Email (Gmail)",
+			"name":    "Gmail",
 			"status":  emailStatus,
 			"message": emailMessage,
 		})

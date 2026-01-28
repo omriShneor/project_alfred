@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/omriShneor/project_alfred/internal/sse"
@@ -104,19 +105,19 @@ func (c *Client) ReinitializeDevice() error {
 // This allows mobile apps to link without QR code scanning.
 // phone should be in international format without '+' (e.g., "1234567890" for +1234567890)
 func (c *Client) PairWithPhone(ctx context.Context, phone string) (string, error) {
-	// If device was deleted (after disconnect), reinitialize
-	if c.WAClient.Store == nil || c.WAClient.Store.ID == nil {
-		if err := c.ReinitializeDevice(); err != nil {
-			return "", fmt.Errorf("failed to reinitialize device: %w", err)
-		}
+	// Always reinitialize for fresh pairing to clear any stale state
+	if err := c.ReinitializeDevice(); err != nil {
+		return "", fmt.Errorf("failed to reinitialize device: %w", err)
 	}
 
-	// Connect first if not connected
-	if !c.WAClient.IsConnected() {
-		if err := c.WAClient.Connect(); err != nil {
-			return "", fmt.Errorf("failed to connect: %w", err)
-		}
+	// Connect to WhatsApp servers
+	if err := c.WAClient.Connect(); err != nil {
+		return "", fmt.Errorf("failed to connect: %w", err)
 	}
+
+	// CRITICAL: Wait for WebSocket connection to be ready
+	// PairPhone will fail with 400 if called too early
+	time.Sleep(2 * time.Second)
 
 	// Generate pairing code using whatsmeow's PairPhone
 	// The parameters are: context, phone number, show push notification, client type, client display name

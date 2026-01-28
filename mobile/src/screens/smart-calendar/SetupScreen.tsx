@@ -121,7 +121,7 @@ export function SmartCalendarSetupScreen() {
         />
         <View style={styles.divider} />
         <CheckboxItem
-          label="Email (Gmail)"
+          label="Gmail"
           description="Scan Gmail inbox for events"
           checked={emailEnabled}
           onToggle={() => setEmailEnabled(!emailEnabled)}

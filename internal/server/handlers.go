@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"time"
 
@@ -249,6 +250,104 @@ func (s *Server) handleListTodayEvents(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, events)
 }
 
+// TodayEventResponse represents a unified event format for Today's Schedule
+type TodayEventResponse struct {
+	ID          string  `json:"id"`
+	Summary     string  `json:"summary"`
+	Description string  `json:"description,omitempty"`
+	Location    string  `json:"location,omitempty"`
+	StartTime   string  `json:"start_time"`
+	EndTime     string  `json:"end_time"`
+	AllDay      bool    `json:"all_day"`
+	CalendarID  string  `json:"calendar_id"`
+	Source      string  `json:"source"` // "alfred", "google", "outlook"
+}
+
+// handleListMergedTodayEvents returns merged events from Alfred Calendar + external calendars
+// This is the primary endpoint for Today's Schedule
+func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Request) {
+	var events []TodayEventResponse
+
+	// Get feature settings to check which calendars are enabled
+	settings, err := s.db.GetFeatureSettings()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Track Google Event IDs to avoid duplicates
+	seenGoogleIDs := make(map[string]bool)
+
+	// 1. Always get Alfred Calendar events (local database)
+	alfredEvents, err := s.db.GetTodayEvents()
+	if err != nil {
+		// Log error but don't fail - Alfred events are best-effort
+		fmt.Printf("Warning: failed to get Alfred events: %v\n", err)
+		alfredEvents = nil
+	}
+
+	for _, e := range alfredEvents {
+		endTime := e.StartTime.Add(1 * time.Hour) // Default 1 hour duration
+		if e.EndTime != nil {
+			endTime = *e.EndTime
+		}
+
+		event := TodayEventResponse{
+			ID:          fmt.Sprintf("alfred-%d", e.ID),
+			Summary:     e.Title,
+			Description: e.Description,
+			Location:    e.Location,
+			StartTime:   e.StartTime.Format(time.RFC3339),
+			EndTime:     endTime.Format(time.RFC3339),
+			AllDay:      false,
+			CalendarID:  "alfred",
+			Source:      "alfred",
+		}
+		events = append(events, event)
+
+		// Track if this event is synced to Google
+		if e.GoogleEventID != nil {
+			seenGoogleIDs[*e.GoogleEventID] = true
+		}
+	}
+
+	// 2. Get Google Calendar events if enabled and connected
+	if settings.GoogleCalendarEnabled && s.gcalClient != nil && s.gcalClient.IsAuthenticated() {
+		gcalEvents, err := s.gcalClient.ListTodayEvents("primary")
+		if err != nil {
+			// Log error but don't fail - Google events are best-effort
+			fmt.Printf("Warning: failed to get Google Calendar events: %v\n", err)
+		} else {
+			for _, ge := range gcalEvents {
+				// Skip if already seen (synced from Alfred)
+				if seenGoogleIDs[ge.ID] {
+					continue
+				}
+
+				event := TodayEventResponse{
+					ID:          ge.ID,
+					Summary:     ge.Summary,
+					Description: ge.Description,
+					Location:    ge.Location,
+					StartTime:   ge.StartTime.Format(time.RFC3339),
+					EndTime:     ge.EndTime.Format(time.RFC3339),
+					AllDay:      ge.AllDay,
+					CalendarID:  ge.CalendarID,
+					Source:      "google",
+				}
+				events = append(events, event)
+			}
+		}
+	}
+
+	// 3. Sort events by start time using standard library
+	sort.Slice(events, func(i, j int) bool {
+		return events[i].StartTime < events[j].StartTime
+	})
+
+	respondJSON(w, http.StatusOK, events)
+}
+
 func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 	if s.gcalClient == nil {
 		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured. Check credentials.json.")
@@ -375,7 +474,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Return success page - user should return to the mobile app
+	// Redirect back to the app using deep link
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(`<!DOCTYPE html>
 <html>
@@ -388,11 +487,16 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
         h1 { color: #27ae60; margin-bottom: 16px; }
         p { color: #666; margin-bottom: 24px; }
     </style>
+    <script>
+        // Redirect to app immediately
+        window.location.href = 'alfred://oauth/success';
+    </script>
 </head>
 <body>
     <div class="container">
         <h1>Google Calendar Connected!</h1>
-        <p>You can now close this window and return to the Alfred app.</p>
+        <p>Redirecting to Alfred...</p>
+        <p><a href="alfred://oauth/success">Tap here if not redirected</a></p>
     </div>
 </body>
 </html>`))
@@ -442,6 +546,28 @@ func (s *Server) handleGCalExchangeCode(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"connected": true,
 		"message":   "Google Calendar connected successfully",
+	})
+}
+
+// handleGCalDisconnect disconnects Google Calendar and clears token
+func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
+	if s.gcalClient == nil {
+		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured")
+		return
+	}
+
+	if err := s.gcalClient.Disconnect(); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if s.onboardingState != nil {
+		s.onboardingState.SetGCalStatus("disconnected")
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{
+		"status":  "disconnected",
+		"message": "Google Calendar disconnected",
 	})
 }
 

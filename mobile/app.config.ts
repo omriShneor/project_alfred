@@ -48,7 +48,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: './assets/favicon.png',
   },
   scheme: 'alfred',
-  plugins: ['expo-web-browser'],
+  plugins: ['expo-web-browser', '@react-native-community/datetimepicker'],
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8080',
     eas: {

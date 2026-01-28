@@ -3,6 +3,7 @@ package gcal
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
@@ -137,4 +138,18 @@ func (c *Client) ExchangeCodeWithRedirect(ctx context.Context, code, redirectURI
 	}
 
 	return c.initService(ctx)
+}
+
+// Disconnect removes the stored token and clears the service
+func (c *Client) Disconnect() error {
+	// Delete token file
+	if err := os.Remove(c.tokenFile); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete token file: %w", err)
+	}
+
+	// Clear internal state
+	c.token = nil
+	c.service = nil
+
+	return nil
 }

@@ -13,3 +13,21 @@ export {
 } from './useOnboardingStatus';
 export { usePushNotifications } from './usePushNotifications';
 export { useTodayEvents } from './useTodayEvents';
+export {
+  useGmailStatus,
+  useGmailSettings,
+  useUpdateGmailSettings,
+  useDiscoverCategories,
+  useDiscoverSenders,
+  useDiscoverDomains,
+  useEmailSources,
+  useCreateEmailSource,
+  useUpdateEmailSource,
+  useDeleteEmailSource,
+} from './useGmail';
+export {
+  useFeatures,
+  useUpdateSmartCalendar,
+  useSmartCalendarStatus,
+  useSmartCalendarEnabled,
+} from './useFeatures';

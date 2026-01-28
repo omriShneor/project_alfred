@@ -1,9 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { DrawerContentScrollView } from '@react-navigation/drawer';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
+import { useSmartCalendarEnabled } from '../../hooks';
 import type { DrawerContentComponentProps } from '@react-navigation/drawer';
 
 interface DrawerItemProps {
@@ -11,16 +12,14 @@ interface DrawerItemProps {
   icon: keyof typeof Feather.glyphMap;
   onPress: () => void;
   isActive?: boolean;
-  indent?: boolean;
 }
 
-function DrawerItem({ label, icon, onPress, isActive, indent }: DrawerItemProps) {
+function DrawerItem({ label, icon, onPress, isActive }: DrawerItemProps) {
   return (
     <TouchableOpacity
       style={[
         styles.drawerItem,
         isActive && styles.drawerItemActive,
-        indent && styles.drawerItemIndented,
       ]}
       onPress={onPress}
       activeOpacity={0.7}
@@ -43,9 +42,9 @@ function DrawerItem({ label, icon, onPress, isActive, indent }: DrawerItemProps)
 }
 
 export function DrawerContent(props: DrawerContentComponentProps) {
-  const [settingsExpanded, setSettingsExpanded] = useState(true);
   const insets = useSafeAreaInsets();
   const { state, navigation } = props;
+  const { isReady: smartCalendarReady } = useSmartCalendarEnabled();
 
   const currentRoute = state.routes[state.index].name;
 
@@ -58,11 +57,8 @@ export function DrawerContent(props: DrawerContentComponentProps) {
       {...props}
       contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
     >
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Project Alfred</Text>
-      </View>
-
       <View style={styles.menu}>
+        {/* Home - always first */}
         <DrawerItem
           label="Home"
           icon="home"
@@ -70,40 +66,22 @@ export function DrawerContent(props: DrawerContentComponentProps) {
           isActive={currentRoute === 'Home'}
         />
 
-        {/* Settings Section with expandable submenu */}
-        <TouchableOpacity
-          style={styles.expandableHeader}
-          onPress={() => setSettingsExpanded(!settingsExpanded)}
-          activeOpacity={0.7}
-        >
-          <View style={styles.expandableHeaderContent}>
-            <Feather name="settings" size={20} color={colors.textSecondary} />
-            <Text style={styles.expandableHeaderLabel}>Settings</Text>
-          </View>
-          <Feather
-            name={settingsExpanded ? 'chevron-down' : 'chevron-right'}
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
+        {/* Assistant Capabilities - always second */}
+        <DrawerItem
+          label="Assistant Capabilities"
+          icon="sliders"
+          onPress={() => navigateToScreen('Capabilities')}
+          isActive={currentRoute === 'Capabilities'}
+        />
 
-        {settingsExpanded && (
-          <View style={styles.submenu}>
-            <DrawerItem
-              label="WhatsApp"
-              icon="message-circle"
-              onPress={() => navigateToScreen('WhatsAppSettings')}
-              isActive={currentRoute === 'WhatsAppSettings'}
-              indent
-            />
-            <DrawerItem
-              label="General"
-              icon="sliders"
-              onPress={() => navigateToScreen('GeneralSettings')}
-              isActive={currentRoute === 'GeneralSettings'}
-              indent
-            />
-          </View>
+        {/* Smart Calendar - only if enabled and setup complete */}
+        {smartCalendarReady && (
+          <DrawerItem
+            label="Smart Calendar"
+            icon="calendar"
+            onPress={() => navigateToScreen('SmartCalendar')}
+            isActive={currentRoute === 'SmartCalendar'}
+          />
         )}
       </View>
     </DrawerContentScrollView>
@@ -113,18 +91,6 @@ export function DrawerContent(props: DrawerContentComponentProps) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: colors.text,
   },
   menu: {
     paddingHorizontal: 12,
@@ -140,9 +106,6 @@ const styles = StyleSheet.create({
   drawerItemActive: {
     backgroundColor: colors.primary + '15',
   },
-  drawerItemIndented: {
-    marginLeft: 24,
-  },
   drawerItemLabel: {
     fontSize: 15,
     color: colors.textSecondary,
@@ -152,27 +115,5 @@ const styles = StyleSheet.create({
   drawerItemLabelActive: {
     color: colors.primary,
     fontWeight: '600',
-  },
-  expandableHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    marginBottom: 4,
-  },
-  expandableHeaderContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  expandableHeaderLabel: {
-    fontSize: 15,
-    color: colors.textSecondary,
-    marginLeft: 12,
-    fontWeight: '500',
-  },
-  submenu: {
-    marginBottom: 4,
   },
 });

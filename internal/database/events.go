@@ -376,3 +376,65 @@ func (d *DB) CountPendingEvents() (int, error) {
 	}
 	return count, nil
 }
+
+// GetTodayEvents retrieves confirmed/synced events for today from the Alfred Calendar (local database)
+func (d *DB) GetTodayEvents() ([]CalendarEvent, error) {
+	// Get start and end of today in local time
+	now := time.Now()
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	query := `
+		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+			e.description, e.start_time, e.end_time, e.location, e.status,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			COALESCE(c.name, 'Alfred') as channel_name
+		FROM calendar_events e
+		LEFT JOIN channels c ON e.channel_id = c.id
+		WHERE e.status IN (?, ?)
+		  AND e.start_time >= ?
+		  AND e.start_time < ?
+		ORDER BY e.start_time ASC
+	`
+
+	rows, err := d.Query(query, EventStatusConfirmed, EventStatusSynced, startOfDay, endOfDay)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get today's events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []CalendarEvent
+	for rows.Next() {
+		var event CalendarEvent
+		var googleEventID sql.NullString
+		var endTimeNull sql.NullTime
+		var origMsgIDNull sql.NullInt64
+
+		if err := rows.Scan(
+			&event.ID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ChannelName,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan event: %w", err)
+		}
+
+		if googleEventID.Valid {
+			event.GoogleEventID = &googleEventID.String
+		}
+		if endTimeNull.Valid {
+			event.EndTime = &endTimeNull.Time
+		}
+		if origMsgIDNull.Valid {
+			event.OriginalMsgID = &origMsgIDNull.Int64
+		}
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating events: %w", err)
+	}
+
+	return events, nil
+}

@@ -60,7 +60,7 @@ export function useGCalStatus() {
 
 export function useGetOAuthURL() {
   return useMutation({
-    mutationFn: (redirectUri: string) => getOAuthURL(redirectUri),
+    mutationFn: (redirectUri?: string) => getOAuthURL(redirectUri),
   });
 }
 
@@ -68,7 +68,7 @@ export function useExchangeOAuthCode() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ code, redirectUri }: { code: string; redirectUri: string }) =>
+    mutationFn: ({ code, redirectUri }: { code: string; redirectUri?: string }) =>
       exchangeOAuthCode(code, redirectUri),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });

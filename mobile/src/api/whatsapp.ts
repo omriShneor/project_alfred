@@ -11,15 +11,13 @@ export interface PairingCodeResponse {
 }
 
 export async function getWhatsAppStatus(): Promise<WhatsAppStatus> {
-  const response = await apiClient.get<WhatsAppStatus>('/api/whatsapp/status');
-  return response.data;
+  return apiClient.get<WhatsAppStatus>('/api/whatsapp/status');
 }
 
 export async function generatePairingCode(phoneNumber: string): Promise<PairingCodeResponse> {
-  const response = await apiClient.post<PairingCodeResponse>('/api/whatsapp/pair', {
+  return apiClient.post<PairingCodeResponse>('/api/whatsapp/pair', {
     phone_number: phoneNumber,
   });
-  return response.data;
 }
 
 export async function disconnectWhatsApp(): Promise<void> {

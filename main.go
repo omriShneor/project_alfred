@@ -34,7 +34,6 @@ func main() {
 
 	state := sse.NewState()
 
-	// Phase 2: Start server (handles onboarding endpoints)
 	srv := server.New(server.ServerConfig{
 		DB:              db,
 		OnboardingState: state,
@@ -47,19 +46,16 @@ func main() {
 		}
 	}()
 
-	// Phase 3: Initialize clients (may block for onboarding)
 	ctx := context.Background()
-	clients, err := onboarding.Initialize(ctx, db, cfg, state)
+	clients, err := onboarding.Initialize(ctx, db, cfg, state, srv)
 	if err != nil {
 		fatal("initialization", err)
 	}
 
-	// Phase 4: Create dependent services
 	claudeClient := initClaudeClient(cfg)
 	notifyService := initNotifyService(db, cfg)
 	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, claudeClient, notifyService, cfg)
 
-	// Phase 5: Complete server initialization
 	srv.InitializeClients(server.ClientsConfig{
 		WAClient:      clients.WAClient,
 		GCalClient:    clients.GCalClient,
@@ -67,22 +63,18 @@ func main() {
 		NotifyService: notifyService,
 	})
 
-	// Phase 6: Start background processors
 	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)
 	if err := proc.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
 	}
 
-	// Phase 7: Wait for shutdown
 	waitForShutdown(proc, srv, clients.WAClient, gmailWorker)
 }
 
-// initDatabase creates and initializes the SQLite database
 func initDatabase(cfg *config.Config) (*database.DB, error) {
 	return database.New(cfg.DBPath)
 }
 
-// initClaudeClient creates the Claude API client for event detection
 func initClaudeClient(cfg *config.Config) *claude.Client {
 	if cfg.AnthropicAPIKey == "" {
 		fmt.Println("Warning: ANTHROPIC_API_KEY not set, event detection disabled")
@@ -93,7 +85,6 @@ func initClaudeClient(cfg *config.Config) *claude.Client {
 	return client
 }
 
-// initNotifyService creates the notification service with email and push notifiers
 func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	var emailNotifier notify.Notifier
 	if cfg.ResendAPIKey != "" {
@@ -113,7 +104,6 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
-// initGmail creates the Gmail client and worker if GCal is authenticated
 func initGmail(gcalClient *gcal.Client, db *database.DB, claudeClient *claude.Client, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
 	if gcalClient == nil || !gcalClient.IsAuthenticated() {
 		return nil, nil
@@ -152,7 +142,6 @@ func initGmail(gcalClient *gcal.Client, db *database.DB, claudeClient *claude.Cl
 	return gmailClient, gmailWorker
 }
 
-// fatal prints an error message and exits
 func fatal(context string, err error) {
 	fmt.Fprintf(os.Stderr, "Error %s: %v\n", context, err)
 	os.Exit(1)

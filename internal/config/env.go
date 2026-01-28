@@ -59,7 +59,7 @@ func LoadFromEnv() *Config {
 		EmailFrom:    getEnvOrDefault("ALFRED_EMAIL_FROM", "Alfred <onboarding@resend.dev>"),
 
 		// Gmail integration config (enable/disable is in database settings)
-		GmailPollInterval: getEnvAsIntOrDefault("ALFRED_GMAIL_POLL_INTERVAL", 5),
+		GmailPollInterval: 1, // Hardcoded to 1 minute for near-real-time scanning
 		GmailMaxEmails:    getEnvAsIntOrDefault("ALFRED_GMAIL_MAX_EMAILS", 10),
 	}
 

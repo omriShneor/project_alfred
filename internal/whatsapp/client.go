@@ -45,6 +45,20 @@ func NewClient(handler *Handler, dbPath string) (*Client, error) {
 }
 
 func (c *Client) Disconnect() {
+	// Logout clears the session so it won't auto-reconnect
+	if c.WAClient.Store.ID != nil {
+		// Ensure we're connected before trying to logout (required to notify WhatsApp servers)
+		if !c.WAClient.IsConnected() {
+			if err := c.WAClient.Connect(); err != nil {
+				fmt.Printf("Warning: could not connect for logout: %v\n", err)
+			}
+		}
+		if err := c.WAClient.Logout(context.Background()); err != nil {
+			fmt.Printf("Warning: logout failed: %v\n", err)
+		} else {
+			fmt.Println("WhatsApp logged out successfully")
+		}
+	}
 	c.WAClient.Disconnect()
 }
 

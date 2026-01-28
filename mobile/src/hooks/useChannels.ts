@@ -20,10 +20,11 @@ export function useChannels(type?: string) {
   });
 }
 
-export function useDiscoverableChannels() {
+export function useDiscoverableChannels(options?: { enabled?: boolean }) {
   return useQuery<DiscoverableChannel[]>({
     queryKey: ['discoverableChannels'],
     queryFn: discoverChannels,
+    enabled: options?.enabled ?? true,
   });
 }
 

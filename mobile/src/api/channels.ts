@@ -8,21 +8,18 @@ import type {
 
 export async function listChannels(type?: string): Promise<Channel[]> {
   const params = type ? { type } : undefined;
-  const response = await apiClient.get<Channel[]>('/api/channel', { params });
-  return response.data;
+  return apiClient.get<Channel[]>('/api/channel', { params });
 }
 
 export async function createChannel(data: CreateChannelRequest): Promise<Channel> {
-  const response = await apiClient.post<Channel>('/api/channel', data);
-  return response.data;
+  return apiClient.post<Channel>('/api/channel', data);
 }
 
 export async function updateChannel(
   id: number,
   data: UpdateChannelRequest
 ): Promise<Channel> {
-  const response = await apiClient.put<Channel>(`/api/channel/${id}`, data);
-  return response.data;
+  return apiClient.put<Channel>(`/api/channel/${id}`, data);
 }
 
 export async function deleteChannel(id: number): Promise<void> {
@@ -30,8 +27,7 @@ export async function deleteChannel(id: number): Promise<void> {
 }
 
 export async function discoverChannels(): Promise<DiscoverableChannel[]> {
-  const response = await apiClient.get<DiscoverableChannel[]>(
+  return apiClient.get<DiscoverableChannel[]>(
     '/api/discovery/channels'
   );
-  return response.data;
 }

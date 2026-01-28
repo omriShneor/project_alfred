@@ -3,19 +3,19 @@ import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import { Feather } from '@expo/vector-icons';
-import { ConnectionStatus } from './ConnectionStatus';
 import { colors } from '../../theme/colors';
 
 interface HeaderProps {
+  title?: string;
   showDrawerToggle?: boolean;
 }
 
-export function Header({ showDrawerToggle = false }: HeaderProps) {
+export function Header({ title = 'Project Alfred', showDrawerToggle = false }: HeaderProps) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 
   const handleMenuPress = () => {
-    navigation.dispatch(DrawerActions.openDrawer());
+    navigation.dispatch(DrawerActions.toggleDrawer());
   };
 
   return (
@@ -31,9 +31,8 @@ export function Header({ showDrawerToggle = false }: HeaderProps) {
               <Feather name="menu" size={24} color={colors.text} />
             </TouchableOpacity>
           )}
-          <Text style={styles.title}>Project Alfred</Text>
+          <Text style={styles.title}>{title}</Text>
         </View>
-        <ConnectionStatus />
       </View>
     </View>
   );

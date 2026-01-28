@@ -11,8 +11,16 @@ import (
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
-// Initialize creates WhatsApp and GCal clients, runs onboarding if needed, returns Clients
-func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State) (*Clients, error) {
+// ClientsReadyCallback is called when clients are created (before onboarding completes)
+// This allows the server to use the clients during the onboarding flow
+type ClientsReadyCallback interface {
+	SetGCalClient(client *gcal.Client)
+	SetWAClient(client *whatsapp.Client)
+}
+
+// Initialize creates WhatsApp and GCal clients without blocking on onboarding.
+// The mobile app handles the Smart Calendar setup flow.
+func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State, clientsReady ClientsReadyCallback) (*Clients, error) {
 	// 1. Create WhatsApp handler and client
 	handler := whatsapp.NewHandler(db, cfg.DebugAllMessages)
 	waClient, err := whatsapp.NewClient(handler, cfg.WhatsAppDBPath)
@@ -26,27 +34,57 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 		return nil, fmt.Errorf("failed to create Google Calendar client: %w", err)
 	}
 
-	// 3. Run onboarding if needed
-	if NeedsSetup(waClient, gcalClient) {
-		fmt.Printf("\n=== Setup Required ===\n")
-		fmt.Printf("Visit http://localhost:%d/onboarding to complete setup\n\n", cfg.HTTPPort)
+	// 3. Notify server that clients are ready
+	if clientsReady != nil {
+		clientsReady.SetGCalClient(gcalClient)
+		clientsReady.SetWAClient(waClient)
+	}
 
-		RunWeb(ctx, state, waClient, gcalClient)
+	// 4. Check feature settings to determine what to connect
+	featureSettings, err := db.GetFeatureSettings()
+	if err != nil {
+		fmt.Printf("Warning: Could not load feature settings: %v\n", err)
+		// Continue anyway - features will be disabled
+	}
 
-		if err := state.WaitForCompletion(ctx); err != nil {
-			return nil, fmt.Errorf("onboarding interrupted: %w", err)
+	// 5. Connect integrations based on feature settings
+	if featureSettings != nil && featureSettings.SmartCalendarEnabled && featureSettings.SmartCalendarSetupComplete {
+		// Smart Calendar is enabled and setup is complete - connect integrations
+
+		// Connect WhatsApp if enabled and logged in
+		if featureSettings.WhatsAppInputEnabled && waClient.IsLoggedIn() {
+			if err := waClient.WAClient.Connect(); err != nil {
+				fmt.Printf("Warning: Failed to connect WhatsApp: %v\n", err)
+			} else {
+				fmt.Println("WhatsApp connected!")
+				state.SetWhatsAppStatus("connected")
+			}
 		}
-		fmt.Println("\n=== Setup Complete ===")
-	} else {
-		// Already logged in - connect to WhatsApp server
-		if err := waClient.WAClient.Connect(); err != nil {
-			return nil, fmt.Errorf("failed to connect to WhatsApp: %w", err)
-		}
-		fmt.Println("WhatsApp connected!")
 
-		state.SetWhatsAppStatus("connected")
-		state.SetGCalStatus("connected")
+		// Update GCal status if connected
+		if featureSettings.GoogleCalendarEnabled && gcalClient != nil && gcalClient.IsAuthenticated() {
+			state.SetGCalStatus("connected")
+			fmt.Println("Google Calendar connected!")
+		}
+
 		state.MarkComplete()
+	} else {
+		// Smart Calendar not enabled or setup incomplete
+		// Just update status without blocking
+		if waClient.IsLoggedIn() {
+			state.SetWhatsAppStatus("connected")
+		} else {
+			state.SetWhatsAppStatus("pending")
+		}
+
+		if gcalClient != nil && gcalClient.IsAuthenticated() {
+			state.SetGCalStatus("connected")
+		} else {
+			state.SetGCalStatus("pending")
+		}
+
+		state.MarkComplete()
+		fmt.Println("App started - configure Smart Calendar in Assistant Capabilities")
 	}
 
 	return &Clients{
@@ -56,18 +94,26 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 	}, nil
 }
 
-func NeedsSetup(waClient *whatsapp.Client, gcalClient *gcal.Client) bool {
-	// WhatsApp must be connected
-	if !waClient.IsLoggedIn() {
-		return true
+// NeedsSetup checks if Smart Calendar setup is needed based on feature settings
+// Returns true if Smart Calendar is enabled but setup is not complete
+func NeedsSetup(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client) bool {
+	settings, err := db.GetFeatureSettings()
+	if err != nil {
+		return false // Can't determine, assume no setup needed
 	}
 
-	// Google Calendar must be connected (it's mandatory)
-	if gcalClient == nil || !gcalClient.IsAuthenticated() {
-		return true
+	// If Smart Calendar is not enabled, no setup needed
+	if !settings.SmartCalendarEnabled {
+		return false
 	}
 
-	return false
+	// If setup is already complete, no setup needed
+	if settings.SmartCalendarSetupComplete {
+		return false
+	}
+
+	// Smart Calendar is enabled but setup not complete
+	return true
 }
 
 // RunWeb runs the web-based onboarding flow, updating state for SSE streaming

@@ -15,6 +15,5 @@ export interface OnboardingStatus {
 }
 
 export async function getOnboardingStatus(): Promise<OnboardingStatus> {
-  const response = await apiClient.get<OnboardingStatus>('/api/onboarding/status');
-  return response.data;
+  return apiClient.get<OnboardingStatus>('/api/onboarding/status');
 }

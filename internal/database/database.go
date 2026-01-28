@@ -148,6 +148,26 @@ func (d *DB) migrate() error {
 		`CREATE INDEX IF NOT EXISTS idx_email_sources_type ON email_sources(type)`,
 		`CREATE INDEX IF NOT EXISTS idx_email_sources_identifier ON email_sources(identifier)`,
 
+		// Feature settings - stores feature toggles and setup state
+		`CREATE TABLE IF NOT EXISTS feature_settings (
+			id INTEGER PRIMARY KEY CHECK (id = 1),
+			-- Smart Calendar feature
+			smart_calendar_enabled BOOLEAN DEFAULT 0,
+			smart_calendar_setup_complete BOOLEAN DEFAULT 0,
+			-- Inputs (where to scan for events)
+			whatsapp_input_enabled BOOLEAN DEFAULT 0,
+			email_input_enabled BOOLEAN DEFAULT 0,
+			sms_input_enabled BOOLEAN DEFAULT 0,
+			-- Calendars (where to sync events)
+			google_calendar_enabled BOOLEAN DEFAULT 0,
+			outlook_calendar_enabled BOOLEAN DEFAULT 0,
+			-- Timestamps
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		// Insert default row if not exists
+		`INSERT OR IGNORE INTO feature_settings (id) VALUES (1)`,
+
 	}
 
 	// Run standard migrations
@@ -165,6 +185,16 @@ func (d *DB) migrate() error {
 	// Add email_source_id column to calendar_events for linking events to email sources
 	if err := d.addColumnIfNotExists("calendar_events", "email_source_id", "INTEGER"); err != nil {
 		return fmt.Errorf("failed to add email_source_id column: %w", err)
+	}
+
+	// Add alfred_calendar_enabled column to feature_settings (default ON - Alfred calendar always available)
+	if err := d.addColumnIfNotExists("feature_settings", "alfred_calendar_enabled", "BOOLEAN DEFAULT 1"); err != nil {
+		return fmt.Errorf("failed to add alfred_calendar_enabled column: %w", err)
+	}
+
+	// Add calendar_type column to calendar_events to distinguish storage location
+	if err := d.addColumnIfNotExists("calendar_events", "calendar_type", "TEXT DEFAULT 'alfred'"); err != nil {
+		return fmt.Errorf("failed to add calendar_type column: %w", err)
 	}
 
 	return nil

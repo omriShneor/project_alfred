@@ -73,6 +73,16 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.notifyService = cfg.NotifyService
 }
 
+// SetGCalClient sets the gcal client (used during onboarding before full initialization)
+func (s *Server) SetGCalClient(client *gcal.Client) {
+	s.gcalClient = client
+}
+
+// SetWAClient sets the WhatsApp client (used during onboarding before full initialization)
+func (s *Server) SetWAClient(client *whatsapp.Client) {
+	s.waClient = client
+}
+
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
@@ -102,10 +112,12 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gcal/events/today", s.handleListTodayEvents)
 	mux.HandleFunc("POST /api/gcal/connect", s.handleGCalConnect)
 	mux.HandleFunc("POST /api/gcal/callback", s.handleGCalExchangeCode)
+	mux.HandleFunc("POST /api/gcal/disconnect", s.handleGCalDisconnect)
 	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
 
 	// Events API
 	mux.HandleFunc("GET /api/events", s.handleListEvents)
+	mux.HandleFunc("GET /api/events/today", s.handleListMergedTodayEvents) // Today's Schedule (Alfred + external)
 	mux.HandleFunc("GET /api/events/{id}", s.handleGetEvent)
 	mux.HandleFunc("PUT /api/events/{id}", s.handleUpdateEvent)
 	mux.HandleFunc("POST /api/events/{id}/confirm", s.handleConfirmEvent)
@@ -134,6 +146,11 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gmail/sources/{id}", s.handleGetEmailSource)
 	mux.HandleFunc("PUT /api/gmail/sources/{id}", s.handleUpdateEmailSource)
 	mux.HandleFunc("DELETE /api/gmail/sources/{id}", s.handleDeleteEmailSource)
+
+	// Features API
+	mux.HandleFunc("GET /api/features", s.handleGetFeatures)
+	mux.HandleFunc("PUT /api/features/smart-calendar", s.handleUpdateSmartCalendar)
+	mux.HandleFunc("GET /api/features/smart-calendar/status", s.handleGetSmartCalendarStatus)
 }
 
 func (s *Server) Start() error {

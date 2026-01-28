@@ -1,4 +1,3 @@
-export { ChannelsScreen } from './ChannelsScreen';
-export { EventsScreen } from './EventsScreen';
-export { SettingsScreen } from './SettingsScreen';
-export * from './onboarding';
+export { HomeScreen } from './HomeScreen';
+export { CapabilitiesScreen } from './CapabilitiesScreen';
+export * from './smart-calendar';

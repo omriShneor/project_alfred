@@ -1,82 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Linking } from 'react-native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import * as ExpoLinking from 'expo-linking';
-import { useOnboardingStatus, useExchangeOAuthCode } from '../hooks';
-import {
-  WelcomeScreen,
-  WhatsAppSetupScreen,
-  GoogleCalendarSetupScreen,
-  NotificationSetupScreen,
-} from '../screens/onboarding';
+import { useExchangeOAuthCode, useHealth } from '../hooks';
 import { DrawerNavigator } from './DrawerNavigator';
 import { useAppState } from '../context/AppStateContext';
 import { colors } from '../theme/colors';
 import { LoadingSpinner } from '../components/common';
 
-export type OnboardingStackParamList = {
-  Welcome: undefined;
-  WhatsAppSetup: undefined;
-  GoogleCalendarSetup: undefined;
-  NotificationSetup: undefined;
-};
-
-const OnboardingStack = createNativeStackNavigator<OnboardingStackParamList>();
-
-function OnboardingNavigator({ onComplete }: { onComplete: () => void }) {
-  return (
-    <OnboardingStack.Navigator
-      screenOptions={{
-        headerStyle: { backgroundColor: colors.background },
-        headerShadowVisible: false,
-        headerTintColor: colors.text,
-      }}
-    >
-      <OnboardingStack.Screen
-        name="Welcome"
-        component={WelcomeScreen}
-        options={{ headerShown: false }}
-      />
-      <OnboardingStack.Screen
-        name="WhatsAppSetup"
-        component={WhatsAppSetupScreen}
-        options={{ title: 'WhatsApp Setup', headerBackTitle: 'Back' }}
-      />
-      <OnboardingStack.Screen
-        name="GoogleCalendarSetup"
-        component={GoogleCalendarSetupScreen}
-        options={{ title: 'Google Calendar', headerBackTitle: 'Back' }}
-      />
-      <OnboardingStack.Screen
-        name="NotificationSetup"
-        options={{ title: 'Notifications', headerBackTitle: 'Back' }}
-      >
-        {(props) => <NotificationSetupScreen {...props} onComplete={onComplete} />}
-      </OnboardingStack.Screen>
-    </OnboardingStack.Navigator>
-  );
-}
-
 export function RootNavigator() {
-  const [onboardingComplete, setOnboardingComplete] = useState<boolean | null>(null);
-  const { data: status, isLoading, isError } = useOnboardingStatus();
+  const { isLoading, isError } = useHealth();
   const exchangeCode = useExchangeOAuthCode();
   const { setShowDrawerToggle } = useAppState();
 
-  // Check if onboarding should be shown
+  // Always show drawer toggle since we're skipping mandatory onboarding
   useEffect(() => {
-    if (status) {
-      // Show main app if at least one service is connected
-      const hasAnyConnection =
-        status.whatsapp.status === 'connected' ||
-        status.gcal.status === 'connected';
-
-      // Or if user has completed onboarding before (stored locally)
-      // For now, just check connection status
-      setOnboardingComplete(hasAnyConnection);
-      setShowDrawerToggle(hasAnyConnection);
-    }
-  }, [status, setShowDrawerToggle]);
+    setShowDrawerToggle(true);
+  }, [setShowDrawerToggle]);
 
   // Handle OAuth callback deep link globally
   const handleOAuthCallback = useCallback(
@@ -110,13 +49,8 @@ export function RootNavigator() {
     return () => subscription.remove();
   }, [handleOAuthCallback]);
 
-  const handleOnboardingComplete = () => {
-    setOnboardingComplete(true);
-    setShowDrawerToggle(true);
-  };
-
-  // Show loading state while checking status
-  if (isLoading || onboardingComplete === null) {
+  // Show loading state while checking backend health
+  if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
         <LoadingSpinner />
@@ -129,7 +63,7 @@ export function RootNavigator() {
   if (isError) {
     return (
       <View style={styles.errorContainer}>
-        <Text style={styles.errorIcon}>⚠️</Text>
+        <Text style={styles.errorIcon}>!</Text>
         <Text style={styles.errorTitle}>Connection Error</Text>
         <Text style={styles.errorText}>
           Cannot connect to Alfred backend. Make sure the server is running.
@@ -138,11 +72,7 @@ export function RootNavigator() {
     );
   }
 
-  // Show onboarding or main app
-  if (!onboardingComplete) {
-    return <OnboardingNavigator onComplete={handleOnboardingComplete} />;
-  }
-
+  // Always show main app - no mandatory onboarding
   return <DrawerNavigator />;
 }
 
@@ -168,6 +98,8 @@ const styles = StyleSheet.create({
   errorIcon: {
     fontSize: 48,
     marginBottom: 16,
+    color: colors.warning,
+    fontWeight: 'bold',
   },
   errorTitle: {
     fontSize: 20,

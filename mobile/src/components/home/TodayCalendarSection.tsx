@@ -64,7 +64,7 @@ export function TodayCalendarSection() {
         <View style={styles.errorState}>
           <Text style={styles.errorText}>Unable to load calendar</Text>
           <Text style={styles.errorSubtext}>
-            Make sure Google Calendar is connected
+            Please try again later
           </Text>
         </View>
       </View>
@@ -76,9 +76,9 @@ export function TodayCalendarSection() {
       <View style={styles.container}>
         <Text style={styles.sectionTitle}>TODAY'S SCHEDULE</Text>
         <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No events today</Text>
+          <Text style={styles.emptyText}>No events scheduled for today</Text>
           <Text style={styles.emptySubtext}>
-            Your calendar is clear for the rest of the day
+            Events will appear here once confirmed
           </Text>
         </View>
       </View>

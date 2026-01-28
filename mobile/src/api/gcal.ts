@@ -18,22 +18,20 @@ export interface GCalCalendar {
 }
 
 export async function getGCalStatus(): Promise<GCalStatus> {
-  const response = await apiClient.get<GCalStatus>('/api/gcal/status');
-  return response.data;
+  return apiClient.get<GCalStatus>('/api/gcal/status');
 }
 
-export async function getOAuthURL(redirectUri: string): Promise<GCalConnectResponse> {
-  const response = await apiClient.post<GCalConnectResponse>('/api/gcal/connect', {
-    redirect_uri: redirectUri,
-  });
-  return response.data;
+export async function getOAuthURL(redirectUri?: string): Promise<GCalConnectResponse> {
+  // If no redirectUri is provided, backend will use its own HTTPS callback
+  return apiClient.post<GCalConnectResponse>('/api/gcal/connect',
+    redirectUri ? { redirect_uri: redirectUri } : {}
+  );
 }
 
-export async function exchangeOAuthCode(code: string, redirectUri: string): Promise<void> {
-  await apiClient.post('/api/gcal/callback', {
-    code,
-    redirect_uri: redirectUri,
-  });
+export async function exchangeOAuthCode(code: string, redirectUri?: string): Promise<void> {
+  await apiClient.post('/api/gcal/callback',
+    redirectUri ? { code, redirect_uri: redirectUri } : { code }
+  );
 }
 
 // Note: listCalendars is exported from events.ts to avoid duplication

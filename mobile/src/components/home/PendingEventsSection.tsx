@@ -24,7 +24,7 @@ export function PendingEventsSection() {
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>No pending events</Text>
           <Text style={styles.emptySubtext}>
-            Events detected from your tracked channels will appear here
+            Events detected from your tracked contacts/groups will appear here
           </Text>
         </View>
       </View>

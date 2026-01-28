@@ -22,7 +22,7 @@ export function ChannelList({ channels, refreshing, onRefresh }: ChannelListProp
   if (channels.length === 0) {
     return (
       <View style={styles.empty}>
-        <Text style={styles.emptyText}>No channels found</Text>
+        <Text style={styles.emptyText}>No contacts/groups found</Text>
         <Text style={styles.emptySubtext}>
           Make sure WhatsApp is connected
         </Text>

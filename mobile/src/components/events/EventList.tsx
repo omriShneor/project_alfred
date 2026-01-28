@@ -16,7 +16,7 @@ export function EventList({ events, refreshing, onRefresh }: EventListProps) {
       <View style={styles.empty}>
         <Text style={styles.emptyText}>No events found</Text>
         <Text style={styles.emptySubtext}>
-          Events detected from your tracked channels will appear here
+          Events detected from your tracked contacts/groups will appear here
         </Text>
       </View>
     );

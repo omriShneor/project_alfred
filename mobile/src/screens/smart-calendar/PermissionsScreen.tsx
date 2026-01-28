@@ -212,13 +212,13 @@ export function SmartCalendarPermissionsScreen() {
       // Mark setup as complete
       await updateSmartCalendar.mutateAsync({ setup_complete: true });
 
-      // Navigate to Smart Calendar screen in the drawer
+      // Navigate to Home screen after setup completion
       // Using getParent() to access the drawer navigator from within the stack
       const parent = navigation.getParent();
       if (parent) {
-        parent.navigate('SmartCalendar');
+        parent.navigate('Home');
       } else {
-        navigation.navigate('SmartCalendar' as any);
+        navigation.navigate('Home' as any);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to complete setup');

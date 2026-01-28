@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,15 +10,9 @@ import {
   Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { SearchInput, FilterChips, LoadingSpinner, Card, Button, Modal, Select } from '../../components/common';
-import { ChannelList, ChannelStats } from '../../components/channels';
+import { LoadingSpinner, Card, Button, Modal, Select } from '../../components/common';
 import { colors } from '../../theme/colors';
 import {
-  useFeatures,
-  useDiscoverableChannels,
-  useDebounce,
-  useWhatsAppStatus,
-  useGCalStatus,
   useGmailStatus,
   useEmailSources,
   useCreateEmailSource,
@@ -37,14 +31,7 @@ import type {
   DiscoveredDomain,
 } from '../../types/gmail';
 
-type TabType = 'channels' | 'email';
 type DiscoveryTab = 'categories' | 'senders' | 'domains';
-
-const TYPE_FILTERS = [
-  { label: 'All', value: 'all' },
-  { label: 'Contacts', value: 'sender' },
-  { label: 'Groups', value: 'group' },
-];
 
 interface SelectedItem {
   type: EmailSourceType;
@@ -52,33 +39,9 @@ interface SelectedItem {
   name: string;
 }
 
-export function SmartCalendarScreen() {
-  const { data: features } = useFeatures();
-  const { data: waStatus } = useWhatsAppStatus();
-  const { data: gcalStatus } = useGCalStatus();
+export function GmailPreferencesScreen() {
   const { data: gmailStatus } = useGmailStatus();
 
-  // Determine which tabs to show
-  const showChannelsTab = features?.smart_calendar?.inputs?.whatsapp?.enabled ?? false;
-  const showEmailTab = features?.smart_calendar?.inputs?.email?.enabled ?? false;
-
-  // Set initial tab based on enabled inputs
-  const [activeTab, setActiveTab] = useState<TabType>(showChannelsTab ? 'channels' : 'email');
-
-  // Channels state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
-  const debouncedSearch = useDebounce(searchQuery, 150);
-
-  // Only fetch channels when WhatsApp is connected
-  const {
-    data: channels,
-    isLoading: channelsLoading,
-    refetch: refetchChannels,
-    isRefetching: isRefetchingChannels,
-  } = useDiscoverableChannels({ enabled: waStatus?.connected ?? false });
-
-  // Email sources state
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
   const [activeDiscoveryTab, setActiveDiscoveryTab] = useState<DiscoveryTab>('categories');
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
@@ -107,23 +70,6 @@ export function SmartCalendarScreen() {
     refetch: refetchDomains,
   } = useDiscoverDomains(50);
 
-  // Filter channels
-  const filteredChannels = useMemo(() => {
-    if (!channels) return [];
-
-    return channels.filter((channel) => {
-      if (typeFilter !== 'all' && channel.type !== typeFilter) {
-        return false;
-      }
-      if (debouncedSearch) {
-        const search = debouncedSearch.toLowerCase();
-        return channel.name.toLowerCase().includes(search);
-      }
-      return true;
-    });
-  }, [channels, typeFilter, debouncedSearch]);
-
-  // Set default calendar when calendars load
   useEffect(() => {
     if (calendars && calendars.length > 0 && !selectedCalendarId) {
       const primaryCalendar = calendars.find((c) => c.primary);
@@ -131,7 +77,6 @@ export function SmartCalendarScreen() {
     }
   }, [calendars, selectedCalendarId]);
 
-  // Email source handlers
   const handleToggleSource = async (source: EmailSource) => {
     try {
       await updateSource.mutateAsync({
@@ -358,120 +303,43 @@ export function SmartCalendarScreen() {
     activeDiscoveryTab === 'categories' ? categories :
     activeDiscoveryTab === 'senders' ? senders : domains;
 
-  // Render tabs only if both inputs are enabled
-  const showTabs = showChannelsTab && showEmailTab;
-
   return (
     <View style={styles.screen}>
-      {/* Tabs (only if both inputs enabled) */}
-      {showTabs && (
-        <View style={styles.tabBar}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <View style={styles.sectionHeader}>
+          <Text style={styles.sectionTitle}>Email Sources</Text>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'channels' && styles.tabActive]}
-            onPress={() => setActiveTab('channels')}
+            style={styles.addButton}
+            onPress={handleOpenAddSourceModal}
+            disabled={!gmailStatus?.connected || !gmailStatus?.has_scopes}
           >
-            <Feather name="message-circle" size={16} color={activeTab === 'channels' ? colors.primary : colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === 'channels' && styles.tabTextActive]}>Channels</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'email' && styles.tabActive]}
-            onPress={() => setActiveTab('email')}
-          >
-            <Feather name="mail" size={16} color={activeTab === 'email' ? colors.primary : colors.textSecondary} />
-            <Text style={[styles.tabText, activeTab === 'email' && styles.tabTextActive]}>Email Sources</Text>
+            <Feather name="plus" size={18} color={colors.primary} />
+            <Text style={styles.addButtonText}>Add Source</Text>
           </TouchableOpacity>
         </View>
-      )}
-
-      {/* Content */}
-      <View style={styles.content}>
-        {(activeTab === 'channels' && showChannelsTab) ? (
-          // Channels Tab
-          <View style={styles.channelsContainer}>
-            <SearchInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search channels..."
+        <Card>
+          {sourcesLoading ? (
+            <LoadingSpinner />
+          ) : sources && sources.length > 0 ? (
+            <FlatList
+              data={sources}
+              keyExtractor={(item) => String(item.id)}
+              renderItem={renderSourceItem}
+              scrollEnabled={false}
+              ItemSeparatorComponent={() => <View style={styles.separator} />}
             />
-            <FilterChips
-              options={TYPE_FILTERS}
-              selected={typeFilter}
-              onSelect={setTypeFilter}
-            />
-            {channels && <ChannelStats channels={channels} />}
-            {channelsLoading ? (
-              <LoadingSpinner message="Loading channels..." />
-            ) : (
-              <ChannelList
-                channels={filteredChannels}
-                refreshing={isRefetchingChannels}
-                onRefresh={refetchChannels}
-              />
-            )}
-          </View>
-        ) : showEmailTab ? (
-          // Email Sources Tab
-          <ScrollView style={styles.emailContainer} contentContainerStyle={styles.emailContent}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Email Sources</Text>
-              <TouchableOpacity
-                style={styles.addButton}
-                onPress={handleOpenAddSourceModal}
-                disabled={!gmailStatus?.connected || !gmailStatus?.has_scopes}
-              >
-                <Feather name="plus" size={18} color={colors.primary} />
-                <Text style={styles.addButtonText}>Add Source</Text>
-              </TouchableOpacity>
-            </View>
-            <Card>
-              {sourcesLoading ? (
-                <LoadingSpinner />
-              ) : sources && sources.length > 0 ? (
-                <FlatList
-                  data={sources}
-                  keyExtractor={(item) => String(item.id)}
-                  renderItem={renderSourceItem}
-                  scrollEnabled={false}
-                  ItemSeparatorComponent={() => <View style={styles.separator} />}
-                />
-              ) : (
-                <View style={styles.emptyState}>
-                  <Feather name="inbox" size={40} color={colors.textSecondary} />
-                  <Text style={styles.emptyStateText}>No email sources configured</Text>
-                  <Text style={styles.emptyStateSubtext}>
-                    Add categories, senders, or domains to track for events
-                  </Text>
-                </View>
-              )}
-            </Card>
-          </ScrollView>
-        ) : null}
-      </View>
-
-      {/* Status Section */}
-      <View style={styles.statusSection}>
-        <Text style={styles.statusTitle}>Status</Text>
-        <View style={styles.statusRow}>
-          {showChannelsTab && (
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: waStatus?.connected ? colors.success : colors.danger }]} />
-              <Text style={styles.statusLabel}>WhatsApp</Text>
+          ) : (
+            <View style={styles.emptyState}>
+              <Feather name="inbox" size={40} color={colors.textSecondary} />
+              <Text style={styles.emptyStateText}>No email sources configured</Text>
+              <Text style={styles.emptyStateSubtext}>
+                Add categories, senders, or domains to track for events
+              </Text>
             </View>
           )}
-          <View style={styles.statusItem}>
-            <View style={[styles.statusDot, { backgroundColor: gcalStatus?.connected ? colors.success : colors.danger }]} />
-            <Text style={styles.statusLabel}>Google Calendar</Text>
-          </View>
-          {showEmailTab && (
-            <View style={styles.statusItem}>
-              <View style={[styles.statusDot, { backgroundColor: gmailStatus?.connected && gmailStatus?.has_scopes ? colors.success : colors.danger }]} />
-              <Text style={styles.statusLabel}>Gmail</Text>
-            </View>
-          )}
-        </View>
-      </View>
+        </Card>
+      </ScrollView>
 
-      {/* Add Source Modal */}
       <Modal
         visible={addSourceModalVisible}
         onClose={() => setAddSourceModalVisible(false)}
@@ -552,43 +420,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  tabBar: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-    backgroundColor: colors.card,
-  },
-  tab: {
+  container: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 12,
-    gap: 6,
-  },
-  tabActive: {
-    borderBottomWidth: 2,
-    borderBottomColor: colors.primary,
-  },
-  tabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
-  tabTextActive: {
-    color: colors.primary,
   },
   content: {
-    flex: 1,
-  },
-  channelsContainer: {
-    flex: 1,
-    padding: 16,
-  },
-  emailContainer: {
-    flex: 1,
-  },
-  emailContent: {
     padding: 16,
   },
   sectionHeader: {
@@ -681,38 +516,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
-  },
-  statusSection: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    padding: 16,
-    backgroundColor: colors.card,
-  },
-  statusTitle: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textSecondary,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-  },
-  statusItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: 6,
-  },
-  statusLabel: {
-    fontSize: 13,
-    color: colors.text,
   },
   modalTabContainer: {
     flexDirection: 'row',

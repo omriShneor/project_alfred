@@ -79,8 +79,8 @@ export function DrawerContent(props: DrawerContentComponentProps) {
           <DrawerItem
             label="Smart Calendar"
             icon="calendar"
-            onPress={() => navigateToScreen('SmartCalendar')}
-            isActive={currentRoute === 'SmartCalendar'}
+            onPress={() => navigateToScreen('SmartCalendarHub')}
+            isActive={currentRoute === 'SmartCalendarHub'}
           />
         )}
       </View>

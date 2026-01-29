@@ -124,25 +124,6 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 	if err != nil {
 		return "", fmt.Errorf("PairPhone failed with error: %w", err)
 	}
-
-	go func() {
-		for evt := range qrChan {
-			switch evt.Event {
-			case "success":
-				if state != nil {
-					state.SetWhatsAppStatus("connected")
-				}
-				fmt.Println("WhatsApp paired successfully!")
-				return
-			case "timeout":
-				if state != nil {
-					state.SetWhatsAppError("Pairing timed out")
-				}
-				return
-			}
-		}
-	}()
-
 	return code, nil
 }
 
@@ -150,7 +131,6 @@ func (c *Client) IsLoggedIn() bool {
 	return c.WAClient.Store.ID != nil
 }
 
-// Reconnect disconnects and reconnects to WhatsApp, generating a new QR code
 func (c *Client) Reconnect(ctx context.Context, state *sse.State) {
 	// Disconnect first
 	c.WAClient.Disconnect()

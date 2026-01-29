@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/sse"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
@@ -23,13 +24,15 @@ type Handler struct {
 	db               *database.DB
 	debugAllMessages bool
 	messageChan      chan FilteredMessage
+	state            *sse.State
 }
 
-func NewHandler(db *database.DB, debugAllMessages bool) *Handler {
+func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
 	return &Handler{
 		db:               db,
 		debugAllMessages: debugAllMessages,
 		messageChan:      make(chan FilteredMessage, 100),
+		state:            state,
 	}
 }
 
@@ -41,6 +44,14 @@ func (h *Handler) HandleEvent(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
 		h.handleMessage(v)
+	case *events.PairSuccess:
+		fmt.Printf("WhatsApp paired successfully! JID: %s\n", v.ID)
+		// PairSuccess is followed by a websocket reconnect, wait for Connected
+	case *events.Connected:
+		fmt.Println("WhatsApp connected!")
+		if h.state != nil {
+			h.state.SetWhatsAppStatus("connected")
+		}
 	}
 }
 

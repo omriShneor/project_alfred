@@ -22,7 +22,7 @@ type ClientsReadyCallback interface {
 // The mobile app handles the Smart Calendar setup flow.
 func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State, clientsReady ClientsReadyCallback) (*Clients, error) {
 	// 1. Create WhatsApp handler and client
-	handler := whatsapp.NewHandler(db, cfg.DebugAllMessages)
+	handler := whatsapp.NewHandler(db, cfg.DebugAllMessages, state)
 	waClient, err := whatsapp.NewClient(handler, cfg.WhatsAppDBPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WhatsApp client: %w", err)

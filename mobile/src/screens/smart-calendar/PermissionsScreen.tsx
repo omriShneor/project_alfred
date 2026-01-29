@@ -324,21 +324,23 @@ export function SmartCalendarPermissionsScreen() {
                       <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
                       <View style={styles.pairingCodeRow}>
                         <Text style={styles.pairingCode}>{pairingCode}</Text>
-                        <TouchableOpacity
-                          style={styles.copyButton}
-                          onPress={() => {
-                            if (pairingCode) {
-                              Clipboard.setStringAsync(pairingCode);
-                              setShowCopied(true);
-                              setTimeout(() => setShowCopied(false), 2000);
-                            }
-                          }}
-                        >
-                          <Feather name={showCopied ? "check" : "copy"} size={20} color={showCopied ? colors.success : colors.primary} />
-                        </TouchableOpacity>
-                        {showCopied && (
-                          <Text style={styles.copiedText}>Copied!</Text>
-                        )}
+                        <View style={styles.copyButtonContainer}>
+                          <TouchableOpacity
+                            style={styles.copyButton}
+                            onPress={() => {
+                              if (pairingCode) {
+                                Clipboard.setStringAsync(pairingCode);
+                                setShowCopied(true);
+                                setTimeout(() => setShowCopied(false), 2000);
+                              }
+                            }}
+                          >
+                            <Feather name={showCopied ? "check" : "copy"} size={20} color={showCopied ? colors.success : colors.primary} />
+                          </TouchableOpacity>
+                          {showCopied && (
+                            <Text style={styles.copiedText}>Copied!</Text>
+                          )}
+                        </View>
                       </View>
                     </View>
                     <Text style={styles.pairingInstructions}>
@@ -512,15 +514,18 @@ const styles = StyleSheet.create({
     letterSpacing: 4,
     fontFamily: 'monospace',
   },
-  copyButton: {
+  copyButtonContainer: {
+    alignItems: 'center',
     marginLeft: 12,
+  },
+  copyButton: {
     padding: 8,
   },
   copiedText: {
-    marginLeft: 8,
-    fontSize: 13,
+    fontSize: 12,
     color: colors.success,
     fontWeight: '500',
+    marginTop: 2,
   },
   pairingInstructions: {
     fontSize: 14,

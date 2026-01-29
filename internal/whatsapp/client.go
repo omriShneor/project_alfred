@@ -136,7 +136,6 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 					state.SetWhatsAppStatus("connected")
 				}
 				fmt.Println("WhatsApp paired successfully!")
-				// Send push notification to inform user
 				if c.notifyService != nil {
 					c.notifyService.NotifyWhatsAppConnected(context.Background())
 				}

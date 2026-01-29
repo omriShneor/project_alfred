@@ -86,7 +86,6 @@ func (s *Service) IsPushAvailable() bool {
 	return s.pushNotifier != nil && s.pushNotifier.IsConfigured()
 }
 
-// NotifyWhatsAppConnected sends a push notification when WhatsApp connects
 func (s *Service) NotifyWhatsAppConnected(ctx context.Context) {
 	fmt.Println("Notification: WhatsApp connected, checking push preferences")
 
@@ -112,8 +111,8 @@ func (s *Service) NotifyWhatsAppConnected(ctx context.Context) {
 		ctx,
 		prefs.PushToken,
 		"WhatsApp Connected",
-		"Your WhatsApp account is now linked. Tap to set up Smart Calendar.",
-		"SmartCalendar",
+		"Your WhatsApp account is now linked. Tap to continue setup.",
+		"Permissions",
 	)
 	if err != nil {
 		fmt.Printf("Notification: Failed to send WhatsApp connected push: %v\n", err)

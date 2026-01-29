@@ -47,16 +47,12 @@ func NewClient(handler *Handler, dbPath string) (*Client, error) {
 }
 
 func (c *Client) Disconnect() {
-	// Logout clears the session and deletes device store
 	if c.WAClient.Store.ID != nil {
-		// Ensure we're connected before trying to logout (required to notify WhatsApp servers)
 		if !c.WAClient.IsConnected() {
 			if err := c.WAClient.Connect(); err != nil {
 				fmt.Printf("Warning: could not connect for logout: %v\n", err)
 			}
 		}
-		// Logout() internally: 1) notifies WhatsApp servers, 2) deletes device store, 3) sets Store.ID = nil
-		// Don't call Delete() manually - Logout() handles it and needs device data to notify servers
 		if err := c.WAClient.Logout(context.Background()); err != nil {
 			fmt.Printf("Warning: logout failed: %v\n", err)
 		} else {
@@ -70,7 +66,6 @@ func (c *Client) Disconnect() {
 func (c *Client) ReinitializeDevice() error {
 	ctx := context.Background()
 
-	// Delete all existing devices to clear any stale data
 	devices, err := c.container.GetAllDevices(ctx)
 	if err != nil {
 		fmt.Printf("Warning: could not get existing devices: %v\n", err)
@@ -82,7 +77,6 @@ func (c *Client) ReinitializeDevice() error {
 		}
 	}
 
-	// Now GetFirstDevice will create a fresh device since we deleted all existing ones
 	deviceStore, err := c.container.GetFirstDevice(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get new device store: %w", err)
@@ -103,17 +97,22 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 		return "", fmt.Errorf("failed to reinitialize device: %w", err)
 	}
 
-	qrChan, err := c.WAClient.GetQRChannel(ctx)
+	// Use Background context so connection outlives HTTP request
+	qrChan, err := c.WAClient.GetQRChannel(context.Background())
 	if err != nil {
 		return "", fmt.Errorf("failed to get QR channel to initialize PairCode: %w", err)
 	}
 
-	// Trigger QR channel evt
 	if err := c.WAClient.Connect(); err != nil {
 		return "", fmt.Errorf("failed to connect: %w", err)
 	}
 
-	<-qrChan // Wait for the first qr channel event
+	// Wait for first event (indicates connection is ready)
+	firstEvt := <-qrChan
+	if firstEvt.Event != "code" {
+		return "", fmt.Errorf("unexpected first event: %s", firstEvt.Event)
+	}
+
 	code, err := c.WAClient.PairPhone(
 		context.Background(),
 		phone,
@@ -124,6 +123,26 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 	if err != nil {
 		return "", fmt.Errorf("PairPhone failed with error: %w", err)
 	}
+
+	go func() {
+		for evt := range qrChan {
+			switch evt.Event {
+			case "success":
+				fmt.Println("WhatsApp paired successfully via QR channel!")
+				if state != nil {
+					state.SetWhatsAppStatus("connected")
+				}
+				return
+			case "timeout":
+				fmt.Println("WhatsApp pairing timed out")
+				if state != nil {
+					state.SetWhatsAppError("Pairing timed out. Please try again.")
+				}
+				return
+			}
+		}
+	}()
+
 	return code, nil
 }
 

@@ -44,14 +44,6 @@ func (h *Handler) HandleEvent(evt interface{}) {
 	switch v := evt.(type) {
 	case *events.Message:
 		h.handleMessage(v)
-	case *events.PairSuccess:
-		fmt.Printf("WhatsApp paired successfully! JID: %s\n", v.ID)
-		// PairSuccess is followed by a websocket reconnect, wait for Connected
-	case *events.Connected:
-		fmt.Println("WhatsApp connected!")
-		if h.state != nil {
-			h.state.SetWhatsAppStatus("connected")
-		}
 	}
 }
 

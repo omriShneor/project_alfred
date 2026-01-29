@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/omriShneor/project_alfred/internal/notify"
@@ -135,7 +136,7 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 				if state != nil {
 					state.SetWhatsAppStatus("connected")
 				}
-				fmt.Println("WhatsApp paired successfully!")
+				time.Sleep(5 * time.Second) // Wait 5 seconds for the App UI to complete.
 				if c.notifyService != nil {
 					c.notifyService.NotifyWhatsAppConnected(context.Background())
 				}

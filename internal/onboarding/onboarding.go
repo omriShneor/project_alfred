@@ -12,8 +12,6 @@ import (
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
-// ClientsReadyCallback is called when clients are created (before onboarding completes)
-// This allows the server to use the clients during the onboarding flow
 type ClientsReadyCallback interface {
 	SetGCalClient(client *gcal.Client)
 	SetWAClient(client *whatsapp.Client)
@@ -84,26 +82,21 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 func NeedsSetup(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client) bool {
 	settings, err := db.GetFeatureSettings()
 	if err != nil {
-		return false // Can't determine, assume no setup needed
+		return false
 	}
 
-	// If Smart Calendar is not enabled, no setup needed
 	if !settings.SmartCalendarEnabled {
 		return false
 	}
 
-	// If setup is already complete, no setup needed
 	if settings.SmartCalendarSetupComplete {
 		return false
 	}
 
-	// Smart Calendar is enabled but setup not complete
 	return true
 }
 
-// RunWeb runs the web-based onboarding flow, updating state for SSE streaming
 func RunWeb(ctx context.Context, state *sse.State, waClient *whatsapp.Client, gcalClient *gcal.Client) {
-	// Initialize WhatsApp status
 	if waClient.IsLoggedIn() {
 		state.SetWhatsAppStatus("connected")
 	} else {
@@ -111,7 +104,6 @@ func RunWeb(ctx context.Context, state *sse.State, waClient *whatsapp.Client, gc
 		go runWhatsAppOnboarding(ctx, state, waClient)
 	}
 
-	// Initialize Google Calendar status
 	state.SetGCalConfigured(true)
 	if gcalClient.IsAuthenticated() {
 		state.SetGCalStatus("connected")
@@ -120,16 +112,13 @@ func RunWeb(ctx context.Context, state *sse.State, waClient *whatsapp.Client, gc
 	}
 }
 
-// runWhatsAppOnboarding handles the WhatsApp QR flow for web onboarding
 func runWhatsAppOnboarding(ctx context.Context, state *sse.State, waClient *whatsapp.Client) {
-	// Get QR channel from WhatsApp client
 	qrChan, err := waClient.WAClient.GetQRChannel(ctx)
 	if err != nil {
 		state.SetWhatsAppError(fmt.Sprintf("Failed to get QR channel: %v", err))
 		return
 	}
 
-	// Connect (this triggers QR generation)
 	if err := waClient.WAClient.Connect(); err != nil {
 		state.SetWhatsAppError(fmt.Sprintf("Failed to connect: %v", err))
 		return
@@ -137,11 +126,9 @@ func runWhatsAppOnboarding(ctx context.Context, state *sse.State, waClient *what
 
 	state.SetWhatsAppStatus("waiting")
 
-	// Listen for QR events
 	for evt := range qrChan {
 		switch evt.Event {
 		case "code":
-			// Generate QR code as data URL
 			dataURL, err := whatsapp.GenerateQRDataURL(evt.Code)
 			if err != nil {
 				state.SetWhatsAppError(fmt.Sprintf("Failed to generate QR: %v", err))

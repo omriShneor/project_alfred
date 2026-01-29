@@ -4,6 +4,7 @@ import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
 import { registerPushToken, updatePushPrefs } from '../api/notifications';
+import { navigate } from '../navigation/navigationRef';
 
 export interface PushNotificationState {
   expoPushToken: string | null;
@@ -37,8 +38,11 @@ export function usePushNotifications() {
     responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('Notification response:', response);
       const data = response.notification.request.content.data;
-      // Navigation to Events screen could be handled here
-      if (data?.screen === 'Events') {
+      // Navigate based on screen specified in notification data
+      if (data?.screen === 'SmartCalendar') {
+        console.log('Navigating to Smart Calendar');
+        navigate('SmartCalendarHub');
+      } else if (data?.screen === 'Events') {
         console.log('Should navigate to Events screen, event ID:', data.eventId);
       }
     });

@@ -109,3 +109,48 @@ func (e *ExpoPushNotifier) Send(ctx context.Context, event *database.CalendarEve
 	fmt.Printf("Push notification sent to %s for event: %s\n", recipient, event.Title)
 	return nil
 }
+
+// SendSimple sends a simple push notification (not tied to a CalendarEvent)
+func (e *ExpoPushNotifier) SendSimple(ctx context.Context, token, title, body, screen string) error {
+	if token == "" {
+		return fmt.Errorf("no push token specified")
+	}
+
+	message := expoPushMessage{
+		To:       token,
+		Title:    title,
+		Body:     body,
+		Sound:    "default",
+		Priority: "high",
+		Data: map[string]interface{}{
+			"screen": screen,
+		},
+	}
+
+	jsonData, err := json.Marshal(message)
+	if err != nil {
+		return fmt.Errorf("failed to marshal push message: %w", err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "POST", expoPushURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send push notification: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("expo push API returned status %d", resp.StatusCode)
+	}
+
+	fmt.Printf("Push notification sent to %s: %s\n", token[:20]+"...", title)
+	return nil
+}

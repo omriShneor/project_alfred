@@ -7,6 +7,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
@@ -20,10 +21,10 @@ type ClientsReadyCallback interface {
 
 // Initialize creates WhatsApp and GCal clients without blocking on onboarding.
 // The mobile app handles the Smart Calendar setup flow.
-func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State, clientsReady ClientsReadyCallback) (*Clients, error) {
+func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state *sse.State, clientsReady ClientsReadyCallback, notifyService *notify.Service) (*Clients, error) {
 	// 1. Create WhatsApp handler and client
 	handler := whatsapp.NewHandler(db, cfg.DebugAllMessages)
-	waClient, err := whatsapp.NewClient(handler, cfg.WhatsAppDBPath)
+	waClient, err := whatsapp.NewClient(handler, cfg.WhatsAppDBPath, notifyService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WhatsApp client: %w", err)
 	}

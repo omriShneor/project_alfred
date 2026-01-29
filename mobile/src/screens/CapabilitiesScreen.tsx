@@ -91,6 +91,15 @@ export function CapabilitiesScreen() {
       // Google account is needed for either Gmail or Google Calendar
       const needsGoogle = needsGmail || needsGoogleCalendar;
 
+      // Check if any inputs have been configured
+      const hasAnyInputConfigured = needsWhatsApp || needsGmail;
+
+      // If no inputs are configured yet, always go through setup flow
+      if (!hasAnyInputConfigured) {
+        navigation.navigate('SmartCalendarStack' as any, { screen: 'Setup' });
+        return;
+      }
+
       const whatsAppConnected = waStatus?.connected ?? false;
       const googleConnected = gcalStatus?.connected ?? false;
 
@@ -108,8 +117,8 @@ export function CapabilitiesScreen() {
           Alert.alert('Error', error.message || 'Failed to enable Smart Calendar');
         }
       } else {
-        // Some integrations need to be connected, go to setup flow
-        navigation.navigate('SmartCalendarStack' as any, { screen: 'Setup' });
+        // Some integrations need to be connected, go to permissions screen
+        navigation.navigate('SmartCalendarStack' as any, { screen: 'Permissions' });
       }
     } else {
       // Disable Smart Calendar - clear both enabled and setup_complete

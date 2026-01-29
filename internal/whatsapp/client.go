@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"context"
 	"fmt"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/omriShneor/project_alfred/internal/sse"
@@ -19,8 +18,8 @@ type Client struct {
 }
 
 func NewClient(handler *Handler, dbPath string) (*Client, error) {
-	dbLog := waLog.Stdout("Database", "ERROR", true)
-	clientLog := waLog.Stdout("Client", "ERROR", true)
+	dbLog := waLog.Stdout("Database", "DEBUG", true)
+	clientLog := waLog.Stdout("Client", "DEBUG", true)
 
 	container, err := sqlstore.New(context.Background(), "sqlite3", "file:"+dbPath+"?_foreign_keys=on", dbLog)
 	if err != nil {
@@ -68,8 +67,6 @@ func (c *Client) Disconnect() {
 	c.WAClient.Disconnect()
 }
 
-// ReinitializeDevice creates a fresh device store for new pairing.
-// This deletes any existing stale devices first to ensure a clean state.
 func (c *Client) ReinitializeDevice() error {
 	ctx := context.Background()
 
@@ -91,7 +88,7 @@ func (c *Client) ReinitializeDevice() error {
 		return fmt.Errorf("failed to get new device store: %w", err)
 	}
 
-	clientLog := waLog.Stdout("Client", "ERROR", true)
+	clientLog := waLog.Stdout("Client", "DEBUG", true)
 	c.WAClient = whatsmeow.NewClient(deviceStore, clientLog)
 
 	if c.handler != nil {
@@ -101,30 +98,50 @@ func (c *Client) ReinitializeDevice() error {
 	return nil
 }
 
-// PairWithPhone generates a pairing code for phone-number-based linking.
-// This allows mobile apps to link without QR code scanning.
-// phone should be in international format without '+' (e.g., "1234567890" for +1234567890)
-func (c *Client) PairWithPhone(ctx context.Context, phone string) (string, error) {
-	// Always reinitialize for fresh pairing to clear any stale state
+func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.State) (string, error) {
 	if err := c.ReinitializeDevice(); err != nil {
 		return "", fmt.Errorf("failed to reinitialize device: %w", err)
 	}
 
-	// Connect to WhatsApp servers
+	qrChan, err := c.WAClient.GetQRChannel(ctx)
+	if err != nil {
+		return "", fmt.Errorf("failed to get QR channel to initialize PairCode: %w", err)
+	}
+
+	// Trigger QR channel evt
 	if err := c.WAClient.Connect(); err != nil {
 		return "", fmt.Errorf("failed to connect: %w", err)
 	}
 
-	// CRITICAL: Wait for WebSocket connection to be ready
-	// PairPhone will fail with 400 if called too early
-	time.Sleep(2 * time.Second)
-
-	// Generate pairing code using whatsmeow's PairPhone
-	// The parameters are: context, phone number, show push notification, client type, client display name
-	code, err := c.WAClient.PairPhone(ctx, phone, true, whatsmeow.PairClientChrome, "Alfred")
+	<-qrChan // Wait for the first qr channel event
+	code, err := c.WAClient.PairPhone(
+		context.Background(),
+		phone,
+		true,
+		whatsmeow.PairClientChrome,
+		"Chrome (Linux)",
+	)
 	if err != nil {
-		return "", fmt.Errorf("failed to generate pairing code: %w", err)
+		return "", fmt.Errorf("PairPhone failed with error: %w", err)
 	}
+
+	go func() {
+		for evt := range qrChan {
+			switch evt.Event {
+			case "success":
+				if state != nil {
+					state.SetWhatsAppStatus("connected")
+				}
+				fmt.Println("WhatsApp paired successfully!")
+				return
+			case "timeout":
+				if state != nil {
+					state.SetWhatsAppError("Pairing timed out")
+				}
+				return
+			}
+		}
+	}()
 
 	return code, nil
 }

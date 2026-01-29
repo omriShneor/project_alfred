@@ -4,16 +4,18 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  TextInput,
   Alert,
   TouchableOpacity,
   Image,
+  TextInput,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
+import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card } from '../../components/common';
 import { colors } from '../../theme/colors';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   useSmartCalendarStatus,
   useFeatures,
@@ -118,6 +120,7 @@ function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading
 
 export function SmartCalendarPermissionsScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const queryClient = useQueryClient();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
 
@@ -126,7 +129,7 @@ export function SmartCalendarPermissionsScreen() {
   const { data: waStatus } = useWhatsAppStatus();
   const { data: gcalStatus } = useGCalStatus();
   const updateSmartCalendar = useUpdateSmartCalendar();
-  const generateCode = useGeneratePairingCode();
+  const generatePairingCode = useGeneratePairingCode();
   const getOAuthURL = useGetOAuthURL();
 
   // Get enabled inputs/calendars from features
@@ -167,6 +170,7 @@ export function SmartCalendarPermissionsScreen() {
   useEffect(() => {
     if (waStatus?.connected) {
       setPairingCode(null);
+      setPhoneNumber('');
     }
   }, [waStatus?.connected]);
 
@@ -178,6 +182,10 @@ export function SmartCalendarPermissionsScreen() {
       // Open auth session - it will automatically close when alfred:// deep link is triggered
       // Backend handles OAuth callback and redirects to alfred://oauth/success
       await WebBrowser.openAuthSessionAsync(response.auth_url, 'alfred://oauth/success');
+
+      // Invalidate status queries to trigger immediate refresh after OAuth completes
+      queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });
+      queryClient.invalidateQueries({ queryKey: ['onboardingStatus'] });
     } catch (error: any) {
       Alert.alert(
         'Error',
@@ -186,18 +194,13 @@ export function SmartCalendarPermissionsScreen() {
     }
   };
 
-  const handleGeneratePairingCode = async () => {
+  const handleConnectWhatsApp = async () => {
     if (!phoneNumber.trim()) {
       Alert.alert('Error', 'Please enter your phone number');
       return;
     }
-
-    const formattedNumber = phoneNumber.startsWith('+')
-      ? phoneNumber
-      : `+${phoneNumber}`;
-
     try {
-      const result = await generateCode.mutateAsync(formattedNumber);
+      const result = await generatePairingCode.mutateAsync(phoneNumber.trim());
       setPairingCode(result.code);
     } catch (error: any) {
       Alert.alert(
@@ -286,45 +289,67 @@ export function SmartCalendarPermissionsScreen() {
             name="WhatsApp"
             description="For message scanning"
             status={whatsappStatus}
-            onConnect={() => {}}
+            onConnect={handleConnectWhatsApp}
+            isConnecting={generatePairingCode.isPending}
             customButton={<></>}
           >
             {whatsappStatus !== 'available' && (
               <View style={styles.whatsappSection}>
-                {pairingCode ? (
-                  <View>
-                    <View style={styles.codeDisplay}>
-                      <Text style={styles.codeLabel}>Pairing Code</Text>
-                      <Text style={styles.code}>{pairingCode}</Text>
-                    </View>
-                    <Text style={styles.codeInstructions}>
-                      Enter this code in WhatsApp {'>'} Linked Devices {'>'} Link with phone number
+                {!pairingCode ? (
+                  <>
+                    <Text style={styles.phoneInputLabel}>
+                      Enter your phone number with country code
                     </Text>
-                    <Button
-                      title="Generate New Code"
-                      onPress={handleGeneratePairingCode}
-                      variant="outline"
-                      loading={generateCode.isPending}
-                      style={styles.generateButton}
-                    />
-                  </View>
-                ) : (
-                  <View>
                     <TextInput
-                      style={styles.input}
+                      style={styles.phoneInput}
                       value={phoneNumber}
                       onChangeText={setPhoneNumber}
-                      placeholder="Phone number (e.g., +1234567890)"
+                      placeholder="+1234567890"
+                      placeholderTextColor={colors.textSecondary}
                       keyboardType="phone-pad"
+                      autoCapitalize="none"
+                      autoCorrect={false}
                     />
                     <Button
                       title="Generate Pairing Code"
-                      onPress={handleGeneratePairingCode}
-                      loading={generateCode.isPending}
-                      disabled={!phoneNumber.trim()}
+                      onPress={handleConnectWhatsApp}
+                      loading={generatePairingCode.isPending}
                       style={styles.generateButton}
                     />
-                  </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.pairingCodeContainer}>
+                      <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
+                      <View style={styles.pairingCodeRow}>
+                        <Text style={styles.pairingCode}>{pairingCode}</Text>
+                        <TouchableOpacity
+                          style={styles.copyButton}
+                          onPress={() => {
+                            if (pairingCode) {
+                              Clipboard.setStringAsync(pairingCode);
+                              Alert.alert('Copied', 'Pairing code copied to clipboard');
+                            }
+                          }}
+                        >
+                          <Feather name="copy" size={20} color={colors.primary} />
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                    <Text style={styles.pairingInstructions}>
+                      Open WhatsApp {'>'} Settings {'>'} Linked Devices {'>'} Link with phone number
+                    </Text>
+                    <Text style={styles.pairingSubInstructions}>
+                      Enter this 8-digit code in WhatsApp
+                    </Text>
+                    <Button
+                      title="Generate New Code"
+                      onPress={handleConnectWhatsApp}
+                      variant="outline"
+                      loading={generatePairingCode.isPending}
+                      style={styles.generateButton}
+                    />
+                  </>
                 )}
               </View>
             )}
@@ -441,11 +466,17 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  input: {
+  phoneInputLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  phoneInput: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     fontSize: 16,
     color: colors.text,
     backgroundColor: colors.background,
@@ -453,26 +484,41 @@ const styles = StyleSheet.create({
   generateButton: {
     marginTop: 12,
   },
-  codeDisplay: {
-    backgroundColor: colors.primary,
-    borderRadius: 8,
-    padding: 16,
+  pairingCodeContainer: {
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 20,
   },
-  codeLabel: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-    marginBottom: 4,
+  pairingCodeLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 8,
   },
-  code: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#ffffff',
-    letterSpacing: 2,
+  pairingCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pairingCode: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 4,
     fontFamily: 'monospace',
   },
-  codeInstructions: {
+  copyButton: {
+    marginLeft: 12,
+    padding: 8,
+  },
+  pairingInstructions: {
+    fontSize: 14,
+    color: colors.text,
+    textAlign: 'center',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  pairingSubInstructions: {
     fontSize: 12,
     color: colors.textSecondary,
     textAlign: 'center',

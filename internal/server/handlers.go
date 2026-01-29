@@ -252,15 +252,15 @@ func (s *Server) handleListTodayEvents(w http.ResponseWriter, r *http.Request) {
 
 // TodayEventResponse represents a unified event format for Today's Schedule
 type TodayEventResponse struct {
-	ID          string  `json:"id"`
-	Summary     string  `json:"summary"`
-	Description string  `json:"description,omitempty"`
-	Location    string  `json:"location,omitempty"`
-	StartTime   string  `json:"start_time"`
-	EndTime     string  `json:"end_time"`
-	AllDay      bool    `json:"all_day"`
-	CalendarID  string  `json:"calendar_id"`
-	Source      string  `json:"source"` // "alfred", "google", "outlook"
+	ID          string `json:"id"`
+	Summary     string `json:"summary"`
+	Description string `json:"description,omitempty"`
+	Location    string `json:"location,omitempty"`
+	StartTime   string `json:"start_time"`
+	EndTime     string `json:"end_time"`
+	AllDay      bool   `json:"all_day"`
+	CalendarID  string `json:"calendar_id"`
+	Source      string `json:"source"` // "alfred", "google", "outlook"
 }
 
 // handleListMergedTodayEvents returns merged events from Alfred Calendar + external calendars
@@ -973,7 +973,7 @@ func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Generate pairing code
-	code, err := s.waClient.PairWithPhone(r.Context(), phone)
+	code, err := s.waClient.PairWithPhone(r.Context(), phone, s.onboardingState)
 	if err != nil {
 		if s.onboardingState != nil {
 			s.onboardingState.SetWhatsAppError(fmt.Sprintf("Failed to generate pairing code: %v", err))
@@ -982,14 +982,8 @@ func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Format code as XXXX-XXXX for display
-	formattedCode := code
-	if len(code) == 8 {
-		formattedCode = code[:4] + "-" + code[4:]
-	}
-
 	respondJSON(w, http.StatusOK, map[string]string{
-		"code":    formattedCode,
+		"code":    code,
 		"message": "Enter this code in WhatsApp > Linked Devices > Link with phone number",
 	})
 }

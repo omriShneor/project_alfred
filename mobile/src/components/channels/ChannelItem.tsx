@@ -11,9 +11,10 @@ import type { DiscoverableChannel, Channel } from '../../types/channel';
 
 interface ChannelItemProps {
   channel: DiscoverableChannel;
+  onTrack?: () => void;
 }
 
-export function ChannelItem({ channel }: ChannelItemProps) {
+export function ChannelItem({ channel, onTrack }: ChannelItemProps) {
   const { data: trackedChannels } = useChannels();
   const { data: calendars } = useCalendars();
   const createChannel = useCreateChannel();
@@ -38,19 +39,25 @@ export function ChannelItem({ channel }: ChannelItemProps) {
         return; // No calendar available
       }
 
-      createChannel.mutate({
-        type: channel.type,
-        identifier: channel.identifier,
-        name: channel.name,
-        calendar_id: calendarId,
-      });
+      createChannel.mutate(
+        {
+          type: channel.type,
+          identifier: channel.identifier,
+          name: channel.name,
+          calendar_id: calendarId,
+        },
+        { onSuccess: () => onTrack?.() }
+      );
     } else {
-      createChannel.mutate({
-        type: channel.type,
-        identifier: channel.identifier,
-        name: channel.name,
-        calendar_id: selectedCalendar,
-      });
+      createChannel.mutate(
+        {
+          type: channel.type,
+          identifier: channel.identifier,
+          name: channel.name,
+          calendar_id: selectedCalendar,
+        },
+        { onSuccess: () => onTrack?.() }
+      );
     }
   };
 

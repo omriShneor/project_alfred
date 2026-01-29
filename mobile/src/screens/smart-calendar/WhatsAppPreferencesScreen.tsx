@@ -60,6 +60,7 @@ export function WhatsAppPreferencesScreen() {
           channels={filteredChannels}
           refreshing={isRefetchingChannels}
           onRefresh={refetchChannels}
+          onTrack={() => setSearchQuery('')}
         />
       )}
     </View>

@@ -8,9 +8,10 @@ interface ChannelListProps {
   channels: DiscoverableChannel[];
   refreshing?: boolean;
   onRefresh?: () => void;
+  onTrack?: () => void;
 }
 
-export function ChannelList({ channels, refreshing, onRefresh }: ChannelListProps) {
+export function ChannelList({ channels, refreshing, onRefresh, onTrack }: ChannelListProps) {
   // Sort channels: tracked first, then untracked
   const sortedChannels = useMemo(() => {
     return [...channels].sort((a, b) => {
@@ -34,7 +35,7 @@ export function ChannelList({ channels, refreshing, onRefresh }: ChannelListProp
     <FlatList
       data={sortedChannels}
       keyExtractor={(item) => item.identifier}
-      renderItem={({ item }) => <ChannelItem channel={item} />}
+      renderItem={({ item }) => <ChannelItem channel={item} onTrack={onTrack} />}
       contentContainerStyle={styles.list}
       refreshControl={
         onRefresh ? (

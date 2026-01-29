@@ -213,16 +213,19 @@ export function SmartCalendarPermissionsScreen() {
 
   const handleContinue = async () => {
     try {
-      // Mark setup as complete
-      await updateSmartCalendar.mutateAsync({ setup_complete: true });
+      // Enable Smart Calendar and mark setup as complete
+      await updateSmartCalendar.mutateAsync({ enabled: true, setup_complete: true });
 
-      // Navigate to Home screen after setup completion
+      // Wait for features to refetch so drawer shows Smart Calendar tab
+      await queryClient.refetchQueries({ queryKey: ['features'] });
+
+      // Navigate to Smart Calendar Hub after setup completion
       // Using getParent() to access the drawer navigator from within the stack
       const parent = navigation.getParent();
       if (parent) {
-        parent.navigate('Home');
+        parent.navigate('SmartCalendarHub');
       } else {
-        navigation.navigate('Home' as any);
+        navigation.navigate('SmartCalendarHub' as any);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to complete setup');
@@ -392,7 +395,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 8,
     paddingBottom: 32,
   },
   headerText: {

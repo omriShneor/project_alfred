@@ -51,7 +51,7 @@ export function InputIntegrationsScreen() {
         <IntegrationItem
           icon="message-circle"
           title="WhatsApp Preferences"
-          description="Configure which contacts and groups to track"
+          description="Choose which contacts and groups to scan for events"
           onPress={() => navigation.navigate('WhatsAppPreferences')}
         />
       )}
@@ -60,7 +60,7 @@ export function InputIntegrationsScreen() {
         <IntegrationItem
           icon="mail"
           title="Gmail Preferences"
-          description="Configure email sources to track"
+          description="Choose which email senders to scan for events"
           onPress={() => navigation.navigate('GmailPreferences')}
         />
       )}

@@ -123,6 +123,7 @@ export function SmartCalendarPermissionsScreen() {
   const queryClient = useQueryClient();
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [showCopied, setShowCopied] = useState(false);
 
   const { data: features } = useFeatures();
   useSmartCalendarStatus();
@@ -328,12 +329,16 @@ export function SmartCalendarPermissionsScreen() {
                           onPress={() => {
                             if (pairingCode) {
                               Clipboard.setStringAsync(pairingCode);
-                              Alert.alert('Copied', 'Pairing code copied to clipboard');
+                              setShowCopied(true);
+                              setTimeout(() => setShowCopied(false), 2000);
                             }
                           }}
                         >
-                          <Feather name="copy" size={20} color={colors.primary} />
+                          <Feather name={showCopied ? "check" : "copy"} size={20} color={showCopied ? colors.success : colors.primary} />
                         </TouchableOpacity>
+                        {showCopied && (
+                          <Text style={styles.copiedText}>Copied!</Text>
+                        )}
                       </View>
                     </View>
                     <Text style={styles.pairingInstructions}>
@@ -510,6 +515,12 @@ const styles = StyleSheet.create({
   copyButton: {
     marginLeft: 12,
     padding: 8,
+  },
+  copiedText: {
+    marginLeft: 8,
+    fontSize: 13,
+    color: colors.success,
+    fontWeight: '500',
   },
   pairingInstructions: {
     fontSize: 14,

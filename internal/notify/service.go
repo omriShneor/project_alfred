@@ -85,3 +85,39 @@ func (s *Service) IsEmailAvailable() bool {
 func (s *Service) IsPushAvailable() bool {
 	return s.pushNotifier != nil && s.pushNotifier.IsConfigured()
 }
+
+// NotifyWhatsAppConnected sends a push notification when WhatsApp connects
+func (s *Service) NotifyWhatsAppConnected(ctx context.Context) {
+	fmt.Println("Notification: WhatsApp connected, checking push preferences")
+
+	prefs, err := s.db.GetUserNotificationPrefs()
+	if err != nil {
+		fmt.Printf("Notification: Failed to get prefs: %v\n", err)
+		return
+	}
+
+	if !prefs.PushEnabled || prefs.PushToken == "" {
+		fmt.Println("Notification: Push not enabled or no token registered")
+		return
+	}
+
+	// Type assert to get ExpoPushNotifier for SendSimple method
+	expoPush, ok := s.pushNotifier.(*ExpoPushNotifier)
+	if !ok {
+		fmt.Println("Notification: Push notifier is not ExpoPushNotifier")
+		return
+	}
+
+	err = expoPush.SendSimple(
+		ctx,
+		prefs.PushToken,
+		"WhatsApp Connected",
+		"Your WhatsApp account is now linked. Tap to set up Smart Calendar.",
+		"SmartCalendar",
+	)
+	if err != nil {
+		fmt.Printf("Notification: Failed to send WhatsApp connected push: %v\n", err)
+	} else {
+		fmt.Println("Notification: WhatsApp connected push sent successfully")
+	}
+}

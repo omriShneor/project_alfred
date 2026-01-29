@@ -9,6 +9,7 @@ import * as Notifications from 'expo-notifications';
 
 import { Header } from './src/components/layout/Header';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { navigationRef } from './src/navigation/navigationRef';
 import { AppStateProvider, useAppState } from './src/context/AppStateContext';
 import { colors } from './src/theme/colors';
 
@@ -54,7 +55,7 @@ export default function App() {
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
           <AppStateProvider>
-            <NavigationContainer>
+            <NavigationContainer ref={navigationRef}>
               <AppContent />
             </NavigationContainer>
           </AppStateProvider>

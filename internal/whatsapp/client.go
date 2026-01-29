@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -12,12 +13,13 @@ import (
 )
 
 type Client struct {
-	WAClient  *whatsmeow.Client
-	handler   *Handler
-	container *sqlstore.Container
+	WAClient      *whatsmeow.Client
+	handler       *Handler
+	container     *sqlstore.Container
+	notifyService *notify.Service
 }
 
-func NewClient(handler *Handler, dbPath string) (*Client, error) {
+func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (*Client, error) {
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 	clientLog := waLog.Stdout("Client", "DEBUG", true)
 
@@ -34,9 +36,10 @@ func NewClient(handler *Handler, dbPath string) (*Client, error) {
 	waClient := whatsmeow.NewClient(deviceStore, clientLog)
 
 	c := &Client{
-		WAClient:  waClient,
-		handler:   handler,
-		container: container,
+		WAClient:      waClient,
+		handler:       handler,
+		container:     container,
+		notifyService: notifyService,
 	}
 
 	if handler != nil {
@@ -131,6 +134,11 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 				fmt.Println("WhatsApp paired successfully via QR channel!")
 				if state != nil {
 					state.SetWhatsAppStatus("connected")
+				}
+				fmt.Println("WhatsApp paired successfully!")
+				// Send push notification to inform user
+				if c.notifyService != nil {
+					c.notifyService.NotifyWhatsAppConnected(context.Background())
 				}
 				return
 			case "timeout":

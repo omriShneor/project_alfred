@@ -34,6 +34,9 @@ func main() {
 
 	state := sse.NewState()
 
+	// Initialize notify service early so it can be used during WhatsApp pairing
+	notifyService := initNotifyService(db, cfg)
+
 	srv := server.New(server.ServerConfig{
 		DB:              db,
 		OnboardingState: state,
@@ -47,13 +50,12 @@ func main() {
 	}()
 
 	ctx := context.Background()
-	clients, err := onboarding.Initialize(ctx, db, cfg, state, srv)
+	clients, err := onboarding.Initialize(ctx, db, cfg, state, srv, notifyService)
 	if err != nil {
 		fatal("initialization", err)
 	}
 
 	claudeClient := initClaudeClient(cfg)
-	notifyService := initNotifyService(db, cfg)
 	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, claudeClient, notifyService, cfg)
 
 	srv.InitializeClients(server.ClientsConfig{

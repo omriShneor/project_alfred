@@ -8,7 +8,6 @@ import (
 )
 
 func init() {
-	// Load .env file if it exists (silently ignore if not found)
 	_ = godotenv.Load()
 }
 

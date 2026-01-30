@@ -8,41 +8,41 @@ import {
   Switch,
   Alert,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { CommonActions, useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, LoadingSpinner } from '../components/common';
 import { colors } from '../theme/colors';
 import {
-  useFeatures,
-  useUpdateSmartCalendar,
-  usePushNotifications,
+  useAppStatus,
   useWhatsAppStatus,
   useGCalStatus,
+  usePushNotifications,
+  useDisconnectWhatsApp,
 } from '../hooks';
-import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs } from '../api';
-import type { DrawerNavigationProp } from '@react-navigation/drawer';
-import type { DrawerParamList } from '../navigation/DrawerNavigator';
+import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs, disconnectGCal } from '../api';
 
-type NavigationProp = DrawerNavigationProp<DrawerParamList>;
-
-export function CapabilitiesScreen() {
-  const navigation = useNavigation<NavigationProp>();
+export function SettingsScreen() {
+  const navigation = useNavigation();
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [emailAvailable, setEmailAvailable] = useState(false);
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushAvailable, setPushAvailable] = useState(false);
   const [savingNotifications, setSavingNotifications] = useState(false);
+  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
 
   // Track original values to detect changes
   const [originalEmailEnabled, setOriginalEmailEnabled] = useState(false);
   const [originalEmailAddress, setOriginalEmailAddress] = useState('');
   const [originalPushEnabled, setOriginalPushEnabled] = useState(false);
 
-  const { data: features, isLoading: featuresLoading } = useFeatures();
-  const updateSmartCalendar = useUpdateSmartCalendar();
-  const { data: waStatus } = useWhatsAppStatus();
-  const { data: gcalStatus } = useGCalStatus();
+  const { data: appStatus } = useAppStatus();
+  const { data: waStatus, refetch: refetchWaStatus } = useWhatsAppStatus();
+  const { data: gcalStatus, refetch: refetchGcalStatus } = useGCalStatus();
+  const disconnectWhatsApp = useDisconnectWhatsApp();
 
   const {
     expoPushToken,
@@ -72,63 +72,10 @@ export function CapabilitiesScreen() {
     }
   };
 
-  // Detect if there are unsaved notification changes
   const hasNotificationChanges =
     emailEnabled !== originalEmailEnabled ||
     emailAddress !== originalEmailAddress ||
     pushEnabled !== originalPushEnabled;
-
-  const handleToggleSmartCalendar = async (enabled: boolean) => {
-    if (enabled) {
-      // Check if all required integrations are already connected
-      const inputs = features?.smart_calendar?.inputs;
-      const calendars = features?.smart_calendar?.calendars;
-
-      const needsWhatsApp = inputs?.whatsapp?.enabled ?? false;
-      const needsGmail = inputs?.email?.enabled ?? false;
-      const needsGoogleCalendar = calendars?.google_calendar?.enabled ?? false;
-
-      // Google account is needed for either Gmail or Google Calendar
-      const needsGoogle = needsGmail || needsGoogleCalendar;
-
-      // Check if any inputs have been configured
-      const hasAnyInputConfigured = needsWhatsApp || needsGmail;
-
-      // If no inputs are configured yet, always go through setup flow
-      if (!hasAnyInputConfigured) {
-        navigation.navigate('SmartCalendarStack' as any, { screen: 'Setup' });
-        return;
-      }
-
-      const whatsAppConnected = waStatus?.connected ?? false;
-      const googleConnected = gcalStatus?.connected ?? false;
-
-      // Check if all required integrations are already connected
-      const allConnected =
-        (!needsWhatsApp || whatsAppConnected) &&
-        (!needsGoogle || googleConnected);
-
-      if (allConnected) {
-        // All integrations are already connected, enable directly and go to Home
-        try {
-          await updateSmartCalendar.mutateAsync({ enabled: true, setup_complete: true });
-          navigation.navigate('Home');
-        } catch (error: any) {
-          Alert.alert('Error', error.message || 'Failed to enable Smart Calendar');
-        }
-      } else {
-        // Some integrations need to be connected, go to permissions screen
-        navigation.navigate('SmartCalendarStack' as any, { screen: 'Permissions' });
-      }
-    } else {
-      // Disable Smart Calendar - clear both enabled and setup_complete
-      try {
-        await updateSmartCalendar.mutateAsync({ enabled: false, setup_complete: false });
-      } catch (error: any) {
-        Alert.alert('Error', error.message || 'Failed to disable Smart Calendar');
-      }
-    }
-  };
 
   const handleSaveNotificationSettings = async () => {
     if (emailEnabled && !emailAddress.trim()) {
@@ -138,18 +85,14 @@ export function CapabilitiesScreen() {
 
     setSavingNotifications(true);
     try {
-      // Save email settings
       await updateEmailPrefs(emailEnabled, emailAddress.trim());
 
-      // Save push settings (only if push is available)
       if (pushAvailable) {
-        // If enabling push and no token, request permissions first
         if (pushEnabled && !expoPushToken && originalPushEnabled !== pushEnabled) {
           if (permissionStatus === 'denied') {
             Alert.alert(
               'Permission Required',
-              'Push notifications are disabled. Please enable them in your device settings.',
-              [{ text: 'OK' }]
+              'Push notifications are disabled. Please enable them in your device settings.'
             );
             setSavingNotifications(false);
             return;
@@ -164,7 +107,6 @@ export function CapabilitiesScreen() {
         }
       }
 
-      // Update originals after successful save
       setOriginalEmailEnabled(emailEnabled);
       setOriginalEmailAddress(emailAddress);
       setOriginalPushEnabled(pushEnabled);
@@ -176,36 +118,130 @@ export function CapabilitiesScreen() {
     setSavingNotifications(false);
   };
 
-  const smartCalendarEnabled = features?.smart_calendar?.enabled ?? false;
-  const smartCalendarSetupComplete = features?.smart_calendar?.setup_complete ?? false;
+  const handleDisconnectWhatsApp = () => {
+    Alert.alert(
+      'Disconnect WhatsApp',
+      'Are you sure you want to disconnect WhatsApp? You will need to reconnect to scan messages.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await disconnectWhatsApp.mutateAsync();
+              refetchWaStatus();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to disconnect WhatsApp');
+            }
+          },
+        },
+      ]
+    );
+  };
 
-  // Toggle should only be ON when both enabled AND setup is complete
-  const smartCalendarToggleValue = smartCalendarEnabled && smartCalendarSetupComplete;
+  const handleDisconnectGoogle = () => {
+    Alert.alert(
+      'Disconnect Google',
+      'Are you sure you want to disconnect your Google account? This will disable Gmail scanning and Google Calendar sync.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            setDisconnectingGoogle(true);
+            try {
+              await disconnectGCal();
+              refetchGcalStatus();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to disconnect Google');
+            }
+            setDisconnectingGoogle(false);
+          },
+        },
+      ]
+    );
+  };
+
+  // Navigate to home when tapping header
+  const handleGoHome = () => {
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: 'Home',
+      })
+    );
+  };
+
+  const whatsappEnabled = appStatus?.whatsapp?.enabled ?? false;
+  const gmailEnabled = appStatus?.gmail?.enabled ?? false;
+  const whatsappConnected = waStatus?.connected ?? false;
+  const googleConnected = gcalStatus?.connected ?? false;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-        {/* Features Section */}
-        <Text style={styles.sectionTitle}>Features</Text>
+    <SafeAreaView style={styles.container} edges={['top']}>
+      {/* Header with Home navigation */}
+      <TouchableOpacity style={styles.header} onPress={handleGoHome} activeOpacity={0.7}>
+        <Text style={styles.headerTitle}>Alfred</Text>
+      </TouchableOpacity>
+
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+        {/* Connected Accounts Section */}
+        <Text style={styles.sectionTitle}>Connected Accounts</Text>
         <Card>
-          <View style={styles.featureRow}>
-            <View style={styles.featureInfo}>
-              <Text style={styles.featureTitle}>Smart Calendar</Text>
-              <Text style={styles.featureDescription}>
-                Automatically detect events from your messages and sync to calendar
-              </Text>
+          {whatsappEnabled && (
+            <View style={styles.accountRow}>
+              <View style={styles.accountInfo}>
+                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
+                <View style={styles.accountText}>
+                  <Text style={styles.accountName}>WhatsApp</Text>
+                  <Text style={styles.accountStatus}>
+                    {whatsappConnected ? 'Connected' : 'Not connected'}
+                  </Text>
+                </View>
+              </View>
+              {whatsappConnected ? (
+                <Button
+                  title="Disconnect"
+                  variant="outline"
+                  onPress={handleDisconnectWhatsApp}
+                  loading={disconnectWhatsApp.isPending}
+                  style={styles.disconnectButton}
+                />
+              ) : (
+                <View style={[styles.statusDot, styles.statusDisconnected]} />
+              )}
             </View>
-            {featuresLoading ? (
-              <LoadingSpinner size="small" />
-            ) : (
-              <Switch
-                value={smartCalendarToggleValue}
-                onValueChange={handleToggleSmartCalendar}
-                disabled={updateSmartCalendar.isPending}
-                trackColor={{ false: colors.border, true: colors.primary }}
-                thumbColor="#ffffff"
-              />
-            )}
-          </View>
+          )}
+
+          {gmailEnabled && (
+            <View style={[styles.accountRow, whatsappEnabled && styles.accountRowBorder]}>
+              <View style={styles.accountInfo}>
+                <Ionicons name="logo-google" size={20} color={colors.text} />
+                <View style={styles.accountText}>
+                  <Text style={styles.accountName}>Google Account</Text>
+                  <Text style={styles.accountStatus}>
+                    {googleConnected ? 'Connected' : 'Not connected'}
+                  </Text>
+                </View>
+              </View>
+              {googleConnected ? (
+                <Button
+                  title="Disconnect"
+                  variant="outline"
+                  onPress={handleDisconnectGoogle}
+                  loading={disconnectingGoogle}
+                  style={styles.disconnectButton}
+                />
+              ) : (
+                <View style={[styles.statusDot, styles.statusDisconnected]} />
+              )}
+            </View>
+          )}
+
+          {!whatsappEnabled && !gmailEnabled && (
+            <Text style={styles.noAccountsText}>No accounts configured</Text>
+          )}
         </Card>
 
         {/* Notifications Section */}
@@ -245,7 +281,6 @@ export function CapabilitiesScreen() {
             </View>
           )}
 
-          {/* Push Notifications */}
           {Platform.OS !== 'web' && pushAvailable && (
             <View style={styles.pushSection}>
               <View style={styles.settingRow}>
@@ -275,13 +310,12 @@ export function CapabilitiesScreen() {
             </View>
           )}
 
-          {/* Unified Save Button */}
           {hasNotificationChanges && (
             <Button
               title="Save Notification Settings"
               onPress={handleSaveNotificationSettings}
               loading={savingNotifications}
-              style={styles.notificationSaveButton}
+              style={styles.saveButton}
             />
           )}
         </Card>
@@ -295,6 +329,7 @@ export function CapabilitiesScreen() {
           </View>
         </Card>
       </ScrollView>
+    </SafeAreaView>
   );
 }
 
@@ -303,8 +338,22 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: colors.primary,
+  },
+  scrollView: {
+    flex: 1,
+  },
   content: {
     padding: 16,
+    paddingTop: 8,
     paddingBottom: 32,
   },
   sectionTitle: {
@@ -317,25 +366,51 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
-  featureRow: {
+  accountRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingVertical: 12,
   },
-  featureInfo: {
+  accountRowBorder: {
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  accountInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
     flex: 1,
-    marginRight: 16,
   },
-  featureTitle: {
+  accountText: {
+    marginLeft: 12,
+  },
+  accountName: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     color: colors.text,
-    marginBottom: 4,
   },
-  featureDescription: {
+  accountStatus: {
     fontSize: 13,
     color: colors.textSecondary,
-    lineHeight: 18,
+    marginTop: 2,
+  },
+  disconnectButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  statusDisconnected: {
+    backgroundColor: colors.warning,
+  },
+  noAccountsText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: 16,
   },
   settingRow: {
     flexDirection: 'row',
@@ -382,7 +457,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  notificationSaveButton: {
+  saveButton: {
     marginTop: 20,
   },
   aboutRow: {

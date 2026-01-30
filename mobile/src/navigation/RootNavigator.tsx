@@ -1,21 +1,16 @@
 import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Linking } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
-import { useExchangeOAuthCode, useHealth } from '../hooks';
-import { DrawerNavigator } from './DrawerNavigator';
-import { useAppState } from '../context/AppStateContext';
+import { useExchangeOAuthCode, useHealth, useAppStatus } from '../hooks';
+import { MainNavigator } from './MainNavigator';
+import { OnboardingNavigator } from './OnboardingNavigator';
 import { colors } from '../theme/colors';
 import { LoadingSpinner } from '../components/common';
 
 export function RootNavigator() {
-  const { isLoading, isError } = useHealth();
+  const { isLoading: healthLoading, isError: healthError } = useHealth();
+  const { data: appStatus, isLoading: statusLoading } = useAppStatus();
   const exchangeCode = useExchangeOAuthCode();
-  const { setShowDrawerToggle } = useAppState();
-
-  // Always show drawer toggle since we're skipping mandatory onboarding
-  useEffect(() => {
-    setShowDrawerToggle(true);
-  }, [setShowDrawerToggle]);
 
   // Handle OAuth callback deep link globally
   const handleOAuthCallback = useCallback(
@@ -49,8 +44,8 @@ export function RootNavigator() {
     return () => subscription.remove();
   }, [handleOAuthCallback]);
 
-  // Show loading state while checking backend health
-  if (isLoading) {
+  // Show loading state while checking backend health and app status
+  if (healthLoading || statusLoading) {
     return (
       <View style={styles.loadingContainer}>
         <LoadingSpinner />
@@ -60,7 +55,7 @@ export function RootNavigator() {
   }
 
   // Show error state if can't connect to backend
-  if (isError) {
+  if (healthError) {
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorIcon}>!</Text>
@@ -72,8 +67,13 @@ export function RootNavigator() {
     );
   }
 
-  // Always show main app - no mandatory onboarding
-  return <DrawerNavigator />;
+  // Show onboarding if not completed
+  if (!appStatus?.onboarding_complete) {
+    return <OnboardingNavigator />;
+  }
+
+  // Show main app
+  return <MainNavigator />;
 }
 
 const styles = StyleSheet.create({

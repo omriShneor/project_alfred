@@ -2,7 +2,7 @@ import { ExpoConfig, ConfigContext } from 'expo/config';
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'Project Alfred',
+  name: 'Alfred',
   slug: 'alfred-mobile',
   version: '1.0.0',
   orientation: 'portrait',

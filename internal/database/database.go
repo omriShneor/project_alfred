@@ -197,6 +197,14 @@ func (d *DB) migrate() error {
 		return fmt.Errorf("failed to add calendar_type column: %w", err)
 	}
 
+	// Add onboarding_complete column to feature_settings (new simplified flow)
+	if err := d.addColumnIfNotExists("feature_settings", "onboarding_complete", "BOOLEAN DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add onboarding_complete column: %w", err)
+	}
+
+	// Migration: if smart_calendar_setup_complete is true, set onboarding_complete to true
+	_, _ = d.Exec(`UPDATE feature_settings SET onboarding_complete = 1 WHERE smart_calendar_setup_complete = 1 AND onboarding_complete = 0`)
+
 	return nil
 }
 

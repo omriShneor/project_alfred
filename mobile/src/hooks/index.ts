@@ -31,3 +31,4 @@ export {
   useSmartCalendarStatus,
   useSmartCalendarEnabled,
 } from './useFeatures';
+export { useAppStatus, useCompleteOnboarding, useIsOnboarded } from './useAppStatus';

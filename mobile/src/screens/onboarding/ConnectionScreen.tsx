@@ -1,0 +1,469 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Alert,
+  TouchableOpacity,
+  Image,
+  TextInput,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRoute, CommonActions, useNavigation } from '@react-navigation/native';
+import type { RouteProp } from '@react-navigation/native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Clipboard from 'expo-clipboard';
+import { Feather } from '@expo/vector-icons';
+import { Button, Card } from '../../components/common';
+import { colors } from '../../theme/colors';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  useWhatsAppStatus,
+  useGCalStatus,
+  useGeneratePairingCode,
+  useGetOAuthURL,
+  useCompleteOnboarding,
+} from '../../hooks';
+import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
+
+type RouteProps = RouteProp<OnboardingParamList, 'Connection'>;
+type IntegrationStatusType = 'pending' | 'connecting' | 'available' | 'error';
+
+function getStatusColor(status: IntegrationStatusType) {
+  switch (status) {
+    case 'available':
+      return colors.success;
+    case 'connecting':
+      return colors.warning;
+    case 'error':
+      return colors.danger;
+    default:
+      return colors.textSecondary;
+  }
+}
+
+function getStatusLabel(status: IntegrationStatusType) {
+  switch (status) {
+    case 'available':
+      return 'Connected';
+    case 'connecting':
+      return 'Connecting...';
+    case 'error':
+      return 'Error';
+    default:
+      return 'Not connected';
+  }
+}
+
+function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading?: boolean }) {
+  return (
+    <TouchableOpacity
+      style={styles.googleButton}
+      onPress={onPress}
+      disabled={loading}
+      activeOpacity={0.7}
+    >
+      <Image
+        source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+        style={styles.googleLogo}
+      />
+      <Text style={styles.googleButtonText}>
+        {loading ? 'Connecting...' : 'Sign in with Google'}
+      </Text>
+    </TouchableOpacity>
+  );
+}
+
+export function ConnectionScreen() {
+  const navigation = useNavigation();
+  const route = useRoute<RouteProps>();
+  const queryClient = useQueryClient();
+
+  const { whatsappEnabled, gmailEnabled } = route.params;
+
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [showCopied, setShowCopied] = useState(false);
+
+  const { data: waStatus } = useWhatsAppStatus();
+  const { data: gcalStatus } = useGCalStatus();
+  const generatePairingCode = useGeneratePairingCode();
+  const getOAuthURL = useGetOAuthURL();
+  const completeOnboarding = useCompleteOnboarding();
+
+  // Determine statuses
+  const googleStatus: IntegrationStatusType = gcalStatus?.connected ? 'available' : 'pending';
+  const whatsappStatus: IntegrationStatusType = waStatus?.connected ? 'available' : (pairingCode ? 'connecting' : 'pending');
+
+  // Check if all required integrations are available
+  const allAvailable = React.useMemo(() => {
+    const checks: boolean[] = [];
+
+    if (gmailEnabled) {
+      checks.push(googleStatus === 'available');
+    }
+    if (whatsappEnabled) {
+      checks.push(whatsappStatus === 'available');
+    }
+
+    return checks.length > 0 && checks.every(Boolean);
+  }, [gmailEnabled, whatsappEnabled, googleStatus, whatsappStatus]);
+
+  // Reset pairing code when WhatsApp connects
+  useEffect(() => {
+    if (waStatus?.connected) {
+      setPairingCode(null);
+      setPhoneNumber('');
+    }
+  }, [waStatus?.connected]);
+
+  const handleConnectGoogle = async () => {
+    try {
+      const response = await getOAuthURL.mutateAsync(undefined);
+      await WebBrowser.openAuthSessionAsync(response.auth_url, 'alfred://oauth/success');
+      queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Failed to start Google authorization');
+    }
+  };
+
+  const handleConnectWhatsApp = async () => {
+    if (!phoneNumber.trim()) {
+      Alert.alert('Error', 'Please enter your phone number');
+      return;
+    }
+    try {
+      const result = await generatePairingCode.mutateAsync(phoneNumber.trim());
+      setPairingCode(result.code);
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Failed to generate pairing code');
+    }
+  };
+
+  const handleCopyCode = async () => {
+    if (pairingCode) {
+      await Clipboard.setStringAsync(pairingCode);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2000);
+    }
+  };
+
+  const handleContinue = async () => {
+    try {
+      await completeOnboarding.mutateAsync({
+        whatsapp_enabled: whatsappEnabled,
+        gmail_enabled: gmailEnabled,
+      });
+
+      // Navigate to main app (Preferences tab)
+      navigation.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: 'Main' as any }],
+        })
+      );
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to complete onboarding');
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea} edges={['top']}>
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+        <Text style={styles.step}>Step 2 of 2</Text>
+        <Text style={styles.title}>Connect Your Accounts</Text>
+        <Text style={styles.description}>
+          Connect the services you selected to start scanning for events.
+        </Text>
+
+        {gmailEnabled && (
+          <Card style={styles.card}>
+            <View style={styles.integrationRow}>
+              <View style={styles.integrationHeader}>
+                <View style={styles.integrationInfo}>
+                  <Text style={styles.integrationName}>Google Account</Text>
+                  <Text style={styles.integrationDescription}>For Gmail access</Text>
+                </View>
+                <View style={styles.integrationStatus}>
+                  <View style={[styles.statusDot, { backgroundColor: getStatusColor(googleStatus) }]} />
+                  <Text style={styles.statusLabel}>{getStatusLabel(googleStatus)}</Text>
+                </View>
+              </View>
+              {googleStatus !== 'available' && (
+                <GoogleSignInButton
+                  onPress={handleConnectGoogle}
+                  loading={getOAuthURL.isPending}
+                />
+              )}
+            </View>
+          </Card>
+        )}
+
+        {whatsappEnabled && (
+          <Card style={styles.card}>
+            <View style={styles.integrationRow}>
+              <View style={styles.integrationHeader}>
+                <View style={styles.integrationInfo}>
+                  <Text style={styles.integrationName}>WhatsApp</Text>
+                  <Text style={styles.integrationDescription}>For message scanning</Text>
+                </View>
+                <View style={styles.integrationStatus}>
+                  <View style={[styles.statusDot, { backgroundColor: getStatusColor(whatsappStatus) }]} />
+                  <Text style={styles.statusLabel}>{getStatusLabel(whatsappStatus)}</Text>
+                </View>
+              </View>
+
+              {whatsappStatus !== 'available' && (
+                <View style={styles.whatsappSection}>
+                  {!pairingCode ? (
+                    <>
+                      <Text style={styles.phoneInputLabel}>
+                        Enter your phone number with country code
+                      </Text>
+                      <TextInput
+                        style={styles.phoneInput}
+                        value={phoneNumber}
+                        onChangeText={setPhoneNumber}
+                        placeholder="+1234567890"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="phone-pad"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <Button
+                        title="Generate Pairing Code"
+                        onPress={handleConnectWhatsApp}
+                        loading={generatePairingCode.isPending}
+                        style={styles.generateButton}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <View style={styles.pairingCodeContainer}>
+                        <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
+                        <View style={styles.pairingCodeRow}>
+                          <Text style={styles.pairingCode}>{pairingCode}</Text>
+                          <TouchableOpacity style={styles.copyButton} onPress={handleCopyCode}>
+                            <Feather
+                              name={showCopied ? 'check' : 'copy'}
+                              size={20}
+                              color={showCopied ? colors.success : colors.primary}
+                            />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                      <Text style={styles.pairingInstructions}>
+                        Open WhatsApp {'>'} Settings {'>'} Linked Devices {'>'} Link with phone number
+                      </Text>
+                      <Text style={styles.pairingSubInstructions}>
+                        Enter this 8-digit code in WhatsApp
+                      </Text>
+                      <Button
+                        title="Generate New Code"
+                        onPress={handleConnectWhatsApp}
+                        variant="outline"
+                        loading={generatePairingCode.isPending}
+                        style={styles.generateButton}
+                      />
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          </Card>
+        )}
+
+        {!allAvailable && (
+          <View style={styles.statusSummary}>
+            <Feather name="info" size={16} color={colors.textSecondary} />
+            <Text style={styles.statusSummaryText}>
+              Connect all services above to continue
+            </Text>
+          </View>
+        )}
+
+        <Button
+          title="Continue"
+          onPress={handleContinue}
+          disabled={!allAvailable}
+          loading={completeOnboarding.isPending}
+          style={styles.continueButton}
+        />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
+  },
+  content: {
+    padding: 24,
+    paddingBottom: 48,
+  },
+  step: {
+    fontSize: 14,
+    color: colors.primary,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  description: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    lineHeight: 22,
+    marginBottom: 32,
+  },
+  card: {
+    marginBottom: 16,
+  },
+  integrationRow: {
+    paddingVertical: 4,
+  },
+  integrationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  integrationInfo: {
+    flex: 1,
+    marginRight: 12,
+  },
+  integrationName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 2,
+  },
+  integrationDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  integrationStatus: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  statusLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#dadce0',
+    borderRadius: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    marginTop: 16,
+  },
+  googleLogo: {
+    width: 20,
+    height: 20,
+    marginRight: 12,
+  },
+  googleButtonText: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#3c4043',
+  },
+  whatsappSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  phoneInputLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  phoneInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
+  generateButton: {
+    marginTop: 12,
+  },
+  pairingCodeContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: colors.card,
+    borderRadius: 12,
+    padding: 20,
+  },
+  pairingCodeLabel: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 8,
+  },
+  pairingCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pairingCode: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: colors.primary,
+    letterSpacing: 4,
+    fontFamily: 'monospace',
+  },
+  copyButton: {
+    padding: 8,
+    marginLeft: 12,
+  },
+  pairingInstructions: {
+    fontSize: 14,
+    color: colors.text,
+    textAlign: 'center',
+    fontWeight: '500',
+    marginBottom: 4,
+  },
+  pairingSubInstructions: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  statusSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  statusSummaryText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginLeft: 8,
+  },
+  continueButton: {
+    marginTop: 8,
+  },
+});

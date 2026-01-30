@@ -10,7 +10,7 @@ interface HeaderProps {
   showDrawerToggle?: boolean;
 }
 
-export function Header({ title = 'Project Alfred', showDrawerToggle = false }: HeaderProps) {
+export function Header({ title = 'Alfred', showDrawerToggle = false }: HeaderProps) {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation();
 

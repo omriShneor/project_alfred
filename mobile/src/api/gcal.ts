@@ -34,4 +34,8 @@ export async function exchangeOAuthCode(code: string, redirectUri?: string): Pro
   );
 }
 
+export async function disconnectGCal(): Promise<void> {
+  await apiClient.post('/api/gcal/disconnect');
+}
+
 // Note: listCalendars is exported from events.ts to avoid duplication

@@ -3,7 +3,7 @@ export { getHealth, type HealthStatus } from './health';
 export { listChannels, createChannel, updateChannel, deleteChannel, discoverChannels } from './channels';
 export { listEvents, getEvent, updateEvent, confirmEvent, rejectEvent, getChannelHistory, listCalendars, type ListEventsParams } from './events';
 export { getWhatsAppStatus, generatePairingCode, disconnectWhatsApp, reconnectWhatsApp, type WhatsAppStatus, type PairingCodeResponse } from './whatsapp';
-export { getGCalStatus, getOAuthURL, exchangeOAuthCode, type GCalStatus, type GCalConnectResponse } from './gcal';
+export { getGCalStatus, getOAuthURL, exchangeOAuthCode, disconnectGCal, type GCalStatus, type GCalConnectResponse } from './gcal';
 export { getNotificationPrefs, updateEmailPrefs, registerPushToken, updatePushPrefs, type NotificationPreferences, type NotificationPrefsResponse } from './notifications';
 export { getOnboardingStatus, type OnboardingStatus } from './onboarding';
 export {
@@ -29,3 +29,5 @@ export {
   type DiscoveredDomain,
 } from './gmail';
 export { getFeatures, updateSmartCalendar, getSmartCalendarStatus } from './features';
+export { getAppStatus, completeOnboarding } from './app';
+export type { AppStatus, CompleteOnboardingRequest, ConnectionStatus } from '../types/app';

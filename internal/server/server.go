@@ -147,10 +147,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/gmail/sources/{id}", s.handleUpdateEmailSource)
 	mux.HandleFunc("DELETE /api/gmail/sources/{id}", s.handleDeleteEmailSource)
 
-	// Features API
+	// Features API (legacy - kept for backward compatibility)
 	mux.HandleFunc("GET /api/features", s.handleGetFeatures)
 	mux.HandleFunc("PUT /api/features/smart-calendar", s.handleUpdateSmartCalendar)
 	mux.HandleFunc("GET /api/features/smart-calendar/status", s.handleGetSmartCalendarStatus)
+
+	// App Status API (new simplified flow)
+	mux.HandleFunc("GET /api/app/status", s.handleGetAppStatus)
+	mux.HandleFunc("POST /api/onboarding/complete", s.handleCompleteOnboarding)
+	mux.HandleFunc("POST /api/onboarding/reset", s.handleResetOnboarding)
 }
 
 func (s *Server) Start() error {

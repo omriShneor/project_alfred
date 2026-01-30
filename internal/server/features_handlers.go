@@ -248,3 +248,91 @@ func (s *Server) handleGetSmartCalendarStatus(w http.ResponseWriter, r *http.Req
 
 	respondJSON(w, http.StatusOK, status)
 }
+
+// ---- Simplified App Status API (new navigation flow) ----
+
+// AppStatusResponse represents the simplified app status for the new UI flow
+type AppStatusResponse struct {
+	OnboardingComplete bool             `json:"onboarding_complete"`
+	WhatsApp           ConnectionStatus `json:"whatsapp"`
+	Gmail              ConnectionStatus `json:"gmail"`
+	GoogleCalendar     ConnectionStatus `json:"google_calendar"`
+}
+
+// ConnectionStatus represents the connection status of an integration
+type ConnectionStatus struct {
+	Enabled   bool `json:"enabled"`
+	Connected bool `json:"connected"`
+}
+
+// handleGetAppStatus returns the simplified app status
+func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
+	status, err := s.db.GetAppStatus()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Check actual connection status
+	whatsappConnected := s.waClient != nil && s.waClient.IsLoggedIn()
+	gmailConnected := s.gmailClient != nil && s.gmailClient.IsAuthenticated()
+	googleCalConnected := s.gcalClient != nil && s.gcalClient.IsAuthenticated()
+
+	response := AppStatusResponse{
+		OnboardingComplete: status.OnboardingComplete,
+		WhatsApp: ConnectionStatus{
+			Enabled:   status.WhatsAppEnabled,
+			Connected: whatsappConnected,
+		},
+		Gmail: ConnectionStatus{
+			Enabled:   status.GmailEnabled,
+			Connected: gmailConnected,
+		},
+		GoogleCalendar: ConnectionStatus{
+			Enabled:   status.GoogleCalEnabled,
+			Connected: googleCalConnected,
+		},
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+// CompleteOnboardingRequest represents the request body for POST /api/onboarding/complete
+type CompleteOnboardingRequest struct {
+	WhatsAppEnabled bool `json:"whatsapp_enabled"`
+	GmailEnabled    bool `json:"gmail_enabled"`
+}
+
+// handleCompleteOnboarding marks the onboarding as complete
+func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request) {
+	var req CompleteOnboardingRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	// At least one input must be enabled
+	if !req.WhatsAppEnabled && !req.GmailEnabled {
+		respondError(w, http.StatusBadRequest, "at least one input (WhatsApp or Gmail) must be enabled")
+		return
+	}
+
+	if err := s.db.CompleteOnboarding(req.WhatsAppEnabled, req.GmailEnabled); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Return updated status
+	s.handleGetAppStatus(w, r)
+}
+
+// handleResetOnboarding resets the onboarding status (for testing)
+func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.ResetOnboarding(); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Return updated status
+	s.handleGetAppStatus(w, r)
+}

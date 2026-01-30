@@ -145,7 +145,7 @@ func (r *ResendNotifier) formatEmailHTML(event *database.CalendarEvent) string {
 
     <hr style="margin-top: 32px; border: none; border-top: 1px solid #eee;">
     <p style="color: #999; font-size: 12px; margin-top: 16px;">
-      Project Alfred - Calendar Event Assistant<br>
+      Alfred - Virtual Personal Assistant<br>
       <span style="color: #ccc;">Sent at %s</span>
     </p>
   </div>

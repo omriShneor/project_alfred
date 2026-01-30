@@ -102,7 +102,7 @@ func (s *Server) handleDiscoverGmailCategories(w http.ResponseWriter, r *http.Re
 		}
 	}
 
-	respondJSON(w, http.StatusOK, categories)
+	respondJSON(w, http.StatusOK, map[string]interface{}{"categories": categories})
 }
 
 func (s *Server) handleDiscoverGmailSenders(w http.ResponseWriter, r *http.Request) {
@@ -125,7 +125,7 @@ func (s *Server) handleDiscoverGmailSenders(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	respondJSON(w, http.StatusOK, senders)
+	respondJSON(w, http.StatusOK, map[string]interface{}{"senders": senders})
 }
 
 func (s *Server) handleDiscoverGmailDomains(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +148,7 @@ func (s *Server) handleDiscoverGmailDomains(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	respondJSON(w, http.StatusOK, domains)
+	respondJSON(w, http.StatusOK, map[string]interface{}{"domains": domains})
 }
 
 // Email Sources API (similar to WhatsApp channels)
@@ -184,7 +184,7 @@ func (s *Server) handleListEmailSources(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	respondJSON(w, http.StatusOK, response)
+	respondJSON(w, http.StatusOK, map[string]interface{}{"sources": response})
 }
 
 func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request) {

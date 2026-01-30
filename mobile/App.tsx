@@ -7,10 +7,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 
-import { Header } from './src/components/layout/Header';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
-import { AppStateProvider, useAppState } from './src/context/AppStateContext';
 import { colors } from './src/theme/colors';
 
 // Configure notification handler for foreground notifications
@@ -37,28 +35,17 @@ const queryClient = new QueryClient({
   },
 });
 
-function AppContent() {
-  const { showDrawerToggle } = useAppState();
-
-  return (
-    <View style={styles.container}>
-      <StatusBar style="dark" />
-      <Header showDrawerToggle={showDrawerToggle} />
-      <RootNavigator />
-    </View>
-  );
-}
-
 export default function App() {
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
       <QueryClientProvider client={queryClient}>
         <SafeAreaProvider>
-          <AppStateProvider>
-            <NavigationContainer ref={navigationRef}>
-              <AppContent />
-            </NavigationContainer>
-          </AppStateProvider>
+          <NavigationContainer ref={navigationRef}>
+            <View style={styles.container}>
+              <StatusBar style="dark" />
+              <RootNavigator />
+            </View>
+          </NavigationContainer>
         </SafeAreaProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>

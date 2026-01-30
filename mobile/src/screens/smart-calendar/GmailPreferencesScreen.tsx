@@ -110,6 +110,16 @@ export function GmailPreferencesScreen() {
   };
 
   const handleOpenAddSourceModal = () => {
+    // Check if Gmail is properly connected
+    if (!gmailStatus?.connected || !gmailStatus?.has_scopes) {
+      Alert.alert(
+        'Gmail Not Connected',
+        'Please reconnect your Google account to grant Gmail access.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
     setSelectedItems([]);
     setActiveDiscoveryTab('categories');
     setAddSourceModalVisible(true);
@@ -311,7 +321,6 @@ export function GmailPreferencesScreen() {
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleOpenAddSourceModal}
-            disabled={!gmailStatus?.connected || !gmailStatus?.has_scopes}
           >
             <Feather name="plus" size={18} color={colors.primary} />
             <Text style={styles.addButtonText}>Add Source</Text>

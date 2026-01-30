@@ -35,10 +35,7 @@ function PreferenceCard({ title, description, icon, connected, onPress }: Prefer
             <Text style={styles.cardTitle}>{title}</Text>
             <Text style={styles.cardDescription}>{description}</Text>
           </View>
-          <View style={styles.statusContainer}>
-            <View style={[styles.statusDot, connected ? styles.statusConnected : styles.statusDisconnected]} />
-            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
-          </View>
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </View>
       </Card>
     </TouchableOpacity>
@@ -176,22 +173,6 @@ const styles = StyleSheet.create({
   cardDescription: {
     fontSize: 13,
     color: colors.textSecondary,
-  },
-  statusContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  statusDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  statusConnected: {
-    backgroundColor: colors.success,
-  },
-  statusDisconnected: {
-    backgroundColor: colors.warning,
   },
   emptyCard: {
     alignItems: 'center',

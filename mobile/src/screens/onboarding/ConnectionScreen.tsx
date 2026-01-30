@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, CommonActions, useNavigation } from '@react-navigation/native';
+import { useRoute } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
@@ -76,7 +76,6 @@ function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading
 }
 
 export function ConnectionScreen() {
-  const navigation = useNavigation();
   const route = useRoute<RouteProps>();
   const queryClient = useQueryClient();
 
@@ -155,14 +154,8 @@ export function ConnectionScreen() {
         whatsapp_enabled: whatsappEnabled,
         gmail_enabled: gmailEnabled,
       });
-
-      // Navigate to main app (Preferences tab)
-      navigation.dispatch(
-        CommonActions.reset({
-          index: 0,
-          routes: [{ name: 'Main' as any }],
-        })
-      );
+      // RootNavigator will automatically switch to MainNavigator
+      // when onboarding_complete becomes true (query is invalidated in the hook)
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to complete onboarding');
     }

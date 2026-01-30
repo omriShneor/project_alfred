@@ -16,9 +16,9 @@ export function WelcomeScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.content}>
         <Text style={styles.appName}>Alfred</Text>
-        <Text style={styles.title}>Your Personal Virtual Assistant</Text>
+        <Text style={styles.title}>Your Personal Assistant</Text>
         <Text style={styles.description}>
-          Alfred is your own virtual Personal Assistant
+          Meet Alfred—your sidekick, helping you stay on top every single day
         </Text>
 
         <View style={styles.features}>

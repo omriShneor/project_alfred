@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Build stage
 FROM golang:1.24-alpine AS builder
 
@@ -10,18 +8,13 @@ WORKDIR /app
 
 # Copy go mod files first for better caching
 COPY go.mod go.sum ./
-
-# Download dependencies with cache mount
-RUN --mount=type=cache,target=/go/pkg/mod \
-    go mod download
+RUN go mod download
 
 # Copy source code
 COPY . .
 
-# Build with CGO enabled and cache mounts for faster rebuilds
-RUN --mount=type=cache,target=/go/pkg/mod \
-    --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=1 GOOS=linux go build -ldflags '-linkmode external -extldflags "-static"' -o alfred .
+# Build with CGO enabled (removed -a flag for faster rebuilds)
+RUN CGO_ENABLED=1 GOOS=linux go build -ldflags '-linkmode external -extldflags "-static"' -o alfred .
 
 # Runtime stage
 FROM alpine:3.19

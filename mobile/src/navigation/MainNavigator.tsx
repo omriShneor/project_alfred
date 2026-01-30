@@ -1,4 +1,5 @@
 import React from 'react';
+import { Pressable, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,16 +9,16 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { WhatsAppPreferencesScreen, GmailPreferencesScreen } from '../screens/smart-calendar';
 import { colors } from '../theme/colors';
 
-export type MainStackParamList = {
-  Home: undefined;
-  Tabs: undefined;
-  WhatsAppPreferences: undefined;
-  GmailPreferences: undefined;
-};
-
 export type TabParamList = {
+  Home: undefined;
   Preferences: undefined;
   Settings: undefined;
+};
+
+export type MainStackParamList = {
+  MainTabs: undefined;
+  WhatsAppPreferences: undefined;
+  GmailPreferences: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -26,6 +27,7 @@ const Tab = createBottomTabNavigator<TabParamList>();
 function TabNavigator() {
   return (
     <Tab.Navigator
+      initialRouteName="Home"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -34,12 +36,24 @@ function TabNavigator() {
           backgroundColor: colors.card,
           borderTopColor: colors.border,
         },
+        tabBarItemStyle: {
+          flex: 1,
+        },
       }}
     >
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+        options={{
+          tabBarButton: () => null,
+          tabBarItemStyle: { display: 'none' },
+        }}
+      />
       <Tab.Screen
         name="Preferences"
         component={PreferencesScreen}
         options={{
+          tabBarLabel: 'Input Sources',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="options-outline" size={size} color={color} />
           ),
@@ -61,32 +75,49 @@ function TabNavigator() {
 export function MainNavigator() {
   return (
     <Stack.Navigator
-      initialRouteName="Tabs"
+      initialRouteName="MainTabs"
       screenOptions={{
         headerShown: false,
       }}
     >
-      <Stack.Screen name="Home" component={HomeScreen} />
-      <Stack.Screen name="Tabs" component={TabNavigator} />
+      <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen
         name="WhatsAppPreferences"
         component={WhatsAppPreferencesScreen}
-        options={{
+        options={({ navigation }) => ({
           headerShown: true,
           title: 'WhatsApp Sources',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-        }}
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        })}
       />
       <Stack.Screen
         name="GmailPreferences"
         component={GmailPreferencesScreen}
-        options={{
+        options={({ navigation }) => ({
           headerShown: true,
           title: 'Gmail Sources',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
-        }}
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        })}
       />
     </Stack.Navigator>
   );

@@ -77,9 +77,10 @@ export function useChannelHistory(channelId: number) {
   });
 }
 
-export function useCalendars() {
+export function useCalendars(enabled: boolean = true) {
   return useQuery<Calendar[]>({
     queryKey: ['calendars'],
     queryFn: listCalendars,
+    enabled,
   });
 }

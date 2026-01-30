@@ -53,7 +53,7 @@ function TabNavigator() {
         name="Preferences"
         component={PreferencesScreen}
         options={{
-          tabBarLabel: 'Input Sources',
+          tabBarLabel: 'Sources',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="options-outline" size={size} color={color} />
           ),

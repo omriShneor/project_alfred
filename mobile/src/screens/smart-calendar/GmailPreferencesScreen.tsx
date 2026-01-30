@@ -48,7 +48,8 @@ export function GmailPreferencesScreen() {
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
-  const { data: calendars } = useCalendars();
+  const googleConnected = gmailStatus?.connected ?? false;
+  const { data: calendars } = useCalendars(googleConnected);
 
   const createSource = useCreateEmailSource();
   const updateSource = useUpdateEmailSource();

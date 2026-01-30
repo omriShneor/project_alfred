@@ -12,17 +12,10 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CommonActions, useNavigation } from '@react-navigation/native';
-import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, LoadingSpinner } from '../components/common';
 import { colors } from '../theme/colors';
-import {
-  useAppStatus,
-  useWhatsAppStatus,
-  useGCalStatus,
-  usePushNotifications,
-  useDisconnectWhatsApp,
-} from '../hooks';
-import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs, disconnectGCal } from '../api';
+import { usePushNotifications } from '../hooks';
+import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs } from '../api';
 
 export function SettingsScreen() {
   const navigation = useNavigation();
@@ -32,17 +25,11 @@ export function SettingsScreen() {
   const [pushEnabled, setPushEnabled] = useState(false);
   const [pushAvailable, setPushAvailable] = useState(false);
   const [savingNotifications, setSavingNotifications] = useState(false);
-  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
 
   // Track original values to detect changes
   const [originalEmailEnabled, setOriginalEmailEnabled] = useState(false);
   const [originalEmailAddress, setOriginalEmailAddress] = useState('');
   const [originalPushEnabled, setOriginalPushEnabled] = useState(false);
-
-  const { data: appStatus } = useAppStatus();
-  const { data: waStatus, refetch: refetchWaStatus } = useWhatsAppStatus();
-  const { data: gcalStatus, refetch: refetchGcalStatus } = useGCalStatus();
-  const disconnectWhatsApp = useDisconnectWhatsApp();
 
   const {
     expoPushToken,
@@ -118,52 +105,6 @@ export function SettingsScreen() {
     setSavingNotifications(false);
   };
 
-  const handleDisconnectWhatsApp = () => {
-    Alert.alert(
-      'Disconnect WhatsApp',
-      'Are you sure you want to disconnect WhatsApp? You will need to reconnect to scan messages.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await disconnectWhatsApp.mutateAsync();
-              refetchWaStatus();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to disconnect WhatsApp');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  const handleDisconnectGoogle = () => {
-    Alert.alert(
-      'Disconnect Google',
-      'Are you sure you want to disconnect your Google account? This will disable Gmail scanning and Google Calendar sync.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Disconnect',
-          style: 'destructive',
-          onPress: async () => {
-            setDisconnectingGoogle(true);
-            try {
-              await disconnectGCal();
-              refetchGcalStatus();
-            } catch (error) {
-              Alert.alert('Error', 'Failed to disconnect Google');
-            }
-            setDisconnectingGoogle(false);
-          },
-        },
-      ]
-    );
-  };
-
   // Navigate to home when tapping header
   const handleGoHome = () => {
     navigation.dispatch(
@@ -173,11 +114,6 @@ export function SettingsScreen() {
     );
   };
 
-  const whatsappEnabled = appStatus?.whatsapp?.enabled ?? false;
-  const gmailEnabled = appStatus?.gmail?.enabled ?? false;
-  const whatsappConnected = waStatus?.connected ?? false;
-  const googleConnected = gcalStatus?.connected ?? false;
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header with Home navigation */}
@@ -186,64 +122,6 @@ export function SettingsScreen() {
       </TouchableOpacity>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
-        {/* Connected Accounts Section */}
-        <Text style={styles.sectionTitle}>Connected Accounts</Text>
-        <Card>
-          {whatsappEnabled && (
-            <View style={styles.accountRow}>
-              <View style={styles.accountInfo}>
-                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
-                <View style={styles.accountText}>
-                  <Text style={styles.accountName}>WhatsApp</Text>
-                  <Text style={styles.accountStatus}>
-                    {whatsappConnected ? 'Connected' : 'Not connected'}
-                  </Text>
-                </View>
-              </View>
-              {whatsappConnected ? (
-                <Button
-                  title="Disconnect"
-                  variant="outline"
-                  onPress={handleDisconnectWhatsApp}
-                  loading={disconnectWhatsApp.isPending}
-                  style={styles.disconnectButton}
-                />
-              ) : (
-                <View style={[styles.statusDot, styles.statusDisconnected]} />
-              )}
-            </View>
-          )}
-
-          {gmailEnabled && (
-            <View style={[styles.accountRow, whatsappEnabled && styles.accountRowBorder]}>
-              <View style={styles.accountInfo}>
-                <Ionicons name="logo-google" size={20} color={colors.text} />
-                <View style={styles.accountText}>
-                  <Text style={styles.accountName}>Google Account</Text>
-                  <Text style={styles.accountStatus}>
-                    {googleConnected ? 'Connected' : 'Not connected'}
-                  </Text>
-                </View>
-              </View>
-              {googleConnected ? (
-                <Button
-                  title="Disconnect"
-                  variant="outline"
-                  onPress={handleDisconnectGoogle}
-                  loading={disconnectingGoogle}
-                  style={styles.disconnectButton}
-                />
-              ) : (
-                <View style={[styles.statusDot, styles.statusDisconnected]} />
-              )}
-            </View>
-          )}
-
-          {!whatsappEnabled && !gmailEnabled && (
-            <Text style={styles.noAccountsText}>No accounts configured</Text>
-          )}
-        </Card>
-
         {/* Notifications Section */}
         <Text style={styles.sectionTitle}>Notifications</Text>
         <Card>
@@ -365,52 +243,6 @@ const styles = StyleSheet.create({
     marginLeft: 4,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
-  },
-  accountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-  },
-  accountRowBorder: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
-  accountInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  accountText: {
-    marginLeft: 12,
-  },
-  accountName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: colors.text,
-  },
-  accountStatus: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  disconnectButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  statusDisconnected: {
-    backgroundColor: colors.warning,
-  },
-  noAccountsText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: 16,
   },
   settingRow: {
     flexDirection: 'row',

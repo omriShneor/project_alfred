@@ -6,6 +6,7 @@ import { Button } from '../common/Button';
 import { CalendarPicker } from './CalendarPicker';
 import { useCreateChannel, useDeleteChannel, useChannels } from '../../hooks/useChannels';
 import { useCalendars } from '../../hooks/useEvents';
+import { useGCalStatus } from '../../hooks';
 import { colors } from '../../theme/colors';
 import type { DiscoverableChannel, Channel } from '../../types/channel';
 
@@ -16,7 +17,9 @@ interface ChannelItemProps {
 
 export function ChannelItem({ channel, onTrack }: ChannelItemProps) {
   const { data: trackedChannels } = useChannels();
-  const { data: calendars } = useCalendars();
+  const { data: gcalStatus } = useGCalStatus();
+  const googleConnected = gcalStatus?.connected ?? false;
+  const { data: calendars } = useCalendars(googleConnected);
   const createChannel = useCreateChannel();
   const deleteChannel = useDeleteChannel();
 
@@ -94,6 +97,7 @@ export function ChannelItem({ channel, onTrack }: ChannelItemProps) {
             <CalendarPicker
               value={trackedChannel?.calendar_id || selectedCalendar}
               onChange={setSelectedCalendar}
+              enabled={googleConnected}
             />
           </View>
           <Button
@@ -111,6 +115,7 @@ export function ChannelItem({ channel, onTrack }: ChannelItemProps) {
             <CalendarPicker
               value={selectedCalendar}
               onChange={setSelectedCalendar}
+              enabled={googleConnected}
             />
           </View>
           <Button

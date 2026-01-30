@@ -6,10 +6,11 @@ import { useCalendars } from '../../hooks/useEvents';
 interface CalendarPickerProps {
   value: string;
   onChange: (value: string) => void;
+  enabled?: boolean;
 }
 
-export function CalendarPicker({ value, onChange }: CalendarPickerProps) {
-  const { data: calendars, isLoading } = useCalendars();
+export function CalendarPicker({ value, onChange, enabled = true }: CalendarPickerProps) {
+  const { data: calendars, isLoading } = useCalendars(enabled);
 
   const options = [
     { label: 'Select calendar...', value: '' },

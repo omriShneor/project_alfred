@@ -1,261 +1,183 @@
 # Project Alfred
 
-Multi-source calendar assistant that uses Claude AI to detect calendar events from WhatsApp messages and Gmail emails, creates pending events for review, and syncs confirmed events to Google Calendar.
+Multi-source calendar assistant using Claude AI to detect events from WhatsApp/Gmail, create pending events for review, and sync to Google Calendar.
 
-## Quick Reference
+## Quick Start
 
-### Key Commands
 ```bash
-# Development (see docs/DEVELOPMENT.md)
-./scripts/dev.sh setup      # First-time setup
-./scripts/dev.sh start      # Start backend + mobile app
-./scripts/dev.sh check      # Health checks
+# Start backend (port 8080)
+go run main.go
 
-# Production (see docs/DEPLOYMENT.md)
-./scripts/deploy.sh         # Deploy to Railway
-./scripts/deploy.sh test    # Production health checks
-./scripts/deploy.sh mobile  # Configure mobile for production
+# Start mobile app (port 8081)
+cd mobile && npm run web
 ```
 
-### Manual Commands
+**URLs:**
+- Backend API: `http://localhost:8080` (no web UI)
+- Mobile App: `http://localhost:8081` (all UI)
+- Production: `https://alfred-production-d2c9.up.railway.app`
+
+**Required Environment:**
 ```bash
-go run main.go              # Start backend only
-cd mobile && npm run web    # Start mobile app only
-```
-
-### Important URLs
-
-**Go Backend (port 8080):**
-- `http://localhost:8080/health` - Health check endpoint
-- `http://localhost:8080/api/*` - API endpoints (no web UI)
-
-**Mobile App (port 8081):**
-- `http://localhost:8081/` - Expo web preview (all UI)
-
-**Production:**
-- https://alfred-production-d2c9.up.railway.app (API only)
-
-### Required Environment
-```bash
-export ANTHROPIC_API_KEY="sk-..."  # Required for event detection
-# Place credentials.json in project root for Google Calendar
-# Or set GOOGLE_CREDENTIALS_JSON env var with JSON content
+export ANTHROPIC_API_KEY="sk-..."           # Required
+# Place credentials.json in project root OR set GOOGLE_CREDENTIALS_JSON
 ```
 
 ---
 
-## Architecture Overview
+## Architecture
 
-### WhatsApp Flow
+### Data Flow
 ```
-WhatsApp Message
+WhatsApp Message / Gmail Email
     ↓
-whatsapp/handler.go (filter by tracked channel)
+Handler filters by tracked channels/sources
     ↓
-processor/processor.go (store message, call Claude)
+Processor stores message, calls Claude
     ↓
-claude/client.go (analyze for events)
+Claude analyzes for events (create/update/delete)
     ↓
-database/events.go (create pending event)
+Database creates pending event
     ↓
-User reviews in Mobile App (Events tab)
+User reviews in Mobile App
     ↓
-gcal/events.go (sync to Google Calendar)
-```
-
-### Gmail Flow
-```
-Gmail Email (polled by worker)
-    ↓
-gmail/scanner.go (filter by tracked email sources)
-    ↓
-processor/email_processor.go (call Claude)
-    ↓
-claude/client.go (analyze email for events)
-    ↓
-database/events.go (create pending event)
-    ↓
-User reviews in Mobile App (Events tab)
-    ↓
-gcal/events.go (sync to Google Calendar)
+Confirm → Sync to Google Calendar
 ```
 
-### Mobile-Only UI
-All UI functionality is in the mobile app. The Go backend is API-only.
+### Components
+| Component | Port | Purpose |
+|-----------|------|---------|
+| Go Backend | 8080 | API, WhatsApp connection, Claude analysis, Google Calendar sync |
+| Mobile App | 8081 | All UI: onboarding, event review, settings |
 
-| Component | Platform | Purpose |
-|-----------|----------|---------|
-| Go Backend | `localhost:8080` | API endpoints, WhatsApp connection, event detection |
-| Mobile App | `localhost:8081` | All UI: onboarding, channels, events, settings |
+**WhatsApp:** Uses pairing codes (not QR) - enter phone number, get 8-digit code for WhatsApp Linked Devices.
 
-**WhatsApp Connection:** Uses pairing codes (not QR scanning) - user enters phone number in app, gets 8-digit code to enter in WhatsApp.
-
-**Google Calendar OAuth:** Uses deep link callback (`alfred://oauth/callback`) - app opens browser for auth, captures redirect back to app.
+**Google OAuth:** Uses deep link (`alfred://oauth/callback`) - app opens browser, captures redirect.
 
 ---
 
-## Project Structure
+## Common Tasks
 
-```
-project_alfred/
-├── main.go                      # Entry point, initialization, shutdown
-├── Dockerfile                   # Multi-stage Docker build for Railway
-├── railway.toml                 # Railway deployment configuration
-├── scripts/
-│   ├── dev.sh                   # Local development script
-│   ├── deploy.sh                # Production deployment script
-│   └── README.md                # Scripts documentation
-├── docs/
-│   ├── DEVELOPMENT.md           # Local development guide
-│   ├── DEPLOYMENT.md            # Production deployment guide
-│   └── README.md                # Documentation index
-├── internal/
-│   ├── config/
-│   │   └── env.go               # Environment configuration
-│   ├── database/
-│   │   ├── database.go          # SQLite setup, migrations
-│   │   ├── channels.go          # Channel CRUD
-│   │   ├── messages.go          # Message history storage
-│   │   ├── events.go            # Calendar event CRUD
-│   │   ├── attendees.go         # Event attendee management
-│   │   ├── notifications.go     # User notification preferences
-│   │   ├── gmail.go             # Gmail settings CRUD
-│   │   └── email_sources.go     # Email source tracking
-│   ├── server/
-│   │   ├── server.go            # HTTP server, routing, CORS middleware
-│   │   ├── handlers.go          # All HTTP handlers (API only, no static files)
-│   │   └── gmail_handlers.go    # Gmail API handlers
-│   ├── whatsapp/
-│   │   ├── client.go            # WhatsApp connection
-│   │   ├── handler.go           # Message filtering
-│   │   ├── groups.go            # Channel discovery
-│   │   └── qr.go                # QR code generation
-│   ├── gcal/
-│   │   ├── client.go            # Google Calendar client
-│   │   ├── auth.go              # OAuth2 flow (includes Gmail scope)
-│   │   ├── calendars.go         # List calendars
-│   │   └── events.go            # Event CRUD
-│   ├── gmail/
-│   │   ├── client.go            # Gmail API client
-│   │   ├── scanner.go           # Email scanning by tracked sources
-│   │   ├── parser.go            # HTML-to-text, email parsing
-│   │   ├── discovery.go         # Discover categories, senders, domains
-│   │   └── worker.go            # Background email polling
-│   ├── claude/
-│   │   ├── client.go            # Claude API client
-│   │   └── prompt.go            # System prompt for event detection
-│   ├── processor/
-│   │   ├── processor.go         # WhatsApp message processing
-│   │   ├── email_processor.go   # Gmail email processing
-│   │   └── history.go           # Message storage helper
-│   ├── notify/
-│   │   ├── notifier.go          # Notification interface
-│   │   ├── resend.go            # Email notifications via Resend
-│   │   └── service.go           # Notification service orchestrator
-│   ├── onboarding/
-│   │   ├── onboarding.go        # Setup orchestration
-│   │   └── clients.go           # Client container
-│   └── sse/
-│       └── state.go             # Onboarding SSE state
-├── mobile/                      # React Native mobile app (Expo)
-│   ├── App.tsx                  # App entry point with RootNavigator
-│   ├── app.config.ts            # Expo config (deep linking, scheme: alfred)
-│   ├── package.json             # Dependencies
-│   ├── .env.local               # Local dev environment (not in git)
-│   └── src/
-│       ├── api/                 # API client functions
-│       │   ├── client.ts        # Axios client with base URL
-│       │   ├── whatsapp.ts      # WhatsApp pairing code API
-│       │   ├── gcal.ts          # Google Calendar OAuth API
-│       │   ├── notifications.ts # Notification preferences API
-│       │   └── onboarding.ts    # Onboarding status API
-│       ├── components/          # Reusable UI components
-│       │   ├── channels/        # Channel list, item, picker
-│       │   ├── events/          # Event card, list, modals
-│       │   ├── common/          # Button, Card, Modal, etc.
-│       │   └── layout/          # Header, ConnectionStatus
-│       ├── config/              # API configuration
-│       ├── hooks/               # React Query hooks
-│       │   └── useOnboardingStatus.ts  # WhatsApp/GCal status hooks
-│       ├── navigation/
-│       │   ├── RootNavigator.tsx    # Switches onboarding/main tabs
-│       │   └── TopTabs.tsx          # Channels, Events, Settings tabs
-│       ├── screens/
-│       │   ├── ChannelsScreen.tsx
-│       │   ├── EventsScreen.tsx
-│       │   ├── SettingsScreen.tsx   # WhatsApp/GCal/Notifications
-│       │   └── onboarding/          # Setup flow screens
-│       │       ├── WelcomeScreen.tsx
-│       │       ├── WhatsAppSetupScreen.tsx
-│       │       ├── GoogleCalendarSetupScreen.tsx
-│       │       └── NotificationSetupScreen.tsx
-│       ├── theme/               # Colors, typography
-│       └── types/               # TypeScript types
-```
+### Add API Endpoint
+1. Route: `internal/server/server.go` → `registerRoutes()`
+2. Handler: `internal/server/handlers.go` (or domain-specific handler file)
+3. Database: Add function in `internal/database/` if needed
+
+### Add Database Table
+1. Migration: `internal/database/database.go` → `migrate()`
+2. CRUD: Create `internal/database/newtable.go` with types and functions
+
+### Modify Event Detection
+1. Prompt: `internal/claude/prompt.go` (system prompt)
+2. Types: `internal/claude/client.go` (EventAnalysis, EventData)
+
+### Add Mobile Screen
+1. Screen: `mobile/src/screens/NewScreen.tsx`
+2. Navigation: `mobile/src/navigation/` (add to navigator)
+3. API hook: `mobile/src/hooks/useNewFeature.ts`
+
+### Add Notification Channel
+1. Notifier: `internal/notify/new_notifier.go` implementing `Notifier` interface
+2. Register: `internal/notify/service.go`
+
+### Add Configuration
+1. Field: `internal/config/env.go` → `Config` struct
+2. Load: `LoadFromEnv()` with helper functions
 
 ---
 
-## Key Types
+## API Reference
 
-### Channel (database/channels.go)
-```go
-type Channel struct {
-    ID         int64
-    Type       ChannelType  // "sender" | "group"
-    Identifier string       // WhatsApp JID
-    Name       string
-    CalendarID string       // Google Calendar ID
-    Enabled    bool
-    CreatedAt  time.Time
-}
-```
+### Health & System
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check (DB, WhatsApp, GCal status) |
 
-### CalendarEvent (database/events.go)
-```go
-type EventStatus string     // "pending" | "confirmed" | "synced" | "rejected" | "deleted"
-type EventActionType string // "create" | "update" | "delete"
+### Onboarding & App Status
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/onboarding/status` | Integration status during setup |
+| GET | `/api/onboarding/stream` | SSE stream for real-time status |
+| POST | `/api/onboarding/complete` | Mark onboarding complete |
+| POST | `/api/onboarding/reset` | Reset onboarding (testing) |
+| GET | `/api/app/status` | App status (onboarding_complete, integrations) |
 
-type CalendarEvent struct {
-    ID            int64
-    ChannelID     int64
-    GoogleEventID *string         // Set after sync
-    CalendarID    string
-    Title         string
-    Description   string
-    StartTime     time.Time
-    EndTime       *time.Time
-    Location      string
-    Status        EventStatus
-    ActionType    EventActionType
-    OriginalMsgID *int64
-    LLMReasoning  string          // Claude's explanation
-    Attendees     []Attendee
-}
-```
+### WhatsApp
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/whatsapp/status` | Connection status |
+| POST | `/api/whatsapp/pair` | Generate pairing code (body: `{phone_number}`) |
+| POST | `/api/whatsapp/reconnect` | Trigger reconnect |
+| POST | `/api/whatsapp/disconnect` | Disconnect WhatsApp |
 
-### EventAnalysis (claude/client.go)
-```go
-type EventAnalysis struct {
-    HasEvent   bool
-    Action     string   // "create" | "update" | "delete" | "none"
-    Event      *EventData
-    Reasoning  string
-    Confidence float64
-}
-```
+### Channels (WhatsApp Sources)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/channel` | List tracked channels (`?type=sender\|group`) |
+| POST | `/api/channel` | Create channel |
+| PUT | `/api/channel/{id}` | Update channel |
+| DELETE | `/api/channel/{id}` | Delete channel |
+| GET | `/api/discovery/channels` | List available (untracked) channels |
 
-### FilteredMessage (whatsapp/handler.go)
-```go
-type FilteredMessage struct {
-    SourceType string  // "sender" | "group"
-    SourceID   int64   // Channel database ID
-    SenderJID  string
-    SenderName string
-    Text       string
-    IsGroup    bool
-    Timestamp  time.Time
-}
-```
+### Google Calendar
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/gcal/status` | Connection status |
+| GET | `/api/gcal/calendars` | List available calendars |
+| GET | `/api/gcal/events/today` | Today's calendar events |
+| POST | `/api/gcal/connect` | Get OAuth URL (`?redirect_uri=`) |
+| POST | `/api/gcal/callback` | Exchange OAuth code for token |
+| POST | `/api/gcal/disconnect` | Disconnect Google account |
+| GET | `/oauth/callback` | OAuth callback (browser redirect) |
+
+### Events
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/events` | List events (`?status=pending\|confirmed\|synced\|rejected`, `?channel_id=`) |
+| GET | `/api/events/today` | Today's merged events (Alfred + external) |
+| GET | `/api/events/{id}` | Get event with trigger message |
+| PUT | `/api/events/{id}` | Update pending event |
+| POST | `/api/events/{id}/confirm` | Confirm and sync to Google Calendar |
+| POST | `/api/events/{id}/reject` | Reject event |
+| GET | `/api/events/channel/{channelId}/history` | Message context for channel |
+
+### Notifications
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/notifications/preferences` | Get notification settings |
+| PUT | `/api/notifications/email` | Update email preferences |
+| POST | `/api/notifications/push/register` | Register Expo push token |
+| PUT | `/api/notifications/push` | Update push preferences |
+
+### Gmail
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/gmail/status` | Connection status |
+| GET | `/api/gmail/settings` | Gmail settings |
+| PUT | `/api/gmail/settings` | Update Gmail settings |
+
+### Gmail Discovery
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/gmail/discover/categories` | List Gmail categories |
+| GET | `/api/gmail/discover/senders` | List frequent senders |
+| GET | `/api/gmail/discover/domains` | List frequent domains |
+
+### Email Sources (Gmail Tracking)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/gmail/sources` | List tracked email sources |
+| POST | `/api/gmail/sources` | Create email source |
+| GET | `/api/gmail/sources/{id}` | Get email source |
+| PUT | `/api/gmail/sources/{id}` | Update email source |
+| DELETE | `/api/gmail/sources/{id}` | Delete email source |
+
+### Features (Legacy)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/features` | Get feature settings |
+| PUT | `/api/features/smart-calendar` | Update Smart Calendar settings |
+| GET | `/api/features/smart-calendar/status` | Smart Calendar integration status |
 
 ---
 
@@ -265,13 +187,14 @@ type FilteredMessage struct {
 | Table | Purpose |
 |-------|---------|
 | `channels` | Tracked WhatsApp contacts/groups |
-| `message_history` | Last N messages per channel (context for Claude) |
+| `message_history` | Last N messages per channel (Claude context) |
 | `calendar_events` | Detected events with status lifecycle |
 | `event_attendees` | Event participants |
-| `user_notification_preferences` | Email/push/SMS notification settings |
-| `gmail_settings` | Gmail integration settings (enabled, poll interval) |
+| `user_notification_preferences` | Email/push settings (single row, id=1) |
+| `gmail_settings` | Gmail integration settings (single row, id=1) |
 | `email_sources` | Tracked email sources (categories, senders, domains) |
-| `processed_emails` | Track processed emails to avoid duplicates |
+| `processed_emails` | Processed email IDs to avoid duplicates |
+| `feature_settings` | App/feature settings, onboarding state (single row, id=1) |
 
 ### Event Status Lifecycle
 ```
@@ -280,199 +203,126 @@ pending → confirmed → synced
 rejected
 ```
 
+### Key Types
+
+```go
+// CalendarEvent (database/events.go)
+type CalendarEvent struct {
+    ID, ChannelID     int64
+    GoogleEventID     *string         // Set after sync
+    CalendarID        string          // "primary" or calendar ID
+    Title, Description, Location string
+    StartTime         time.Time
+    EndTime           *time.Time
+    Status            EventStatus     // pending|confirmed|synced|rejected|deleted
+    ActionType        EventActionType // create|update|delete
+    OriginalMsgID     *int64
+    LLMReasoning      string
+    Attendees         []Attendee
+}
+
+// FeatureSettings (database/features.go)
+type FeatureSettings struct {
+    SmartCalendarEnabled, SmartCalendarSetupComplete bool
+    WhatsAppInputEnabled, EmailInputEnabled, SMSInputEnabled bool
+    AlfredCalendarEnabled, GoogleCalendarEnabled, OutlookCalendarEnabled bool
+}
+
+// AppStatus (database/features.go)
+type AppStatus struct {
+    OnboardingComplete bool
+    WhatsAppEnabled, GmailEnabled, GoogleCalEnabled bool
+}
+
+// EventAnalysis (claude/client.go)
+type EventAnalysis struct {
+    HasEvent   bool
+    Action     string   // create|update|delete|none
+    Event      *EventData
+    Reasoning  string
+    Confidence float64
+}
+
+// FilteredMessage (whatsapp/handler.go)
+type FilteredMessage struct {
+    SourceType string  // sender|group
+    SourceID   int64
+    SenderJID, SenderName, Text string
+    IsGroup    bool
+    Timestamp  time.Time
+}
+```
+
 ---
 
-## HTTP API Endpoints
+## Project Structure
 
-### Health & System
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/health` | handleHealthCheck | Health check (DB, WhatsApp, GCal status) |
+### Backend (Go)
+| Directory | Key Files | Purpose |
+|-----------|-----------|---------|
+| `internal/config/` | `env.go` | Environment configuration loading |
+| `internal/database/` | `database.go`, `channels.go`, `events.go`, `features.go`, `messages.go`, `notifications.go`, `gmail.go`, `email_sources.go`, `attendees.go` | SQLite data layer |
+| `internal/server/` | `server.go`, `handlers.go`, `gmail_handlers.go`, `features_handlers.go` | HTTP API |
+| `internal/claude/` | `client.go`, `prompt.go` | Claude AI event detection |
+| `internal/processor/` | `processor.go`, `email_processor.go`, `history.go` | Message processing pipeline |
+| `internal/whatsapp/` | `client.go`, `handler.go`, `groups.go`, `qr.go` | WhatsApp connection |
+| `internal/gcal/` | `client.go`, `auth.go`, `events.go`, `calendars.go` | Google Calendar integration |
+| `internal/gmail/` | `client.go`, `worker.go`, `scanner.go`, `discovery.go`, `parser.go` | Gmail integration |
+| `internal/notify/` | `service.go`, `notifier.go`, `resend.go`, `expo_push.go` | Notifications (email, push) |
+| `internal/onboarding/` | `onboarding.go`, `clients.go` | Setup orchestration |
+| `internal/sse/` | `state.go` | Onboarding SSE state |
 
-### Integration Status API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/onboarding/status` | handleOnboardingStatus | Current integration status |
-| GET `/api/onboarding/stream` | handleOnboardingSSE | SSE status updates for integrations |
-
-### WhatsApp API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/whatsapp/status` | handleWhatsAppStatus | Connection status |
-| POST `/api/whatsapp/pair` | handleWhatsAppPair | Generate pairing code (phone number linking) |
-| POST `/api/whatsapp/reconnect` | handleWhatsAppReconnect | Trigger reconnect |
-| POST `/api/whatsapp/disconnect` | handleWhatsAppDisconnect | Disconnect WhatsApp |
-
-### Channel API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/channel` | handleListChannels | List tracked (filter: `?type=`) |
-| POST `/api/channel` | handleCreateChannel | Add channel |
-| PUT `/api/channel/{id}` | handleUpdateChannel | Update channel |
-| DELETE `/api/channel/{id}` | handleDeleteChannel | Remove channel |
-| GET `/api/discovery/channels` | handleDiscoverChannels | List available |
-
-### Google Calendar API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/gcal/status` | handleGCalStatus | Connection status |
-| GET `/api/gcal/calendars` | handleGCalListCalendars | Available calendars |
-| POST `/api/gcal/connect` | handleGCalConnect | Get OAuth URL (accepts custom redirect_uri) |
-| POST `/api/gcal/callback` | handleGCalExchangeCode | Exchange OAuth code for token (mobile deep link) |
-| GET `/oauth/callback` | handleOAuthCallback | OAuth callback (shows success page) |
-
-### Events API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/events` | handleListEvents | List events (filter: `?status=`, `?channel_id=`) |
-| GET `/api/events/{id}` | handleGetEvent | Get with trigger message |
-| PUT `/api/events/{id}` | handleUpdateEvent | Edit pending event |
-| POST `/api/events/{id}/confirm` | handleConfirmEvent | Sync to Google Calendar |
-| POST `/api/events/{id}/reject` | handleRejectEvent | Reject event |
-| GET `/api/events/channel/{id}/history` | handleGetChannelHistory | Message context |
-
-### Notification API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/notifications/preferences` | handleGetNotificationPrefs | Get notification settings |
-| PUT `/api/notifications/email` | handleUpdateEmailPrefs | Update email preferences |
-
-### Gmail API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/gmail/status` | handleGmailStatus | Gmail connection status |
-| GET `/api/gmail/settings` | handleGmailSettings | Get Gmail settings |
-| PUT `/api/gmail/settings` | handleUpdateGmailSettings | Update Gmail settings |
-
-### Gmail Discovery API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/gmail/discover/categories` | handleDiscoverGmailCategories | List Gmail categories |
-| GET `/api/gmail/discover/senders` | handleDiscoverGmailSenders | List frequent senders |
-| GET `/api/gmail/discover/domains` | handleDiscoverGmailDomains | List frequent domains |
-
-### Email Sources API
-| Path | Handler | Description |
-|------|---------|-------------|
-| GET `/api/gmail/sources` | handleListEmailSources | List tracked email sources |
-| POST `/api/gmail/sources` | handleCreateEmailSource | Add email source to track |
-| GET `/api/gmail/sources/{id}` | handleGetEmailSource | Get email source |
-| PUT `/api/gmail/sources/{id}` | handleUpdateEmailSource | Update email source |
-| DELETE `/api/gmail/sources/{id}` | handleDeleteEmailSource | Remove email source |
+### Mobile (React Native/Expo)
+| Directory | Key Files | Purpose |
+|-----------|-----------|---------|
+| `mobile/src/api/` | `client.ts`, `whatsapp.ts`, `gcal.ts`, `events.ts`, `channels.ts`, `gmail.ts`, `notifications.ts`, `app.ts` | API clients |
+| `mobile/src/hooks/` | `useAppStatus.ts`, `useEvents.ts`, `useChannels.ts`, `usePushNotifications.ts`, `useOnboardingStatus.ts` | React Query hooks |
+| `mobile/src/screens/` | `HomeScreen.tsx`, `SettingsScreen.tsx`, `PreferencesScreen.tsx`, `WhatsAppPreferencesScreen.tsx`, `GmailPreferencesScreen.tsx` | Main screens |
+| `mobile/src/screens/onboarding/` | `WelcomeScreen.tsx`, `InputSelectionScreen.tsx`, `ConnectionScreen.tsx` | Onboarding flow |
+| `mobile/src/components/` | `events/`, `channels/`, `common/`, `home/` | UI components |
+| `mobile/src/navigation/` | `RootNavigator.tsx`, `MainNavigator.tsx`, `OnboardingNavigator.tsx` | Navigation |
+| `mobile/src/theme/` | `colors.ts`, `typography.ts` | Styling |
+| `mobile/src/types/` | `event.ts`, `channel.ts`, `app.ts`, `features.ts` | TypeScript types |
 
 ---
 
 ## Environment Variables
 
+### Required
+| Variable | Description |
+|----------|-------------|
+| `ANTHROPIC_API_KEY` | Claude API key for event detection |
+
+### Optional
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | - | Claude API key (required) |
-| `GOOGLE_CREDENTIALS_FILE` | `./credentials.json` | OAuth credentials file path |
-| `GOOGLE_CREDENTIALS_JSON` | - | OAuth credentials as JSON string (alternative to file) |
+| `PORT` / `ALFRED_HTTP_PORT` | `8080` | HTTP server port |
+| `GOOGLE_CREDENTIALS_FILE` | `./credentials.json` | OAuth credentials path |
+| `GOOGLE_CREDENTIALS_JSON` | - | OAuth credentials as JSON (alternative) |
 | `GOOGLE_TOKEN_FILE` | `./token.json` | OAuth token storage |
 | `ALFRED_DB_PATH` | `./alfred.db` | SQLite database path |
-| `ALFRED_WHATSAPP_DB_PATH` | `./whatsapp.db` | WhatsApp session database path |
-| `PORT` | `8080` | HTTP server port (Railway sets this) |
-| `ALFRED_HTTP_PORT` | `8080` | HTTP server port (fallback) |
-| `ALFRED_DEBUG_ALL_MESSAGES` | `false` | Log all messages |
-| `ALFRED_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Model for detection |
-| `ALFRED_CLAUDE_TEMPERATURE` | `0.1` | Lower = more deterministic |
-| `ALFRED_MESSAGE_HISTORY_SIZE` | `25` | Messages kept per channel |
-| `ALFRED_RESEND_API_KEY` | - | Resend API key for email notifications |
-| `ALFRED_EMAIL_FROM` | `Alfred <onboarding@resend.dev>` | Email sender address |
+| `ALFRED_WHATSAPP_DB_PATH` | `./whatsapp.db` | WhatsApp session DB |
+| `ALFRED_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model |
+| `ALFRED_CLAUDE_TEMPERATURE` | `0.1` | Model temperature (0-1) |
+| `ALFRED_MESSAGE_HISTORY_SIZE` | `25` | Messages per channel for context |
+| `ALFRED_RESEND_API_KEY` | - | Resend API for email notifications |
+| `ALFRED_EMAIL_FROM` | `Alfred <onboarding@resend.dev>` | Email sender |
 | `ALFRED_GMAIL_POLL_INTERVAL` | `5` | Minutes between email checks |
-| `ALFRED_GMAIL_MAX_EMAILS` | `10` | Max emails to process per poll |
-
-**Note:** Gmail integration is enabled/disabled via the Settings UI (stored in database), not via environment variable.
-
----
-
-## Common Tasks
-
-### Add New API Endpoint
-1. Add route in `server/server.go` → `registerRoutes()`
-2. Add handler in `server/handlers.go`
-3. Add database function if needed
-
-### Add Database Table
-1. Add migration in `database/database.go` → `migrate()`
-2. Create new file for CRUD (e.g., `database/newtable.go`)
-3. Add types and functions
-
-### Add Configuration
-1. Add field to `Config` in `config/env.go`
-2. Load in `LoadFromEnv()` using helpers
-
-### Modify Event Detection
-1. Update prompt in `claude/prompt.go`
-2. Adjust types in `claude/client.go` if needed
-
-### Add Calendar Features
-1. Add to `gcal/events.go` for event operations
-2. Add to `gcal/calendars.go` for calendar operations
-
----
-
-## Key Functions by Package
-
-### main.go
-- `main()` - Bootstrap, initialize, start processing
-- `waitForShutdown()` - Graceful shutdown on SIGINT/SIGTERM
-
-### database/
-- `New(dbPath)` - Open SQLite with migrations
-- `CreateChannel()`, `GetChannelByIdentifier()`, `ListChannels()`
-- `StoreMessage()`, `GetMessageHistory()`, `PruneMessages()`
-- `CreatePendingEvent()`, `GetEventByID()`, `UpdateEventStatus()`
-- `SetEventAttendees()`, `GetEventAttendees()`
-
-### processor/
-- `New()` - Create processor with dependencies
-- `Start()` - Begin message processing goroutine
-- `processMessage()` - Store → Claude → Create pending event
-
-### claude/
-- `NewClient()` - Create with API key, model, temperature
-- `AnalyzeMessages()` - Analyze WhatsApp messages for events
-- `AnalyzeEmail()` - Analyze email content for events
-
-### gcal/
-- `NewClient()` - Load OAuth config and token
-- `CreateEvent()`, `UpdateEvent()`, `DeleteEvent()`
-- `ListCalendars()`, `GetAuthURL()`, `GetAuthURLWithRedirect()`
-- `ExchangeCode()`, `ExchangeCodeWithRedirect()` - Exchange OAuth code for token
-- `GetOAuthConfig()`, `GetToken()` - Share OAuth credentials with Gmail
-
-### gmail/
-- `NewClient()` - Create Gmail client from OAuth config/token
-- `ListMessages()`, `GetMessage()` - Fetch emails
-- `DiscoverCategories()`, `DiscoverSenders()`, `DiscoverDomains()` - Find email sources
-- `NewScanner()`, `ScanForEmails()` - Scan emails by tracked sources
-- `NewWorker()`, `Start()`, `Stop()` - Background email polling
-
-### whatsapp/
-- `NewClient()` - Create with message handler
-- `HandleEvent()` - Dispatch WhatsApp events
-- `GetDiscoverableChannels()` - List contacts and groups
-- `PairWithPhone()` - Generate pairing code for phone-number linking
-
-### sse/
-- `NewState()` - Create onboarding state manager
-- `Subscribe()`, `Unsubscribe()` - SSE connections
-- `SetWhatsAppStatus()`, `SetGCalStatus()` - Broadcast updates
+| `ALFRED_GMAIL_MAX_EMAILS` | `10` | Max emails per poll |
+| `ALFRED_DEBUG_ALL_MESSAGES` | `false` | Log all WhatsApp messages |
 
 ---
 
 ## Development Patterns
 
-### Error Handling
+### Go Error Handling
 ```go
 if err != nil {
     return fmt.Errorf("context: %w", err)
 }
 ```
 
-### HTTP Response
+### HTTP Responses
 ```go
 respondJSON(w, http.StatusOK, data)
 respondError(w, http.StatusBadRequest, "message")
@@ -480,125 +330,113 @@ respondError(w, http.StatusBadRequest, "message")
 
 ### Database Query
 ```go
-rows, err := d.Query(`SELECT ... FROM ... WHERE ...`, args...)
+rows, err := d.Query(`SELECT ... WHERE ...`, args...)
 defer rows.Close()
 for rows.Next() { ... }
 ```
 
-### Time Parsing (handlers.go)
-```go
-parseEventTime(s string) // Handles RFC3339, ISO, local formats
+### React Query Hook
+```typescript
+export function useFeature() {
+  return useQuery({
+    queryKey: ['feature'],
+    queryFn: getFeature,
+  });
+}
 ```
+
+### React Query Mutation
+```typescript
+export function useUpdateFeature() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateFeature,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['feature'] }),
+  });
+}
+```
+
+---
+
+## Deployment (Railway)
+
+### Setup
+```bash
+railway login
+railway init
+railway volume add --mount-path /data   # Persistent storage
+railway up                               # Deploy
+railway domain                           # Get URL
+```
+
+### Environment Variables (Production)
+```bash
+railway variables set ANTHROPIC_API_KEY="sk-..."
+railway variables set ALFRED_DB_PATH="/data/alfred.db"
+railway variables set ALFRED_WHATSAPP_DB_PATH="/data/whatsapp.db"
+railway variables set GOOGLE_TOKEN_FILE="/data/token.json"
+railway variables set GOOGLE_CREDENTIALS_JSON='{"web":{...}}'
+```
+
+### Google OAuth URIs
+Add to Google Cloud Console:
+```
+https://alfred-production-d2c9.up.railway.app/oauth/callback
+alfred://oauth/callback
+```
+
+### Persistent Storage
+Volume at `/data` stores: `alfred.db`, `whatsapp.db`, `token.json`
+
+---
+
+## Mobile Development
+
+### Commands
+| Command | Purpose |
+|---------|---------|
+| `npm run web` | Web preview at localhost:8081 |
+| `npm run ios` | iOS Simulator |
+| `npm run android` | Android Emulator |
+| `npm start` | Expo Go (scan QR on phone) |
+
+### Environment
+Create `mobile/.env.local`:
+```
+EXPO_PUBLIC_API_BASE_URL=http://localhost:8080
+```
+
+For physical device, use your computer's IP:
+```
+EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8080
+```
+
+Find IP: `ipconfig getifaddr en0`
 
 ---
 
 ## Files by Modification Frequency
 
-| Task | Primary Files |
-|------|---------------|
-| API changes | `server/handlers.go`, `server/server.go` |
-| Event detection | `claude/prompt.go`, `claude/client.go` |
-| Mobile UI changes | `mobile/src/components/**`, `mobile/src/screens/**` |
-| Onboarding flow | `mobile/src/screens/onboarding/**`, `mobile/src/navigation/RootNavigator.tsx` |
-| Database schema | `database/database.go` |
-| WhatsApp processing | `processor/processor.go` |
-| Gmail processing | `processor/email_processor.go`, `gmail/worker.go` |
-| Gmail scanning | `gmail/scanner.go`, `gmail/discovery.go` |
-| Google Calendar | `gcal/events.go`, `gcal/client.go` |
-| WhatsApp | `whatsapp/handler.go`, `whatsapp/client.go` |
-| Configuration | `config/env.go` |
-| Notifications | `notify/service.go`, `notify/resend.go` |
-| Deployment | `Dockerfile`, `railway.toml`, `scripts/deploy.sh` |
-| Development scripts | `scripts/dev.sh`, `scripts/deploy.sh` |
-| Documentation | `docs/*.md`, `CLAUDE.md` |
+### High (API, UI changes)
+| Task | Files |
+|------|-------|
+| API endpoints | `internal/server/handlers.go`, `internal/server/server.go` |
+| Event detection | `internal/claude/prompt.go`, `internal/claude/client.go` |
+| Mobile screens | `mobile/src/screens/**`, `mobile/src/components/**` |
+| Navigation | `mobile/src/navigation/RootNavigator.tsx` |
 
----
+### Medium (Feature changes)
+| Task | Files |
+|------|-------|
+| Database schema | `internal/database/database.go` |
+| WhatsApp processing | `internal/processor/processor.go`, `internal/whatsapp/handler.go` |
+| Gmail processing | `internal/processor/email_processor.go`, `internal/gmail/worker.go` |
+| Google Calendar | `internal/gcal/events.go` |
+| Notifications | `internal/notify/service.go` |
+| Mobile API hooks | `mobile/src/hooks/**` |
 
-## Railway Deployment
-
-### Deployment Files
-- `Dockerfile` - Multi-stage build with CGO for SQLite
-- `railway.toml` - Railway configuration with health check
-
-### Setup Steps
-1. Install Railway CLI: `brew install railway`
-2. Login: `railway login`
-3. Initialize project: `railway init`
-4. Link service: `railway link`
-5. Create volume: `railway volume add --mount-path /data`
-6. Set environment variables:
-   ```bash
-   railway variables set ANTHROPIC_API_KEY="sk-..."
-   railway variables set ALFRED_DB_PATH="/data/alfred.db"
-   railway variables set ALFRED_WHATSAPP_DB_PATH="/data/whatsapp.db"
-   railway variables set GOOGLE_CREDENTIALS_FILE="/data/credentials.json"
-   railway variables set GOOGLE_TOKEN_FILE="/data/token.json"
-   railway variables set GOOGLE_CREDENTIALS_JSON='{"web":{...}}'  # Alternative to file
-   ```
-7. Deploy: `railway up`
-8. Get domain: `railway domain`
-
-### Persistent Storage
-Railway volume mounted at `/data` stores:
-- `alfred.db` - Application database
-- `whatsapp.db` - WhatsApp session (preserves login)
-- `token.json` - Google OAuth token
-
-### Google OAuth Configuration
-Add these redirect URIs to Google Cloud Console:
-```
-https://alfred-production-d2c9.up.railway.app/oauth/callback
-alfred://oauth/callback
-```
-The `alfred://` URI is for mobile app deep link OAuth flow.
-
-### Health Check
-Railway uses `GET /health` endpoint which returns:
-```json
-{"status":"healthy","whatsapp":"connected|disconnected","gcal":"connected|disconnected"}
-```
-
----
-
-## Mobile App Development
-
-### Quick Start
-```bash
-cd mobile
-npm install                    # Install dependencies
-npm run web                    # Start web preview (http://localhost:8081)
-```
-
-### Viewing Options
-| Method | Command | Notes |
-|--------|---------|-------|
-| Web browser | `npm run web` | Opens at http://localhost:8081 |
-| iOS Simulator | `npm run ios` | Requires Xcode |
-| Android Emulator | `npm run android` | Requires Android Studio |
-| iPhone (Expo Go) | `npm start` + scan QR | Phone + computer on same WiFi |
-
-### Environment Configuration
-The mobile app reads `EXPO_PUBLIC_API_BASE_URL` from environment:
-
-**Local development** (`mobile/.env.local`):
-```
-EXPO_PUBLIC_API_BASE_URL=http://localhost:8080
-```
-
-**Testing on physical device** - use your computer's IP:
-```
-EXPO_PUBLIC_API_BASE_URL=http://192.168.x.x:8080
-```
-
-Find your IP: `ipconfig getifaddr en0`
-
-### Key Mobile Files
-| Task | Primary Files |
-|------|---------------|
-| API configuration | `src/config/api.ts`, `src/api/client.ts` |
-| Channel list/sorting | `src/components/channels/ChannelList.tsx` |
-| Event management | `src/components/events/EventCard.tsx`, `EventList.tsx` |
-| Navigation | `src/navigation/RootNavigator.tsx`, `TopTabs.tsx` |
-| Onboarding | `src/screens/onboarding/*`, `src/hooks/useOnboardingStatus.ts` |
-| Settings | `src/screens/SettingsScreen.tsx` |
-| API hooks | `src/hooks/useChannels.ts`, `useEvents.ts`, `useOnboardingStatus.ts` |
+### Low (Configuration, deployment)
+| Task | Files |
+|------|-------|
+| Configuration | `internal/config/env.go` |
+| Deployment | `Dockerfile`, `railway.toml` |

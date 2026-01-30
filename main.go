@@ -59,10 +59,14 @@ func main() {
 	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, claudeClient, notifyService, cfg)
 
 	srv.InitializeClients(server.ClientsConfig{
-		WAClient:      clients.WAClient,
-		GCalClient:    clients.GCalClient,
-		GmailClient:   gmailClient,
-		NotifyService: notifyService,
+		WAClient:          clients.WAClient,
+		GCalClient:        clients.GCalClient,
+		GmailClient:       gmailClient,
+		GmailWorker:       gmailWorker,
+		NotifyService:     notifyService,
+		ClaudeClient:      claudeClient,
+		GmailPollInterval: cfg.GmailPollInterval,
+		GmailMaxEmails:    cfg.GmailMaxEmails,
 	})
 
 	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)

@@ -394,6 +394,10 @@ func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 				if s.onboardingState != nil {
 					s.onboardingState.SetGCalStatus("connected")
 				}
+				// Re-initialize Gmail client with the new token
+				if err := s.initializeGmailClient(); err != nil {
+					fmt.Printf("Warning: Failed to initialize Gmail client: %v\n", err)
+				}
 			case <-time.After(5 * time.Minute):
 				fmt.Println("OAuth timeout - no callback received")
 				if s.onboardingState != nil {
@@ -419,6 +423,10 @@ func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
 				fmt.Println("Google Calendar connected successfully!")
 				if s.onboardingState != nil {
 					s.onboardingState.SetGCalStatus("connected")
+				}
+				// Re-initialize Gmail client with the new token
+				if err := s.initializeGmailClient(); err != nil {
+					fmt.Printf("Warning: Failed to initialize Gmail client: %v\n", err)
 				}
 			case err := <-errChan:
 				fmt.Printf("OAuth callback error: %v\n", err)
@@ -450,7 +458,7 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	if s.oauthCodeChan != nil {
 		select {
 		case s.oauthCodeChan <- code:
-			// Code sent successfully
+			// Code sent successfully - goroutine will handle exchange and Gmail init
 		default:
 			// Channel full or closed, try direct exchange
 			if err := s.gcalClient.ExchangeCode(context.Background(), code); err != nil {
@@ -459,6 +467,10 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 			}
 			if s.onboardingState != nil {
 				s.onboardingState.SetGCalStatus("connected")
+			}
+			// Re-initialize Gmail client with the new token
+			if err := s.initializeGmailClient(); err != nil {
+				fmt.Printf("Warning: Failed to initialize Gmail client: %v\n", err)
 			}
 		}
 	} else {
@@ -470,6 +482,10 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 			}
 			if s.onboardingState != nil {
 				s.onboardingState.SetGCalStatus("connected")
+			}
+			// Re-initialize Gmail client with the new token
+			if err := s.initializeGmailClient(); err != nil {
+				fmt.Printf("Warning: Failed to initialize Gmail client: %v\n", err)
 			}
 		}
 	}
@@ -542,6 +558,11 @@ func (s *Server) handleGCalExchangeCode(w http.ResponseWriter, r *http.Request) 
 	}
 
 	fmt.Println("Google Calendar connected successfully via mobile!")
+
+	// Re-initialize Gmail client with the new token
+	if err := s.initializeGmailClient(); err != nil {
+		fmt.Printf("Warning: Failed to initialize Gmail client: %v\n", err)
+	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"connected": true,

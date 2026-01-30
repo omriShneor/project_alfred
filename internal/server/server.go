@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/omriShneor/project_alfred/internal/claude"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
+	"github.com/omriShneor/project_alfred/internal/processor"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
@@ -19,12 +21,17 @@ type Server struct {
 	waClient        *whatsapp.Client
 	gcalClient      *gcal.Client
 	gmailClient     *gmail.Client
+	gmailWorker     *gmail.Worker
 	onboardingState *sse.State
 	notifyService   *notify.Service
+	claudeClient    *claude.Client
 	httpSrv         *http.Server
 	port            int
 	resendAPIKey    string      // For checking email availability
 	oauthCodeChan   chan string // Channel to receive OAuth code from callback
+	// Gmail worker config
+	gmailPollInterval int
+	gmailMaxEmails    int
 }
 
 // ServerConfig holds configuration for initial server creation (onboarding-capable)
@@ -40,7 +47,12 @@ type ClientsConfig struct {
 	WAClient      *whatsapp.Client
 	GCalClient    *gcal.Client
 	GmailClient   *gmail.Client
+	GmailWorker   *gmail.Worker
 	NotifyService *notify.Service
+	ClaudeClient  *claude.Client
+	// Gmail worker config
+	GmailPollInterval int
+	GmailMaxEmails    int
 }
 
 func New(cfg ServerConfig) *Server {
@@ -70,7 +82,11 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.waClient = cfg.WAClient
 	s.gcalClient = cfg.GCalClient
 	s.gmailClient = cfg.GmailClient
+	s.gmailWorker = cfg.GmailWorker
 	s.notifyService = cfg.NotifyService
+	s.claudeClient = cfg.ClaudeClient
+	s.gmailPollInterval = cfg.GmailPollInterval
+	s.gmailMaxEmails = cfg.GmailMaxEmails
 }
 
 // SetGCalClient sets the gcal client (used during onboarding before full initialization)
@@ -182,4 +198,60 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+// initializeGmailClient creates and initializes the Gmail client after OAuth authentication.
+// This should be called after gcalClient.ExchangeCode() succeeds.
+func (s *Server) initializeGmailClient() error {
+	if s.gcalClient == nil || !s.gcalClient.IsAuthenticated() {
+		return fmt.Errorf("Google Calendar client not authenticated")
+	}
+
+	// Stop existing Gmail worker if running
+	if s.gmailWorker != nil {
+		s.gmailWorker.Stop()
+		s.gmailWorker = nil
+	}
+
+	oauthConfig := s.gcalClient.GetOAuthConfig()
+	oauthToken := s.gcalClient.GetToken()
+	if oauthConfig == nil || oauthToken == nil {
+		return fmt.Errorf("OAuth config or token not available")
+	}
+
+	gmailClient, err := gmail.NewClient(oauthConfig, oauthToken)
+	if err != nil {
+		return fmt.Errorf("failed to create Gmail client: %w", err)
+	}
+
+	if !gmailClient.IsAuthenticated() {
+		return fmt.Errorf("Gmail client created but not authenticated")
+	}
+
+	s.gmailClient = gmailClient
+	fmt.Println("Gmail client initialized after OAuth")
+
+	// Create and start Gmail worker if we have the required dependencies
+	if s.db != nil && s.claudeClient != nil && s.notifyService != nil {
+		emailProc := processor.NewEmailProcessor(s.db, s.claudeClient, s.notifyService)
+		pollInterval := s.gmailPollInterval
+		if pollInterval <= 0 {
+			pollInterval = 1 // Default to 1 minute
+		}
+		maxEmails := s.gmailMaxEmails
+		if maxEmails <= 0 {
+			maxEmails = 10 // Default to 10
+		}
+		s.gmailWorker = gmail.NewWorker(gmailClient, s.db, emailProc, gmail.WorkerConfig{
+			PollIntervalMinutes: pollInterval,
+			MaxEmailsPerPoll:    maxEmails,
+		})
+		if err := s.gmailWorker.Start(); err != nil {
+			fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
+		} else {
+			fmt.Println("Gmail worker started")
+		}
+	}
+
+	return nil
 }

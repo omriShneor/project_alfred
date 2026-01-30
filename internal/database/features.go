@@ -13,6 +13,7 @@ type FeatureSettings struct {
 
 	// Inputs (where to scan for events)
 	WhatsAppInputEnabled bool `json:"whatsapp_input_enabled"`
+	TelegramInputEnabled bool `json:"telegram_input_enabled"`
 	EmailInputEnabled    bool `json:"email_input_enabled"`
 	SMSInputEnabled      bool `json:"sms_input_enabled"`
 
@@ -34,6 +35,7 @@ func (d *DB) GetFeatureSettings() (*FeatureSettings, error) {
 			smart_calendar_enabled,
 			smart_calendar_setup_complete,
 			whatsapp_input_enabled,
+			COALESCE(telegram_input_enabled, 0) as telegram_input_enabled,
 			email_input_enabled,
 			sms_input_enabled,
 			COALESCE(alfred_calendar_enabled, 1) as alfred_calendar_enabled,
@@ -46,6 +48,7 @@ func (d *DB) GetFeatureSettings() (*FeatureSettings, error) {
 		&settings.SmartCalendarEnabled,
 		&settings.SmartCalendarSetupComplete,
 		&settings.WhatsAppInputEnabled,
+		&settings.TelegramInputEnabled,
 		&settings.EmailInputEnabled,
 		&settings.SMSInputEnabled,
 		&settings.AlfredCalendarEnabled,
@@ -67,6 +70,7 @@ func (d *DB) UpdateFeatureSettings(settings *FeatureSettings) error {
 			smart_calendar_enabled = ?,
 			smart_calendar_setup_complete = ?,
 			whatsapp_input_enabled = ?,
+			telegram_input_enabled = ?,
 			email_input_enabled = ?,
 			sms_input_enabled = ?,
 			alfred_calendar_enabled = ?,
@@ -78,6 +82,7 @@ func (d *DB) UpdateFeatureSettings(settings *FeatureSettings) error {
 		settings.SmartCalendarEnabled,
 		settings.SmartCalendarSetupComplete,
 		settings.WhatsAppInputEnabled,
+		settings.TelegramInputEnabled,
 		settings.EmailInputEnabled,
 		settings.SMSInputEnabled,
 		settings.AlfredCalendarEnabled,
@@ -156,6 +161,7 @@ func (d *DB) UpdateSmartCalendarCalendars(alfred, googleCalendar, outlook bool) 
 type AppStatus struct {
 	OnboardingComplete bool `json:"onboarding_complete"`
 	WhatsAppEnabled    bool `json:"whatsapp_enabled"`
+	TelegramEnabled    bool `json:"telegram_enabled"`
 	GmailEnabled       bool `json:"gmail_enabled"`
 	GoogleCalEnabled   bool `json:"google_calendar_enabled"`
 }
@@ -167,12 +173,14 @@ func (d *DB) GetAppStatus() (*AppStatus, error) {
 		SELECT
 			COALESCE(onboarding_complete, 0),
 			whatsapp_input_enabled,
+			COALESCE(telegram_input_enabled, 0),
 			email_input_enabled,
 			google_calendar_enabled
 		FROM feature_settings WHERE id = 1
 	`).Scan(
 		&status.OnboardingComplete,
 		&status.WhatsAppEnabled,
+		&status.TelegramEnabled,
 		&status.GmailEnabled,
 		&status.GoogleCalEnabled,
 	)
@@ -183,15 +191,16 @@ func (d *DB) GetAppStatus() (*AppStatus, error) {
 }
 
 // CompleteOnboarding marks onboarding as complete and enables the configured inputs
-func (d *DB) CompleteOnboarding(whatsappEnabled, gmailEnabled bool) error {
+func (d *DB) CompleteOnboarding(whatsappEnabled, telegramEnabled, gmailEnabled bool) error {
 	_, err := d.Exec(`
 		UPDATE feature_settings SET
 			onboarding_complete = 1,
 			whatsapp_input_enabled = ?,
+			telegram_input_enabled = ?,
 			email_input_enabled = ?,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = 1
-	`, whatsappEnabled, gmailEnabled)
+	`, whatsappEnabled, telegramEnabled, gmailEnabled)
 	if err != nil {
 		return fmt.Errorf("failed to complete onboarding: %w", err)
 	}
@@ -204,6 +213,7 @@ func (d *DB) ResetOnboarding() error {
 		UPDATE feature_settings SET
 			onboarding_complete = 0,
 			whatsapp_input_enabled = 0,
+			telegram_input_enabled = 0,
 			email_input_enabled = 0,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE id = 1

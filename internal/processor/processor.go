@@ -10,19 +10,19 @@ import (
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/notify"
-	"github.com/omriShneor/project_alfred/internal/whatsapp"
+	"github.com/omriShneor/project_alfred/internal/source"
 )
 
 const (
 	defaultHistorySize = 25
 )
 
-// Processor handles incoming WhatsApp messages and detects calendar events
+// Processor handles incoming messages from any source and detects calendar events
 type Processor struct {
 	db            *database.DB
 	gcalClient    *gcal.Client
 	claudeClient  *claude.Client
-	msgChan       <-chan whatsapp.FilteredMessage
+	msgChan       <-chan source.Message
 	historySize   int
 	notifyService *notify.Service
 
@@ -36,7 +36,7 @@ func New(
 	db *database.DB,
 	gcalClient *gcal.Client,
 	claudeClient *claude.Client,
-	msgChan <-chan whatsapp.FilteredMessage,
+	msgChan <-chan source.Message,
 	historySize int,
 	notifyService *notify.Service,
 ) *Processor {
@@ -101,14 +101,17 @@ func (p *Processor) processLoop() {
 	}
 }
 
-// processMessage handles a single incoming message
-func (p *Processor) processMessage(msg whatsapp.FilteredMessage) error {
-	fmt.Printf("Processing message from channel %d: %s\n", msg.SourceID, truncate(msg.Text, 50))
+// processMessage handles a single incoming message from any source
+func (p *Processor) processMessage(msg source.Message) error {
+	fmt.Printf("Processing %s message from channel %d: %s\n", msg.SourceType, msg.SourceID, truncate(msg.Text, 50))
 
 	// Get the channel to find its calendar_id
-	channel, err := p.db.GetChannelByID(msg.SourceID)
+	channel, err := p.db.GetSourceChannelByID(msg.SourceID)
 	if err != nil {
 		return fmt.Errorf("failed to get channel: %w", err)
+	}
+	if channel == nil {
+		return fmt.Errorf("channel not found: %d", msg.SourceID)
 	}
 
 	if !channel.Enabled {
@@ -117,18 +120,18 @@ func (p *Processor) processMessage(msg whatsapp.FilteredMessage) error {
 	}
 
 	// Store the new message in history
-	storedMsg, err := p.storeMessage(msg)
+	storedMsg, err := p.storeSourceMessage(msg)
 	if err != nil {
 		return fmt.Errorf("failed to store message: %w", err)
 	}
 
 	// Prune old messages to keep only the last N
-	if err := p.db.PruneMessages(msg.SourceID, p.historySize); err != nil {
+	if err := p.db.PruneSourceMessages(msg.SourceType, msg.SourceID, p.historySize); err != nil {
 		fmt.Printf("Warning: failed to prune messages: %v\n", err)
 	}
 
 	// Get message history for context
-	history, err := p.db.GetMessageHistory(msg.SourceID, p.historySize)
+	history, err := p.db.GetSourceMessageHistory(msg.SourceType, msg.SourceID, p.historySize)
 	if err != nil {
 		return fmt.Errorf("failed to get message history: %w", err)
 	}
@@ -140,8 +143,12 @@ func (p *Processor) processMessage(msg whatsapp.FilteredMessage) error {
 		existingEvents = []database.CalendarEvent{}
 	}
 
+	// Convert to database types for Claude analysis
+	historyRecords := convertToMessageRecords(history)
+	newMessageRecord := convertSourceMessageToRecord(storedMsg)
+
 	// Send to Claude for analysis
-	analysis, err := p.claudeClient.AnalyzeMessages(p.ctx, history, *storedMsg, existingEvents)
+	analysis, err := p.claudeClient.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
 	if err != nil {
 		return fmt.Errorf("Claude analysis failed: %w", err)
 	}
@@ -155,18 +162,49 @@ func (p *Processor) processMessage(msg whatsapp.FilteredMessage) error {
 	}
 
 	// Create pending event in database
-	if err := p.createPendingEvent(channel, storedMsg.ID, analysis); err != nil {
+	if err := p.createPendingEvent(channel, storedMsg.ID, analysis, msg.SourceType); err != nil {
 		return fmt.Errorf("failed to create pending event: %w", err)
 	}
 
 	return nil
 }
 
+// convertToMessageRecords converts SourceMessage slice to MessageRecord slice for Claude
+func convertToMessageRecords(messages []database.SourceMessage) []database.MessageRecord {
+	records := make([]database.MessageRecord, len(messages))
+	for i, m := range messages {
+		records[i] = database.MessageRecord{
+			ID:          m.ID,
+			ChannelID:   m.ChannelID,
+			SenderJID:   m.SenderID,
+			SenderName:  m.SenderName,
+			MessageText: m.MessageText,
+			Timestamp:   m.Timestamp,
+			CreatedAt:   m.CreatedAt,
+		}
+	}
+	return records
+}
+
+// convertSourceMessageToRecord converts a single SourceMessage to MessageRecord for Claude
+func convertSourceMessageToRecord(m *database.SourceMessage) database.MessageRecord {
+	return database.MessageRecord{
+		ID:          m.ID,
+		ChannelID:   m.ChannelID,
+		SenderJID:   m.SenderID,
+		SenderName:  m.SenderName,
+		MessageText: m.MessageText,
+		Timestamp:   m.Timestamp,
+		CreatedAt:   m.CreatedAt,
+	}
+}
+
 // createPendingEvent creates or updates a pending event from Claude's analysis
 func (p *Processor) createPendingEvent(
-	channel *database.Channel,
+	channel *database.SourceChannel,
 	messageID int64,
 	analysis *claude.EventAnalysis,
+	sourceType source.SourceType,
 ) error {
 	if analysis.Event == nil {
 		return fmt.Errorf("analysis has no event data")
@@ -271,8 +309,11 @@ func (p *Processor) createPendingEvent(
 		return fmt.Errorf("failed to save event: %w", err)
 	}
 
-	fmt.Printf("Created pending event: %s (ID: %d, Action: %s)\n",
-		created.Title, created.ID, created.ActionType)
+	// Update source type on the event
+	_, _ = p.db.Exec(`UPDATE calendar_events SET source = ? WHERE id = ?`, sourceType, created.ID)
+
+	fmt.Printf("Created pending event: %s (ID: %d, Action: %s, Source: %s)\n",
+		created.Title, created.ID, created.ActionType, sourceType)
 
 	// Send notification (non-blocking, don't fail event creation)
 	if p.notifyService != nil {

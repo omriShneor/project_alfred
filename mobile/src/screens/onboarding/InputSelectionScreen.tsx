@@ -11,7 +11,7 @@ import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
 type NavigationProp = NativeStackNavigationProp<OnboardingParamList, 'InputSelection'>;
 
 interface InputOption {
-  id: 'whatsapp' | 'gmail';
+  id: 'whatsapp' | 'telegram' | 'gmail';
   title: string;
   description: string;
   icon: keyof typeof Ionicons.glyphMap;
@@ -23,6 +23,12 @@ const inputOptions: InputOption[] = [
     title: 'WhatsApp',
     description: 'Scan messages from contacts and groups',
     icon: 'chatbubble-outline',
+  },
+  {
+    id: 'telegram',
+    title: 'Telegram',
+    description: 'Scan messages from contacts and groups',
+    icon: 'paper-plane-outline',
   },
   {
     id: 'gmail',
@@ -54,6 +60,7 @@ export function InputSelectionScreen() {
 
     navigation.navigate('Connection', {
       whatsappEnabled: selected.has('whatsapp'),
+      telegramEnabled: selected.has('telegram'),
       gmailEnabled: selected.has('gmail'),
     });
   };

@@ -30,4 +30,19 @@ export {
 } from './gmail';
 export { getFeatures, updateSmartCalendar, getSmartCalendarStatus } from './features';
 export { getAppStatus, completeOnboarding } from './app';
+export {
+  getTelegramStatus,
+  sendTelegramCode,
+  verifyTelegramCode,
+  disconnectTelegram,
+  reconnectTelegram,
+  discoverTelegramChannels,
+  listTelegramChannels,
+  createTelegramChannel,
+  updateTelegramChannel,
+  deleteTelegramChannel,
+  type TelegramStatus,
+  type CreateTelegramChannelRequest,
+  type UpdateTelegramChannelRequest,
+} from './telegram';
 export type { AppStatus, CompleteOnboardingRequest, ConnectionStatus } from '../types/app';

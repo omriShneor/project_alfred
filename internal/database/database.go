@@ -205,6 +205,36 @@ func (d *DB) migrate() error {
 	// Migration: if smart_calendar_setup_complete is true, set onboarding_complete to true
 	_, _ = d.Exec(`UPDATE feature_settings SET onboarding_complete = 1 WHERE smart_calendar_setup_complete = 1 AND onboarding_complete = 0`)
 
+	// Phase 0: Add source_type columns for multi-source support (WhatsApp, Telegram, Gmail)
+	// Add source_type column to channels table
+	if err := d.addColumnIfNotExists("channels", "source_type", "TEXT DEFAULT 'whatsapp'"); err != nil {
+		return fmt.Errorf("failed to add source_type to channels: %w", err)
+	}
+
+	// Add source_type column to message_history table
+	if err := d.addColumnIfNotExists("message_history", "source_type", "TEXT DEFAULT 'whatsapp'"); err != nil {
+		return fmt.Errorf("failed to add source_type to message_history: %w", err)
+	}
+
+	// Add telegram_input_enabled column to feature_settings
+	if err := d.addColumnIfNotExists("feature_settings", "telegram_input_enabled", "BOOLEAN DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add telegram_input_enabled column: %w", err)
+	}
+
+	// Add subject column to message_history for email subjects
+	if err := d.addColumnIfNotExists("message_history", "subject", "TEXT"); err != nil {
+		return fmt.Errorf("failed to add subject to message_history: %w", err)
+	}
+
+	// Create indexes for source_type columns
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_channels_source_type ON channels(source_type)`)
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_message_history_source_type ON message_history(source_type)`)
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_calendar_events_source_type ON calendar_events(source_type)`)
+
+	// Update channels constraint to allow Telegram types
+	// Note: SQLite doesn't support ALTER TABLE to modify CHECK constraints,
+	// so new types will be validated at application level
+
 	return nil
 }
 

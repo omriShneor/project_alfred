@@ -13,6 +13,10 @@ import {
   useDisconnectWhatsApp,
   useGetOAuthURL,
   useGeneratePairingCode,
+  useTelegramStatus,
+  useSendTelegramCode,
+  useVerifyTelegramCode,
+  useDisconnectTelegram,
 } from '../hooks';
 import { disconnectGCal } from '../api';
 import type { MainStackParamList } from '../navigation/MainNavigator';
@@ -63,7 +67,18 @@ export function PreferencesScreen() {
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
 
+  // Telegram state
+  const { data: telegramStatus, refetch: refetchTelegramStatus } = useTelegramStatus();
+  const sendTelegramCode = useSendTelegramCode();
+  const verifyTelegramCode = useVerifyTelegramCode();
+  const disconnectTelegram = useDisconnectTelegram();
+  const [showTelegramConnect, setShowTelegramConnect] = useState(false);
+  const [telegramPhoneNumber, setTelegramPhoneNumber] = useState('');
+  const [telegramCode, setTelegramCode] = useState('');
+  const [telegramCodeSent, setTelegramCodeSent] = useState(false);
+
   const whatsappConnected = waStatus?.connected ?? false;
+  const telegramConnected = telegramStatus?.connected ?? false;
   const gmailConnected = gcalStatus?.connected ?? false; // Gmail uses same Google OAuth
 
   // Reset WhatsApp connect UI when connected
@@ -74,6 +89,16 @@ export function PreferencesScreen() {
       setPhoneNumber('');
     }
   }, [waStatus?.connected]);
+
+  // Reset Telegram connect UI when connected
+  useEffect(() => {
+    if (telegramStatus?.connected) {
+      setShowTelegramConnect(false);
+      setTelegramCodeSent(false);
+      setTelegramPhoneNumber('');
+      setTelegramCode('');
+    }
+  }, [telegramStatus?.connected]);
 
   const handleDisconnectWhatsApp = () => {
     Alert.alert(
@@ -150,6 +175,62 @@ export function PreferencesScreen() {
     setPhoneNumber('');
   };
 
+  // Telegram handlers
+  const handleDisconnectTelegram = () => {
+    Alert.alert(
+      'Disconnect Telegram',
+      'Are you sure you want to disconnect Telegram? You will need to reconnect to scan messages.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await disconnectTelegram.mutateAsync();
+              refetchTelegramStatus();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to disconnect Telegram');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleShowTelegramConnect = () => {
+    setShowTelegramConnect(true);
+    setTelegramCodeSent(false);
+    setTelegramPhoneNumber('');
+    setTelegramCode('');
+  };
+
+  const handleSendTelegramCode = async () => {
+    if (!telegramPhoneNumber.trim()) {
+      Alert.alert('Error', 'Please enter your phone number');
+      return;
+    }
+    try {
+      await sendTelegramCode.mutateAsync(telegramPhoneNumber.trim());
+      setTelegramCodeSent(true);
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Failed to send verification code');
+    }
+  };
+
+  const handleVerifyTelegramCode = async () => {
+    if (!telegramCode.trim()) {
+      Alert.alert('Error', 'Please enter the verification code');
+      return;
+    }
+    try {
+      await verifyTelegramCode.mutateAsync(telegramCode.trim());
+      refetchTelegramStatus();
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Failed to verify code');
+    }
+  };
+
   // Navigate to home when tapping header (handled by parent)
   const handleGoHome = () => {
     navigation.dispatch(
@@ -170,7 +251,7 @@ export function PreferencesScreen() {
         {/* Sources Section */}
         <Text style={styles.sectionLabel}>Sources</Text>
         <Text style={styles.sectionDescription}>
-          Configure which contacts and senders Alfred should scan for events.
+            Select where Alfred should look for event suggestions.
         </Text>
 
         {whatsappConnected && (
@@ -180,6 +261,16 @@ export function PreferencesScreen() {
             icon="chatbubble-outline"
             connected={whatsappConnected}
             onPress={() => navigation.navigate('WhatsAppPreferences')}
+          />
+        )}
+
+        {telegramConnected && (
+          <PreferenceCard
+            title="Telegram"
+            description="Manage tracked contacts and groups"
+            icon="paper-plane-outline"
+            connected={telegramConnected}
+            onPress={() => navigation.navigate('TelegramPreferences')}
           />
         )}
 
@@ -193,7 +284,7 @@ export function PreferencesScreen() {
           />
         )}
 
-        {!whatsappConnected && !gmailConnected && (
+        {!whatsappConnected && !telegramConnected && !gmailConnected && (
           <Card style={styles.emptyCard}>
             <Text style={styles.emptyText}>
               No connected sources
@@ -280,6 +371,90 @@ export function PreferencesScreen() {
               </View>
             )}
           </View>
+
+          {/* Telegram */}
+          <View style={[styles.accountRow, styles.accountRowBorder]}>
+            <View style={styles.accountInfo}>
+              <Ionicons name="paper-plane-outline" size={20} color={colors.text} />
+              <View style={styles.accountText}>
+                <Text style={styles.accountName}>Telegram</Text>
+                <Text style={styles.accountStatus}>
+                  {telegramConnected ? 'Connected' : 'Not connected'}
+                </Text>
+              </View>
+            </View>
+            {telegramConnected ? (
+              <Button
+                title="Disconnect"
+                variant="outline"
+                onPress={handleDisconnectTelegram}
+                loading={disconnectTelegram.isPending}
+                style={styles.disconnectButton}
+              />
+            ) : !showTelegramConnect ? (
+              <Button
+                title="Connect"
+                onPress={handleShowTelegramConnect}
+                style={styles.connectButton}
+              />
+            ) : null}
+          </View>
+          {!telegramConnected && showTelegramConnect && (
+            <View style={styles.telegramConnectSection}>
+              {!telegramCodeSent ? (
+                <>
+                  <Text style={styles.connectLabel}>
+                    Enter your phone number with country code
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={telegramPhoneNumber}
+                    onChangeText={setTelegramPhoneNumber}
+                    placeholder="+1234567890"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="phone-pad"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Button
+                    title="Send Verification Code"
+                    onPress={handleSendTelegramCode}
+                    loading={sendTelegramCode.isPending}
+                    style={styles.generateButton}
+                  />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.connectLabel}>
+                    Enter the verification code sent to Telegram
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={telegramCode}
+                    onChangeText={setTelegramCode}
+                    placeholder="12345"
+                    placeholderTextColor={colors.textSecondary}
+                    keyboardType="number-pad"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                  />
+                  <Button
+                    title="Verify Code"
+                    onPress={handleVerifyTelegramCode}
+                    loading={verifyTelegramCode.isPending}
+                    style={styles.generateButton}
+                  />
+                  <Button
+                    title="Resend Code"
+                    variant="outline"
+                    onPress={handleSendTelegramCode}
+                    loading={sendTelegramCode.isPending}
+                    style={styles.generateButton}
+                  />
+                </>
+              )}
+            </View>
+          )}
 
           {/* Google Account */}
           <View style={[styles.accountRow, styles.accountRowBorder]}>
@@ -395,6 +570,13 @@ const styles = StyleSheet.create({
   whatsappConnectSection: {
     marginTop: 12,
     paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  telegramConnectSection: {
+    marginTop: 12,
+    paddingTop: 12,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },

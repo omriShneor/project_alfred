@@ -24,6 +24,9 @@ import {
   useGeneratePairingCode,
   useGetOAuthURL,
   useCompleteOnboarding,
+  useTelegramStatus,
+  useSendTelegramCode,
+  useVerifyTelegramCode,
 } from '../../hooks';
 import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
 
@@ -79,21 +82,32 @@ export function ConnectionScreen() {
   const route = useRoute<RouteProps>();
   const queryClient = useQueryClient();
 
-  const { whatsappEnabled, gmailEnabled } = route.params;
+  const { whatsappEnabled, telegramEnabled, gmailEnabled } = route.params;
 
+  // WhatsApp state
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [showCopied, setShowCopied] = useState(false);
 
+  // Telegram state
+  const [telegramPhoneNumber, setTelegramPhoneNumber] = useState('');
+  const [telegramCode, setTelegramCode] = useState('');
+  const [telegramCodeSent, setTelegramCodeSent] = useState(false);
+
+  // Hooks
   const { data: waStatus } = useWhatsAppStatus();
   const { data: gcalStatus } = useGCalStatus();
+  const { data: telegramStatus } = useTelegramStatus();
   const generatePairingCode = useGeneratePairingCode();
   const getOAuthURL = useGetOAuthURL();
   const completeOnboarding = useCompleteOnboarding();
+  const sendTelegramCode = useSendTelegramCode();
+  const verifyTelegramCode = useVerifyTelegramCode();
 
   // Determine statuses
   const googleStatus: IntegrationStatusType = gcalStatus?.connected ? 'available' : 'pending';
   const whatsappStatus: IntegrationStatusType = waStatus?.connected ? 'available' : (pairingCode ? 'connecting' : 'pending');
+  const telegramStatusType: IntegrationStatusType = telegramStatus?.connected ? 'available' : (telegramCodeSent ? 'connecting' : 'pending');
 
   // Check if all required integrations are available
   const allAvailable = React.useMemo(() => {
@@ -105,9 +119,12 @@ export function ConnectionScreen() {
     if (whatsappEnabled) {
       checks.push(whatsappStatus === 'available');
     }
+    if (telegramEnabled) {
+      checks.push(telegramStatusType === 'available');
+    }
 
     return checks.length > 0 && checks.every(Boolean);
-  }, [gmailEnabled, whatsappEnabled, googleStatus, whatsappStatus]);
+  }, [gmailEnabled, whatsappEnabled, telegramEnabled, googleStatus, whatsappStatus, telegramStatusType]);
 
   // Reset pairing code when WhatsApp connects
   useEffect(() => {
@@ -116,6 +133,15 @@ export function ConnectionScreen() {
       setPhoneNumber('');
     }
   }, [waStatus?.connected]);
+
+  // Reset Telegram state when connected
+  useEffect(() => {
+    if (telegramStatus?.connected) {
+      setTelegramCodeSent(false);
+      setTelegramPhoneNumber('');
+      setTelegramCode('');
+    }
+  }, [telegramStatus?.connected]);
 
   const handleConnectGoogle = async () => {
     try {
@@ -148,10 +174,38 @@ export function ConnectionScreen() {
     }
   };
 
+  // Telegram handlers
+  const handleSendTelegramCode = async () => {
+    if (!telegramPhoneNumber.trim()) {
+      Alert.alert('Error', 'Please enter your phone number');
+      return;
+    }
+    try {
+      await sendTelegramCode.mutateAsync(telegramPhoneNumber.trim());
+      setTelegramCodeSent(true);
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Failed to send verification code');
+    }
+  };
+
+  const handleVerifyTelegramCode = async () => {
+    if (!telegramCode.trim()) {
+      Alert.alert('Error', 'Please enter the verification code');
+      return;
+    }
+    try {
+      await verifyTelegramCode.mutateAsync(telegramCode.trim());
+      queryClient.invalidateQueries({ queryKey: ['telegramStatus'] });
+    } catch (error: any) {
+      Alert.alert('Error', error.response?.data?.error || 'Failed to verify code');
+    }
+  };
+
   const handleContinue = async () => {
     try {
       await completeOnboarding.mutateAsync({
         whatsapp_enabled: whatsappEnabled,
+        telegram_enabled: telegramEnabled,
         gmail_enabled: gmailEnabled,
       });
       // RootNavigator will automatically switch to MainNavigator
@@ -257,6 +311,80 @@ export function ConnectionScreen() {
                         onPress={handleConnectWhatsApp}
                         variant="outline"
                         loading={generatePairingCode.isPending}
+                        style={styles.generateButton}
+                      />
+                    </>
+                  )}
+                </View>
+              )}
+            </View>
+          </Card>
+        )}
+
+        {telegramEnabled && (
+          <Card style={styles.card}>
+            <View style={styles.integrationRow}>
+              <View style={styles.integrationHeader}>
+                <View style={styles.integrationInfo}>
+                  <Text style={styles.integrationName}>Telegram</Text>
+                  <Text style={styles.integrationDescription}>For message scanning</Text>
+                </View>
+                <View style={styles.integrationStatus}>
+                  <View style={[styles.statusDot, { backgroundColor: getStatusColor(telegramStatusType) }]} />
+                  <Text style={styles.statusLabel}>{getStatusLabel(telegramStatusType)}</Text>
+                </View>
+              </View>
+
+              {telegramStatusType !== 'available' && (
+                <View style={styles.telegramSection}>
+                  {!telegramCodeSent ? (
+                    <>
+                      <Text style={styles.phoneInputLabel}>
+                        Enter your phone number with country code
+                      </Text>
+                      <TextInput
+                        style={styles.phoneInput}
+                        value={telegramPhoneNumber}
+                        onChangeText={setTelegramPhoneNumber}
+                        placeholder="+1234567890"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="phone-pad"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <Button
+                        title="Send Verification Code"
+                        onPress={handleSendTelegramCode}
+                        loading={sendTelegramCode.isPending}
+                        style={styles.generateButton}
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.phoneInputLabel}>
+                        Enter the verification code sent to Telegram
+                      </Text>
+                      <TextInput
+                        style={styles.phoneInput}
+                        value={telegramCode}
+                        onChangeText={setTelegramCode}
+                        placeholder="12345"
+                        placeholderTextColor={colors.textSecondary}
+                        keyboardType="number-pad"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <Button
+                        title="Verify Code"
+                        onPress={handleVerifyTelegramCode}
+                        loading={verifyTelegramCode.isPending}
+                        style={styles.generateButton}
+                      />
+                      <Button
+                        title="Resend Code"
+                        variant="outline"
+                        onPress={handleSendTelegramCode}
+                        loading={sendTelegramCode.isPending}
                         style={styles.generateButton}
                       />
                     </>
@@ -381,6 +509,12 @@ const styles = StyleSheet.create({
     color: '#3c4043',
   },
   whatsappSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  telegramSection: {
     marginTop: 16,
     paddingTop: 16,
     borderTopWidth: 1,

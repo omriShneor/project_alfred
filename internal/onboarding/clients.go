@@ -2,6 +2,7 @@ package onboarding
 
 import (
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
@@ -9,5 +10,5 @@ import (
 type Clients struct {
 	WAClient   *whatsapp.Client
 	GCalClient *gcal.Client
-	MsgChan    <-chan whatsapp.FilteredMessage
+	MsgChan    <-chan source.Message
 }

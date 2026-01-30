@@ -32,3 +32,15 @@ export {
   useSmartCalendarEnabled,
 } from './useFeatures';
 export { useAppStatus, useCompleteOnboarding, useIsOnboarded } from './useAppStatus';
+export {
+  useTelegramStatus,
+  useSendTelegramCode,
+  useVerifyTelegramCode,
+  useDisconnectTelegram,
+  useReconnectTelegram,
+  useDiscoverableTelegramChannels,
+  useTelegramChannels,
+  useCreateTelegramChannel,
+  useUpdateTelegramChannel,
+  useDeleteTelegramChannel,
+} from './useTelegram';

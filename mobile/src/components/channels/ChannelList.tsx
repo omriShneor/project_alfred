@@ -2,16 +2,17 @@ import React, { useMemo } from 'react';
 import { FlatList, Text, View, StyleSheet, RefreshControl } from 'react-native';
 import { ChannelItem } from './ChannelItem';
 import { colors } from '../../theme/colors';
-import type { DiscoverableChannel } from '../../types/channel';
+import type { DiscoverableChannel, SourceType } from '../../types/channel';
 
 interface ChannelListProps {
   channels: DiscoverableChannel[];
   refreshing?: boolean;
   onRefresh?: () => void;
   onTrack?: () => void;
+  sourceType?: SourceType;
 }
 
-export function ChannelList({ channels, refreshing, onRefresh, onTrack }: ChannelListProps) {
+export function ChannelList({ channels, refreshing, onRefresh, onTrack, sourceType = 'whatsapp' }: ChannelListProps) {
   // Sort channels: tracked first, then untracked
   const sortedChannels = useMemo(() => {
     return [...channels].sort((a, b) => {
@@ -20,12 +21,14 @@ export function ChannelList({ channels, refreshing, onRefresh, onTrack }: Channe
     });
   }, [channels]);
 
+  const sourceLabel = sourceType === 'telegram' ? 'Telegram' : sourceType === 'gmail' ? 'Gmail' : 'WhatsApp';
+
   if (channels.length === 0) {
     return (
       <View style={styles.empty}>
         <Text style={styles.emptyText}>No contacts/groups found</Text>
         <Text style={styles.emptySubtext}>
-          Make sure WhatsApp is connected
+          Make sure {sourceLabel} is connected
         </Text>
       </View>
     );
@@ -35,7 +38,7 @@ export function ChannelList({ channels, refreshing, onRefresh, onTrack }: Channe
     <FlatList
       data={sortedChannels}
       keyExtractor={(item) => item.identifier}
-      renderItem={({ item }) => <ChannelItem channel={item} onTrack={onTrack} />}
+      renderItem={({ item }) => <ChannelItem channel={item} onTrack={onTrack} sourceType={sourceType} />}
       contentContainerStyle={styles.list}
       refreshControl={
         onRefresh ? (

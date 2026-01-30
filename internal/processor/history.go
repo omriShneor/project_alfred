@@ -4,16 +4,18 @@ import (
 	"fmt"
 
 	"github.com/omriShneor/project_alfred/internal/database"
-	"github.com/omriShneor/project_alfred/internal/whatsapp"
+	"github.com/omriShneor/project_alfred/internal/source"
 )
 
-// storeMessage saves a WhatsApp message to the message history
-func (p *Processor) storeMessage(msg whatsapp.FilteredMessage) (*database.MessageRecord, error) {
-	record, err := p.db.StoreMessage(
+// storeSourceMessage saves a message to the message history with source type
+func (p *Processor) storeSourceMessage(msg source.Message) (*database.SourceMessage, error) {
+	record, err := p.db.StoreSourceMessage(
+		msg.SourceType,
 		msg.SourceID,
-		msg.SenderJID,
+		msg.SenderID,
 		msg.SenderName,
 		msg.Text,
+		msg.Subject,
 		msg.Timestamp,
 	)
 	if err != nil {

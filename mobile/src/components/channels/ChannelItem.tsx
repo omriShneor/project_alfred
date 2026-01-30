@@ -5,23 +5,35 @@ import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
 import { CalendarPicker } from './CalendarPicker';
 import { useCreateChannel, useDeleteChannel, useChannels } from '../../hooks/useChannels';
+import { useCreateTelegramChannel, useDeleteTelegramChannel, useTelegramChannels } from '../../hooks/useTelegram';
 import { useCalendars } from '../../hooks/useEvents';
 import { useGCalStatus } from '../../hooks';
 import { colors } from '../../theme/colors';
-import type { DiscoverableChannel, Channel } from '../../types/channel';
+import type { DiscoverableChannel, SourceType } from '../../types/channel';
 
 interface ChannelItemProps {
   channel: DiscoverableChannel;
   onTrack?: () => void;
+  sourceType?: SourceType;
 }
 
-export function ChannelItem({ channel, onTrack }: ChannelItemProps) {
-  const { data: trackedChannels } = useChannels();
+export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: ChannelItemProps) {
+  // WhatsApp hooks
+  const { data: waTrackedChannels } = useChannels();
+  const createWaChannel = useCreateChannel();
+  const deleteWaChannel = useDeleteChannel();
+
+  // Telegram hooks
+  const { data: tgTrackedChannels } = useTelegramChannels();
+  const createTgChannel = useCreateTelegramChannel();
+  const deleteTgChannel = useDeleteTelegramChannel();
+
+  // Select the appropriate data based on sourceType
+  const trackedChannels = sourceType === 'telegram' ? tgTrackedChannels : waTrackedChannels;
+
   const { data: gcalStatus } = useGCalStatus();
   const googleConnected = gcalStatus?.connected ?? false;
   const { data: calendars } = useCalendars(googleConnected);
-  const createChannel = useCreateChannel();
-  const deleteChannel = useDeleteChannel();
 
   // Find the tracked channel data if this channel is tracked
   const trackedChannel = trackedChannels?.find(
@@ -33,52 +45,55 @@ export function ChannelItem({ channel, onTrack }: ChannelItemProps) {
   );
 
   const handleTrack = () => {
-    if (!selectedCalendar) {
-      // Find primary calendar as default
-      const primaryCal = calendars?.find((c) => c.primary);
-      const calendarId = primaryCal?.id || calendars?.[0]?.id || '';
+    // Find primary calendar as default if not selected
+    const calendarId = selectedCalendar || calendars?.find((c) => c.primary)?.id || calendars?.[0]?.id || '';
 
-      if (!calendarId) {
-        return; // No calendar available
-      }
+    if (!calendarId) {
+      return; // No calendar available
+    }
 
-      createChannel.mutate(
-        {
-          type: channel.type,
-          identifier: channel.identifier,
-          name: channel.name,
-          calendar_id: calendarId,
-        },
-        { onSuccess: () => onTrack?.() }
-      );
+    if (sourceType === 'telegram') {
+      // Telegram uses 'contact', 'group', or 'channel'
+      const tgType = channel.type === 'sender' ? 'contact' : channel.type as 'contact' | 'group' | 'channel';
+      createTgChannel.mutate({
+        type: tgType,
+        identifier: channel.identifier,
+        name: channel.name,
+        calendar_id: calendarId,
+      }, { onSuccess: () => onTrack?.() });
     } else {
-      createChannel.mutate(
-        {
-          type: channel.type,
-          identifier: channel.identifier,
-          name: channel.name,
-          calendar_id: selectedCalendar,
-        },
-        { onSuccess: () => onTrack?.() }
-      );
+      // WhatsApp uses 'sender' or 'group'
+      const waType = channel.type === 'contact' ? 'sender' : channel.type as 'sender' | 'group';
+      createWaChannel.mutate({
+        type: waType,
+        identifier: channel.identifier,
+        name: channel.name,
+        calendar_id: calendarId,
+      }, { onSuccess: () => onTrack?.() });
     }
   };
 
   const handleUntrack = () => {
     if (trackedChannel) {
-      deleteChannel.mutate(trackedChannel.id);
+      if (sourceType === 'telegram') {
+        deleteTgChannel.mutate(trackedChannel.id);
+      } else {
+        deleteWaChannel.mutate(trackedChannel.id);
+      }
     }
   };
 
-  const isLoading = createChannel.isPending || deleteChannel.isPending;
+  const isLoading = sourceType === 'telegram'
+    ? createTgChannel.isPending || deleteTgChannel.isPending
+    : createWaChannel.isPending || deleteWaChannel.isPending;
 
   return (
     <Card>
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Badge
-            label={channel.type === 'sender' ? 'Contact' : 'Group'}
-            variant={channel.type}
+            label={channel.type === 'sender' || channel.type === 'contact' ? 'Contact' : channel.type === 'channel' ? 'Channel' : 'Group'}
+            variant={channel.type === 'contact' || channel.type === 'sender' ? 'sender' : channel.type === 'group' ? 'group' : 'custom'}
           />
           <Text style={styles.name} numberOfLines={1}>
             {channel.name}

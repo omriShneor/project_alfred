@@ -13,16 +13,19 @@ import (
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/processor"
 	"github.com/omriShneor/project_alfred/internal/sse"
+	"github.com/omriShneor/project_alfred/internal/telegram"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 type Server struct {
 	db              *database.DB
 	waClient        *whatsapp.Client
+	tgClient        *telegram.Client
 	gcalClient      *gcal.Client
 	gmailClient     *gmail.Client
 	gmailWorker     *gmail.Worker
 	onboardingState *sse.State
+	state           *sse.State // Alias for onboardingState (for consistency)
 	notifyService   *notify.Service
 	claudeClient    *claude.Client
 	httpSrv         *http.Server
@@ -45,6 +48,7 @@ type ServerConfig struct {
 // ClientsConfig holds configuration for completing initialization after onboarding
 type ClientsConfig struct {
 	WAClient      *whatsapp.Client
+	TGClient      *telegram.Client
 	GCalClient    *gcal.Client
 	GmailClient   *gmail.Client
 	GmailWorker   *gmail.Worker
@@ -59,6 +63,7 @@ func New(cfg ServerConfig) *Server {
 	s := &Server{
 		db:              cfg.DB,
 		onboardingState: cfg.OnboardingState,
+		state:           cfg.OnboardingState, // Alias for consistency
 		port:            cfg.Port,
 		resendAPIKey:    cfg.ResendAPIKey,
 	}
@@ -80,6 +85,7 @@ func New(cfg ServerConfig) *Server {
 // InitializeClients completes server initialization after onboarding
 func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.waClient = cfg.WAClient
+	s.tgClient = cfg.TGClient
 	s.gcalClient = cfg.GCalClient
 	s.gmailClient = cfg.GmailClient
 	s.gmailWorker = cfg.GmailWorker
@@ -99,6 +105,11 @@ func (s *Server) SetWAClient(client *whatsapp.Client) {
 	s.waClient = client
 }
 
+// SetTGClient sets the Telegram client (used during onboarding before full initialization)
+func (s *Server) SetTGClient(client *telegram.Client) {
+	s.tgClient = client
+}
+
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
@@ -112,6 +123,18 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/whatsapp/pair", s.handleWhatsAppPair)
 	mux.HandleFunc("POST /api/whatsapp/reconnect", s.handleWhatsAppReconnect)
 	mux.HandleFunc("POST /api/whatsapp/disconnect", s.handleWhatsAppDisconnect)
+
+	// Telegram API
+	mux.HandleFunc("GET /api/telegram/status", s.handleTelegramStatus)
+	mux.HandleFunc("POST /api/telegram/send-code", s.handleTelegramSendCode)
+	mux.HandleFunc("POST /api/telegram/verify-code", s.handleTelegramVerifyCode)
+	mux.HandleFunc("POST /api/telegram/disconnect", s.handleTelegramDisconnect)
+	mux.HandleFunc("POST /api/telegram/reconnect", s.handleTelegramReconnect)
+	mux.HandleFunc("GET /api/telegram/discovery/channels", s.handleDiscoverTelegramChannels)
+	mux.HandleFunc("GET /api/telegram/channel", s.handleListTelegramChannels)
+	mux.HandleFunc("POST /api/telegram/channel", s.handleCreateTelegramChannel)
+	mux.HandleFunc("PUT /api/telegram/channel/{id}", s.handleUpdateTelegramChannel)
+	mux.HandleFunc("DELETE /api/telegram/channel/{id}", s.handleDeleteTelegramChannel)
 
 	// Discovery API
 	mux.HandleFunc("GET /api/discovery/channels", s.handleDiscoverChannels)

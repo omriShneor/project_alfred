@@ -300,6 +300,7 @@ func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
 // CompleteOnboardingRequest represents the request body for POST /api/onboarding/complete
 type CompleteOnboardingRequest struct {
 	WhatsAppEnabled bool `json:"whatsapp_enabled"`
+	TelegramEnabled bool `json:"telegram_enabled"`
 	GmailEnabled    bool `json:"gmail_enabled"`
 }
 
@@ -312,12 +313,12 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 	}
 
 	// At least one input must be enabled
-	if !req.WhatsAppEnabled && !req.GmailEnabled {
-		respondError(w, http.StatusBadRequest, "at least one input (WhatsApp or Gmail) must be enabled")
+	if !req.WhatsAppEnabled && !req.TelegramEnabled && !req.GmailEnabled {
+		respondError(w, http.StatusBadRequest, "at least one input (WhatsApp, Telegram, or Gmail) must be enabled")
 		return
 	}
 
-	if err := s.db.CompleteOnboarding(req.WhatsAppEnabled, req.GmailEnabled); err != nil {
+	if err := s.db.CompleteOnboarding(req.WhatsAppEnabled, req.TelegramEnabled, req.GmailEnabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

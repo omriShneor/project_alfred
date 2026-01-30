@@ -28,11 +28,16 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	status := map[string]interface{}{
 		"status":   "healthy",
 		"whatsapp": "disconnected",
+		"telegram": "disconnected",
 		"gcal":     "disconnected",
 	}
 
 	if s.waClient != nil && s.waClient.IsLoggedIn() {
 		status["whatsapp"] = "connected"
+	}
+
+	if s.tgClient != nil && s.tgClient.IsConnected() {
+		status["telegram"] = "connected"
 	}
 
 	if s.gcalClient != nil && s.gcalClient.IsAuthenticated() {

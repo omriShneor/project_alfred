@@ -34,6 +34,11 @@ type Config struct {
 	// Gmail integration config (enable/disable is in database settings, not here)
 	GmailPollInterval int // minutes between polls
 	GmailMaxEmails    int // max emails to process per poll
+
+	// Telegram integration config
+	TelegramAPIID   int    // API ID from my.telegram.org
+	TelegramAPIHash string // API Hash from my.telegram.org
+	TelegramDBPath  string // Session database path
 }
 
 func LoadFromEnv() *Config {
@@ -60,6 +65,11 @@ func LoadFromEnv() *Config {
 		// Gmail integration config (enable/disable is in database settings)
 		GmailPollInterval: 1, // Hardcoded to 1 minute for near-real-time scanning
 		GmailMaxEmails:    getEnvAsIntOrDefault("ALFRED_GMAIL_MAX_EMAILS", 10),
+
+		// Telegram integration config
+		TelegramAPIID:   getEnvAsIntOrDefault("ALFRED_TELEGRAM_API_ID", 0),
+		TelegramAPIHash: os.Getenv("ALFRED_TELEGRAM_API_HASH"),
+		TelegramDBPath:  getEnvOrDefault("ALFRED_TELEGRAM_DB_PATH", "./telegram.db"),
 	}
 
 	return cfg

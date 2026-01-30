@@ -14,6 +14,9 @@ type State struct {
 	CurrentQR      string // Base64 data URL
 	WhatsAppError  string
 
+	TelegramStatus string // "checking", "pending", "code_sent", "waiting", "connected", "error"
+	TelegramError  string
+
 	GCalStatus     string // "not_configured", "needs_auth", "waiting", "connected", "error"
 	GCalConfigured bool
 	GCalError      string
@@ -26,13 +29,14 @@ type State struct {
 
 // Update represents an SSE update event
 type Update struct {
-	Type string `json:"type"` // "whatsapp_status", "qr", "gcal_status", "complete"
+	Type string `json:"type"` // "whatsapp_status", "telegram_status", "qr", "gcal_status", "complete"
 	Data string `json:"data"`
 }
 
 // StatusResponse is the JSON response for /api/onboarding/status
 type StatusResponse struct {
 	WhatsApp WhatsAppStatusResponse `json:"whatsapp"`
+	Telegram TelegramStatusResponse `json:"telegram"`
 	GCal     GCalStatusResponse     `json:"gcal"`
 	Complete bool                   `json:"complete"`
 }
@@ -41,6 +45,12 @@ type StatusResponse struct {
 type WhatsAppStatusResponse struct {
 	Status string `json:"status"`
 	QRCode string `json:"qr_code,omitempty"`
+	Error  string `json:"error,omitempty"`
+}
+
+// TelegramStatusResponse contains Telegram status details
+type TelegramStatusResponse struct {
+	Status string `json:"status"`
 	Error  string `json:"error,omitempty"`
 }
 
@@ -55,6 +65,7 @@ type GCalStatusResponse struct {
 func NewState() *State {
 	return &State{
 		WhatsAppStatus: "checking",
+		TelegramStatus: "pending",
 		GCalStatus:     "checking",
 		subscribers:    make(map[chan Update]struct{}),
 		completeCh:     make(chan struct{}),
@@ -160,6 +171,29 @@ func (s *State) SetGCalError(err string) {
 	s.broadcast(Update{Type: "gcal_status", Data: "error"})
 }
 
+// SetTelegramStatus updates the Telegram status and broadcasts
+func (s *State) SetTelegramStatus(status string) {
+	s.mu.Lock()
+	s.TelegramStatus = status
+	if status != "error" {
+		s.TelegramError = "" // Clear error when status changes to non-error
+	}
+	s.mu.Unlock()
+
+	s.broadcast(Update{Type: "telegram_status", Data: status})
+	s.checkComplete()
+}
+
+// SetTelegramError sets an error for Telegram
+func (s *State) SetTelegramError(err string) {
+	s.mu.Lock()
+	s.TelegramStatus = "error"
+	s.TelegramError = err
+	s.mu.Unlock()
+
+	s.broadcast(Update{Type: "telegram_status", Data: "error"})
+}
+
 // checkComplete checks if all integrations are connected and marks complete
 func (s *State) checkComplete() {
 	s.mu.RLock()
@@ -216,6 +250,10 @@ func (s *State) GetStatus() StatusResponse {
 			Status: s.WhatsAppStatus,
 			QRCode: s.CurrentQR,
 			Error:  s.WhatsAppError,
+		},
+		Telegram: TelegramStatusResponse{
+			Status: s.TelegramStatus,
+			Error:  s.TelegramError,
 		},
 		GCal: GCalStatusResponse{
 			Status:     s.GCalStatus,

@@ -8,7 +8,7 @@ import { colors } from '../theme/colors';
 export type OnboardingParamList = {
   Welcome: undefined;
   InputSelection: undefined;
-  Connection: { whatsappEnabled: boolean; gmailEnabled: boolean };
+  Connection: { whatsappEnabled: boolean; telegramEnabled: boolean; gmailEnabled: boolean };
 };
 
 const Stack = createNativeStackNavigator<OnboardingParamList>();

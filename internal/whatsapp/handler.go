@@ -2,28 +2,21 @@ package whatsapp
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"go.mau.fi/whatsmeow/types/events"
 )
 
 // FilteredMessage represents a message from a tracked sender/group
-type FilteredMessage struct {
-	SourceType string // "sender" or "group"
-	SourceID   int64
-	SenderJID  string
-	SenderName string
-	Text       string
-	IsGroup    bool
-	Timestamp  time.Time
-}
+// Deprecated: Use source.Message instead
+type FilteredMessage = source.Message
 
 type Handler struct {
 	db               *database.DB
 	debugAllMessages bool
-	messageChan      chan FilteredMessage
+	messageChan      chan source.Message
 	state            *sse.State
 }
 
@@ -31,12 +24,12 @@ func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handl
 	return &Handler{
 		db:               db,
 		debugAllMessages: debugAllMessages,
-		messageChan:      make(chan FilteredMessage, 100),
+		messageChan:      make(chan source.Message, 100),
 		state:            state,
 	}
 }
 
-func (h *Handler) MessageChan() <-chan FilteredMessage {
+func (h *Handler) MessageChan() <-chan source.Message {
 	return h.messageChan
 }
 
@@ -57,29 +50,37 @@ func (h *Handler) handleMessage(msg *events.Message) {
 	chat := msg.Info.Chat
 	isGroup := msg.Info.IsGroup
 
-	var sourceType string
 	var sourceID int64
 	var tracked bool
 	var err error
+	var identifier string
+	var calendarID string
 
 	if h.debugAllMessages {
 		tracked = true
-		sourceType = "debug"
+		identifier = "debug"
 	} else {
-		var identifier string
 		if isGroup {
 			identifier = chat.String()
 		} else {
 			identifier = sender.User
 		}
 
-		var channelType database.ChannelType
-		tracked, sourceID, channelType, err = h.db.IsChannelTracked(identifier)
+		var channelType source.ChannelType
+		tracked, sourceID, channelType, err = h.db.IsSourceChannelTracked(source.SourceTypeWhatsApp, identifier)
 		if err != nil {
 			fmt.Printf("Error checking channel: %v\n", err)
 			return
 		}
-		sourceType = string(channelType)
+		_ = channelType // channelType used for logging if needed
+
+		// Get calendar ID from channel
+		if tracked {
+			channel, err := h.db.GetSourceChannelByID(sourceID)
+			if err == nil && channel != nil {
+				calendarID = channel.CalendarID
+			}
+		}
 	}
 
 	if !tracked {
@@ -95,14 +96,16 @@ func (h *Handler) handleMessage(msg *events.Message) {
 
 	// Send to channel for assistant processing
 	select {
-	case h.messageChan <- FilteredMessage{
-		SourceType: sourceType,
+	case h.messageChan <- source.Message{
+		SourceType: source.SourceTypeWhatsApp,
 		SourceID:   sourceID,
-		SenderJID:  sender.String(),
+		Identifier: identifier,
+		SenderID:   sender.String(),
 		SenderName: sender.User,
 		Text:       text,
 		IsGroup:    isGroup,
 		Timestamp:  msg.Info.Timestamp,
+		CalendarID: calendarID,
 	}:
 	default:
 		fmt.Println("Warning: message channel full, dropping message")

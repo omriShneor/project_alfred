@@ -6,6 +6,10 @@ import (
 	"strings"
 )
 
+const (
+	NumMessagesToQuery = 400
+)
+
 // EmailSender represents a frequent email sender
 type EmailSender struct {
 	Email      string `json:"email"`
@@ -15,7 +19,7 @@ type EmailSender struct {
 
 // automatedSenderPatterns contains patterns to identify automated/non-human senders
 var automatedSenderPatterns = []string{
-	"noreply", "no-reply", "do-not-reply", "donotreply",
+	"noreply", "no-reply", "do-not-reply", "donotreply", "do_not_reply",
 	"notifications", "notification", "notify",
 	"calendar-notification", "calendar@google",
 	"mailer-daemon", "postmaster", "bounce",
@@ -23,15 +27,13 @@ var automatedSenderPatterns = []string{
 	"automated", "auto@", "system@",
 }
 
-// isAutomatedSender checks if an email address belongs to an automated sender
-func isAutomatedSender(email string) bool {
-	email = strings.ToLower(email)
+// buildExcludeFromQuery builds a Gmail search query string excluding automated senders
+func buildExcludeFromQuery() string {
+	var parts []string
 	for _, pattern := range automatedSenderPatterns {
-		if strings.Contains(email, pattern) {
-			return true
-		}
+		parts = append(parts, "-from:"+pattern)
 	}
-	return false
+	return strings.Join(parts, " ")
 }
 
 // DiscoverTopContacts finds the top N email contacts efficiently
@@ -42,7 +44,9 @@ func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
 	}
 
 	// Use category:primary to exclude Promotions, Social, Updates at API level
-	messages, err := c.ListMessages("in:inbox category:primary", 100)
+	// Also exclude common automated senders via Gmail search
+	query := "in:inbox category:primary " + buildExcludeFromQuery()
+	messages, err := c.ListMessages(query, NumMessagesToQuery)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
@@ -63,12 +67,6 @@ func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
 			continue
 		}
 
-		// Skip automated senders (noreply, notifications, newsletters, etc.)
-		if isAutomatedSender(senderEmail) {
-			fmt.Printf("Gmail discovery: filtering out automated sender: %s\n", senderEmail)
-			continue
-		}
-
 		if sender, exists := senderCounts[senderEmail]; exists {
 			sender.EmailCount++
 		} else {
@@ -80,10 +78,12 @@ func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
 		}
 	}
 
-	// Convert to slice and sort by count
+	// Convert to slice and sort by count all senders with > 1 messages
 	senders := make([]EmailSender, 0, len(senderCounts))
 	for _, sender := range senderCounts {
-		senders = append(senders, *sender)
+		if sender.EmailCount > 1 {
+			senders = append(senders, *sender)
+		}
 	}
 
 	sort.Slice(senders, func(i, j int) bool {

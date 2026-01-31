@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Text, StyleSheet, ScrollView, TouchableOpacity, View, TextInput, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
+import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, CommonActions } from '@react-navigation/native';
+import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { Card, Button } from '../components/common';
+import { Card, Button, LoadingSpinner } from '../components/common';
 import { colors } from '../theme/colors';
 import {
   useWhatsAppStatus,
@@ -56,8 +57,8 @@ function PreferenceCard({ title, description, icon, connected, onPress }: Prefer
 
 export function PreferencesScreen() {
   const navigation = useNavigation<NavigationProp>();
-  const { data: waStatus, refetch: refetchWaStatus } = useWhatsAppStatus();
-  const { data: gcalStatus, refetch: refetchGcalStatus } = useGCalStatus();
+  const { data: waStatus, isLoading: waLoading, refetch: refetchWaStatus } = useWhatsAppStatus();
+  const { data: gcalStatus, isLoading: gcalLoading, refetch: refetchGcalStatus } = useGCalStatus();
   const disconnectWhatsApp = useDisconnectWhatsApp();
   const getOAuthURL = useGetOAuthURL();
   const generatePairingCode = useGeneratePairingCode();
@@ -66,9 +67,10 @@ export function PreferencesScreen() {
   const [showWhatsAppConnect, setShowWhatsAppConnect] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
+  const [showCopied, setShowCopied] = useState(false);
 
   // Telegram state
-  const { data: telegramStatus, refetch: refetchTelegramStatus } = useTelegramStatus();
+  const { data: telegramStatus, isLoading: telegramLoading, refetch: refetchTelegramStatus } = useTelegramStatus();
   const sendTelegramCode = useSendTelegramCode();
   const verifyTelegramCode = useVerifyTelegramCode();
   const disconnectTelegram = useDisconnectTelegram();
@@ -76,6 +78,9 @@ export function PreferencesScreen() {
   const [telegramPhoneNumber, setTelegramPhoneNumber] = useState('');
   const [telegramCode, setTelegramCode] = useState('');
   const [telegramCodeSent, setTelegramCodeSent] = useState(false);
+
+  // Check if any query is doing its initial load (no cached data yet)
+  const isInitialLoading = (waLoading && !waStatus) || (gcalLoading && !gcalStatus) || (telegramLoading && !telegramStatus);
 
   const whatsappConnected = waStatus?.connected ?? false;
   const telegramConnected = telegramStatus?.connected ?? false;
@@ -99,6 +104,22 @@ export function PreferencesScreen() {
       setTelegramCode('');
     }
   }, [telegramStatus?.connected]);
+
+  // Reset pairing states when navigating away from this screen
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        // Called when screen loses focus - reset pairing states
+        setShowWhatsAppConnect(false);
+        setPairingCode(null);
+        setPhoneNumber('');
+        setShowTelegramConnect(false);
+        setTelegramCodeSent(false);
+        setTelegramPhoneNumber('');
+        setTelegramCode('');
+      };
+    }, [])
+  );
 
   const handleDisconnectWhatsApp = () => {
     Alert.alert(
@@ -175,6 +196,14 @@ export function PreferencesScreen() {
     setPhoneNumber('');
   };
 
+  const handleCopyCode = async () => {
+    if (pairingCode) {
+      await Clipboard.setStringAsync(pairingCode);
+      setShowCopied(true);
+      setTimeout(() => setShowCopied(false), 2000);
+    }
+  };
+
   // Telegram handlers
   const handleDisconnectTelegram = () => {
     Alert.alert(
@@ -240,6 +269,20 @@ export function PreferencesScreen() {
     );
   };
 
+  // Show loading state during initial data fetch to prevent flash
+  if (isInitialLoading) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <TouchableOpacity style={styles.header} onPress={handleGoHome} activeOpacity={0.7}>
+          <Text style={styles.headerTitle}>Alfred</Text>
+        </TouchableOpacity>
+        <View style={styles.loadingContainer}>
+          <LoadingSpinner />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       {/* Header with Home navigation */}
@@ -298,192 +341,241 @@ export function PreferencesScreen() {
         {/* Connected Accounts Section */}
         <Text style={styles.sectionLabel}>Connected Accounts</Text>
         <Card>
-          {/* WhatsApp */}
-          <View>
-            <View style={styles.accountRow}>
-              <View style={styles.accountInfo}>
-                <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
-                <View style={styles.accountText}>
-                  <Text style={styles.accountName}>WhatsApp</Text>
-                  <Text style={styles.accountStatus}>
-                    {whatsappConnected ? 'Connected' : 'Not connected'}
-                  </Text>
-                </View>
-              </View>
-              {whatsappConnected ? (
-                <Button
-                  title="Disconnect"
-                  variant="outline"
-                  onPress={handleDisconnectWhatsApp}
-                  loading={disconnectWhatsApp.isPending}
-                  style={styles.disconnectButton}
-                />
-              ) : !showWhatsAppConnect ? (
-                <Button
-                  title="Connect"
-                  onPress={handleShowWhatsAppConnect}
-                  style={styles.connectButton}
-                />
-              ) : null}
-            </View>
-            {!whatsappConnected && showWhatsAppConnect && (
-              <View style={styles.whatsappConnectSection}>
-                {!pairingCode ? (
-                  <>
-                    <Text style={styles.connectLabel}>
-                      Enter your phone number with country code
-                    </Text>
-                    <TextInput
-                      style={styles.input}
-                      value={phoneNumber}
-                      onChangeText={setPhoneNumber}
-                      placeholder="+1234567890"
-                      placeholderTextColor={colors.textSecondary}
-                      keyboardType="phone-pad"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                    <Button
-                      title="Generate Pairing Code"
-                      onPress={handleConnectWhatsApp}
-                      loading={generatePairingCode.isPending}
-                      style={styles.generateButton}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <View style={styles.pairingCodeContainer}>
-                      <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
-                      <Text style={styles.pairingCode}>{pairingCode}</Text>
+          {/* Sort accounts: disconnected first, then connected */}
+          {(() => {
+            const accounts = [
+              { id: 'whatsapp', connected: whatsappConnected },
+              { id: 'telegram', connected: telegramConnected },
+              { id: 'google', connected: gmailConnected },
+            ].sort((a, b) => {
+              if (!a.connected && b.connected) return -1;
+              if (a.connected && !b.connected) return 1;
+              return 0;
+            });
+
+            return accounts.map((account, index) => {
+              const needsBorder = index > 0;
+
+              if (account.id === 'whatsapp') {
+                return (
+                  <View key="whatsapp" style={needsBorder ? styles.accountRowBorder : undefined}>
+                    <View style={styles.accountRow}>
+                      <TouchableOpacity
+                        style={styles.accountInfo}
+                        onPress={() => showWhatsAppConnect && setShowWhatsAppConnect(false)}
+                        activeOpacity={showWhatsAppConnect ? 0.7 : 1}
+                      >
+                        <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
+                        <View style={styles.accountText}>
+                          <Text style={styles.accountName}>WhatsApp</Text>
+                          <Text style={styles.accountStatus}>
+                            {whatsappConnected ? 'Connected' : 'Not connected'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      {whatsappConnected ? (
+                        <Button
+                          title="Disconnect"
+                          variant="outline"
+                          onPress={handleDisconnectWhatsApp}
+                          loading={disconnectWhatsApp.isPending}
+                          style={styles.disconnectButton}
+                        />
+                      ) : !showWhatsAppConnect ? (
+                        <Button
+                          title="Connect"
+                          onPress={handleShowWhatsAppConnect}
+                          style={styles.connectButton}
+                        />
+                      ) : null}
                     </View>
-                    <Text style={styles.pairingInstructions}>
-                      Open WhatsApp → Settings → Linked Devices → Link with phone number
-                    </Text>
-                    <Button
-                      title="Generate New Code"
-                      onPress={handleConnectWhatsApp}
-                      variant="outline"
-                      loading={generatePairingCode.isPending}
-                      style={styles.generateButton}
-                    />
-                  </>
-                )}
-              </View>
-            )}
-          </View>
+                    {!whatsappConnected && showWhatsAppConnect && (
+                      <View style={styles.whatsappConnectSection}>
+                        {!pairingCode ? (
+                          <>
+                            <Text style={styles.connectLabel}>
+                              Enter your phone number with country code
+                            </Text>
+                            <TextInput
+                              style={styles.input}
+                              value={phoneNumber}
+                              onChangeText={setPhoneNumber}
+                              placeholder="+1234567890"
+                              placeholderTextColor={colors.textSecondary}
+                              keyboardType="phone-pad"
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Button
+                              title="Generate Pairing Code"
+                              onPress={handleConnectWhatsApp}
+                              loading={generatePairingCode.isPending}
+                              style={styles.generateButton}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <View style={styles.pairingCodeContainer}>
+                              <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
+                              <View style={styles.pairingCodeRow}>
+                                <Text style={styles.pairingCode}>{pairingCode}</Text>
+                                <TouchableOpacity style={styles.copyButton} onPress={handleCopyCode}>
+                                  <Ionicons
+                                    name={showCopied ? 'checkmark' : 'copy-outline'}
+                                    size={20}
+                                    color={showCopied ? colors.success : colors.primary}
+                                  />
+                                </TouchableOpacity>
+                              </View>
+                            </View>
+                            <Text style={styles.pairingInstructions}>
+                              Open WhatsApp → Settings → Linked Devices → Link with phone number
+                            </Text>
+                            <Button
+                              title="Generate New Code"
+                              onPress={handleConnectWhatsApp}
+                              variant="outline"
+                              loading={generatePairingCode.isPending}
+                              style={styles.generateButton}
+                            />
+                          </>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              }
 
-          {/* Telegram */}
-          <View style={[styles.accountRow, styles.accountRowBorder]}>
-            <View style={styles.accountInfo}>
-              <Ionicons name="paper-plane-outline" size={20} color={colors.text} />
-              <View style={styles.accountText}>
-                <Text style={styles.accountName}>Telegram</Text>
-                <Text style={styles.accountStatus}>
-                  {telegramConnected ? 'Connected' : 'Not connected'}
-                </Text>
-              </View>
-            </View>
-            {telegramConnected ? (
-              <Button
-                title="Disconnect"
-                variant="outline"
-                onPress={handleDisconnectTelegram}
-                loading={disconnectTelegram.isPending}
-                style={styles.disconnectButton}
-              />
-            ) : !showTelegramConnect ? (
-              <Button
-                title="Connect"
-                onPress={handleShowTelegramConnect}
-                style={styles.connectButton}
-              />
-            ) : null}
-          </View>
-          {!telegramConnected && showTelegramConnect && (
-            <View style={styles.telegramConnectSection}>
-              {!telegramCodeSent ? (
-                <>
-                  <Text style={styles.connectLabel}>
-                    Enter your phone number with country code
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    value={telegramPhoneNumber}
-                    onChangeText={setTelegramPhoneNumber}
-                    placeholder="+1234567890"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="phone-pad"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <Button
-                    title="Send Verification Code"
-                    onPress={handleSendTelegramCode}
-                    loading={sendTelegramCode.isPending}
-                    style={styles.generateButton}
-                  />
-                </>
-              ) : (
-                <>
-                  <Text style={styles.connectLabel}>
-                    Enter the verification code sent to Telegram
-                  </Text>
-                  <TextInput
-                    style={styles.input}
-                    value={telegramCode}
-                    onChangeText={setTelegramCode}
-                    placeholder="12345"
-                    placeholderTextColor={colors.textSecondary}
-                    keyboardType="number-pad"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                  <Button
-                    title="Verify Code"
-                    onPress={handleVerifyTelegramCode}
-                    loading={verifyTelegramCode.isPending}
-                    style={styles.generateButton}
-                  />
-                  <Button
-                    title="Resend Code"
-                    variant="outline"
-                    onPress={handleSendTelegramCode}
-                    loading={sendTelegramCode.isPending}
-                    style={styles.generateButton}
-                  />
-                </>
-              )}
-            </View>
-          )}
+              if (account.id === 'telegram') {
+                return (
+                  <View key="telegram" style={needsBorder ? styles.accountRowBorder : undefined}>
+                    <View style={styles.accountRow}>
+                      <TouchableOpacity
+                        style={styles.accountInfo}
+                        onPress={() => showTelegramConnect && setShowTelegramConnect(false)}
+                        activeOpacity={showTelegramConnect ? 0.7 : 1}
+                      >
+                        <Ionicons name="paper-plane-outline" size={20} color={colors.text} />
+                        <View style={styles.accountText}>
+                          <Text style={styles.accountName}>Telegram</Text>
+                          <Text style={styles.accountStatus}>
+                            {telegramConnected ? 'Connected' : 'Not connected'}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                      {telegramConnected ? (
+                        <Button
+                          title="Disconnect"
+                          variant="outline"
+                          onPress={handleDisconnectTelegram}
+                          loading={disconnectTelegram.isPending}
+                          style={styles.disconnectButton}
+                        />
+                      ) : !showTelegramConnect ? (
+                        <Button
+                          title="Connect"
+                          onPress={handleShowTelegramConnect}
+                          style={styles.connectButton}
+                        />
+                      ) : null}
+                    </View>
+                    {!telegramConnected && showTelegramConnect && (
+                      <View style={styles.telegramConnectSection}>
+                        {!telegramCodeSent ? (
+                          <>
+                            <Text style={styles.connectLabel}>
+                              Enter your phone number with country code
+                            </Text>
+                            <TextInput
+                              style={styles.input}
+                              value={telegramPhoneNumber}
+                              onChangeText={setTelegramPhoneNumber}
+                              placeholder="+1234567890"
+                              placeholderTextColor={colors.textSecondary}
+                              keyboardType="phone-pad"
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Button
+                              title="Send Verification Code"
+                              onPress={handleSendTelegramCode}
+                              loading={sendTelegramCode.isPending}
+                              style={styles.generateButton}
+                            />
+                          </>
+                        ) : (
+                          <>
+                            <Text style={styles.connectLabel}>
+                              Enter the verification code sent to Telegram
+                            </Text>
+                            <TextInput
+                              style={styles.input}
+                              value={telegramCode}
+                              onChangeText={setTelegramCode}
+                              placeholder="12345"
+                              placeholderTextColor={colors.textSecondary}
+                              keyboardType="number-pad"
+                              autoCapitalize="none"
+                              autoCorrect={false}
+                            />
+                            <Button
+                              title="Verify Code"
+                              onPress={handleVerifyTelegramCode}
+                              loading={verifyTelegramCode.isPending}
+                              style={styles.generateButton}
+                            />
+                            <Button
+                              title="Resend Code"
+                              variant="outline"
+                              onPress={handleSendTelegramCode}
+                              loading={sendTelegramCode.isPending}
+                              style={styles.generateButton}
+                            />
+                          </>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                );
+              }
 
-          {/* Google Account */}
-          <View style={[styles.accountRow, styles.accountRowBorder]}>
-            <View style={styles.accountInfo}>
-              <Ionicons name="logo-google" size={20} color={colors.text} />
-              <View style={styles.accountText}>
-                <Text style={styles.accountName}>Google Account</Text>
-                <Text style={styles.accountStatus}>
-                  {gmailConnected ? 'Connected' : 'Not connected'}
-                </Text>
-              </View>
-            </View>
-            {gmailConnected ? (
-              <Button
-                title="Disconnect"
-                variant="outline"
-                onPress={handleDisconnectGoogle}
-                loading={disconnectingGoogle}
-                style={styles.disconnectButton}
-              />
-            ) : (
-              <Button
-                title="Connect"
-                onPress={handleConnectGoogle}
-                loading={getOAuthURL.isPending}
-                style={styles.connectButton}
-              />
-            )}
-          </View>
+              if (account.id === 'google') {
+                return (
+                  <View key="google" style={needsBorder ? styles.accountRowBorder : undefined}>
+                    <View style={styles.accountRow}>
+                      <View style={styles.accountInfo}>
+                        <Ionicons name="logo-google" size={20} color={colors.text} />
+                        <View style={styles.accountText}>
+                          <Text style={styles.accountName}>Google Account</Text>
+                          <Text style={styles.accountStatus}>
+                            {gmailConnected ? 'Connected' : 'Not connected'}
+                          </Text>
+                        </View>
+                      </View>
+                      {gmailConnected ? (
+                        <Button
+                          title="Disconnect"
+                          variant="outline"
+                          onPress={handleDisconnectGoogle}
+                          loading={disconnectingGoogle}
+                          style={styles.disconnectButton}
+                        />
+                      ) : (
+                        <Button
+                          title="Connect"
+                          onPress={handleConnectGoogle}
+                          loading={getOAuthURL.isPending}
+                          style={styles.connectButton}
+                        />
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+
+              return null;
+            });
+          })()}
         </Card>
 
       </ScrollView>
@@ -495,6 +587,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   header: {
     paddingHorizontal: 16,
@@ -569,16 +666,11 @@ const styles = StyleSheet.create({
   },
   whatsappConnectSection: {
     marginTop: 12,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    paddingBottom: 16,
   },
   telegramConnectSection: {
     marginTop: 12,
-    paddingTop: 12,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
+    paddingBottom: 16,
   },
   connectLabel: {
     fontSize: 13,
@@ -609,11 +701,23 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginBottom: 4,
   },
+  pairingCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    width: '100%',
+  },
   pairingCode: {
     fontSize: 28,
     fontWeight: '700',
     color: colors.primary,
     letterSpacing: 4,
+  },
+  copyButton: {
+    padding: 8,
+    position: 'absolute',
+    right: 0,
   },
   pairingInstructions: {
     fontSize: 13,

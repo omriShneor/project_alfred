@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute } from '@react-navigation/native';
+import { useRoute, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
@@ -142,6 +142,22 @@ export function ConnectionScreen() {
       setTelegramCode('');
     }
   }, [telegramStatus?.connected]);
+
+  // Reset pairing states when navigating away from this screen
+  useFocusEffect(
+    useCallback(() => {
+      // Called when screen gains focus - nothing to do here
+      return () => {
+        // Called when screen loses focus - reset pairing states
+        setPairingCode(null);
+        setPhoneNumber('');
+        setShowCopied(false);
+        setTelegramCodeSent(false);
+        setTelegramPhoneNumber('');
+        setTelegramCode('');
+      };
+    }, [])
+  );
 
   const handleConnectGoogle = async () => {
     try {

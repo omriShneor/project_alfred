@@ -265,6 +265,7 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		Type       string `json:"type"`
 		Identifier string `json:"identifier"`
 		Name       string `json:"name"`
+		CalendarID string `json:"calendar_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -282,10 +283,41 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check if channel already exists (may have been created by history sync)
+	existingChannel, err := s.db.GetChannelByIdentifier(req.Identifier)
+	if err == nil && existingChannel != nil {
+		// Channel exists - update it (enable it, update name and calendar_id)
+		calendarID := req.CalendarID
+		if calendarID == "" {
+			calendarID = "primary"
+		}
+		if err := s.db.UpdateChannel(existingChannel.ID, req.Name, calendarID, true); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to enable channel: %v", err))
+			return
+		}
+		// Return updated channel
+		existingChannel.Name = req.Name
+		existingChannel.CalendarID = calendarID
+		existingChannel.Enabled = true
+		respondJSON(w, http.StatusOK, existingChannel)
+		return
+	}
+
+	// Channel doesn't exist - create a new one
 	channel, err := s.db.CreateChannel(database.ChannelType(req.Type), req.Identifier, req.Name)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create channel: %v", err))
 		return
+	}
+
+	// Update calendar_id if provided
+	if req.CalendarID != "" {
+		if err := s.db.UpdateChannel(channel.ID, channel.Name, req.CalendarID, true); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update channel: %v", err))
+			return
+		}
+		channel.CalendarID = req.CalendarID
+		channel.Enabled = true
 	}
 
 	respondJSON(w, http.StatusCreated, channel)

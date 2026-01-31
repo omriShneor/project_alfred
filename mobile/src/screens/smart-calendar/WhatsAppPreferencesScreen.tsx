@@ -120,49 +120,59 @@ export function WhatsAppPreferencesScreen() {
     return colors.success;
   };
 
-  const renderChannelItem = ({ item }: { item: Channel }) => (
-    <View style={styles.channelItem}>
-      <View style={styles.channelInfo}>
-        <View style={styles.channelHeader}>
-          <Text style={styles.channelName}>{item.name}</Text>
-          <View style={[styles.typeBadge, { backgroundColor: getTypeColor(item.type) + '20' }]}>
-            <Text style={[styles.typeText, { color: getTypeColor(item.type) }]}>
-              {getTypeLabel(item.type)}
-            </Text>
+  // Filter to only show enabled (connected) sources
+  const enabledChannels = channels?.filter(channel => channel.enabled) ?? [];
+
+  const renderChannelItem = ({ item }: { item: Channel }) => {
+    // Show identifier only if it's different from the name
+    const showIdentifier = item.name !== item.identifier;
+
+    return (
+      <View style={styles.channelItem}>
+        <View style={styles.channelInfo}>
+          <View style={styles.channelHeader}>
+            <Text style={styles.channelName}>{item.name}</Text>
+            <View style={[styles.typeBadge, { backgroundColor: getTypeColor(item.type) + '20' }]}>
+              <Text style={[styles.typeText, { color: getTypeColor(item.type) }]}>
+                {getTypeLabel(item.type)}
+              </Text>
+            </View>
           </View>
+          {showIdentifier && (
+            <Text style={styles.channelIdentifier}>+{item.identifier}</Text>
+          )}
         </View>
-        <Text style={styles.channelIdentifier}>{item.identifier}</Text>
+        <View style={styles.channelActions}>
+          <Switch
+            value={item.enabled}
+            onValueChange={() => handleToggleChannel(item)}
+            trackColor={{ false: colors.border, true: colors.primary }}
+            thumbColor="#ffffff"
+          />
+          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteChannel(item)}>
+            <Feather name="trash-2" size={18} color={colors.danger} />
+          </TouchableOpacity>
+        </View>
       </View>
-      <View style={styles.channelActions}>
-        <Switch
-          value={item.enabled}
-          onValueChange={() => handleToggleChannel(item)}
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor="#ffffff"
-        />
-        <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteChannel(item)}>
-          <Feather name="trash-2" size={18} color={colors.danger} />
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
+    );
+  };
 
   return (
     <View style={styles.screen}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>WhatsApp Sources</Text>
+          <Text style={styles.sectionTitle}>WhatsApp Contacts</Text>
           <TouchableOpacity style={styles.addButton} onPress={handleOpenAddSourceModal}>
             <Feather name="plus" size={18} color={colors.primary} />
-            <Text style={styles.addButtonText}>Add Source</Text>
+            <Text style={styles.addButtonText}>Add Contact</Text>
           </TouchableOpacity>
         </View>
         <Card>
           {channelsLoading ? (
             <LoadingSpinner />
-          ) : channels && channels.length > 0 ? (
+          ) : enabledChannels.length > 0 ? (
             <FlatList
-              data={channels}
+              data={enabledChannels}
               keyExtractor={(item) => String(item.id)}
               renderItem={renderChannelItem}
               scrollEnabled={false}
@@ -171,7 +181,7 @@ export function WhatsAppPreferencesScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Feather name="message-circle" size={40} color={colors.textSecondary} />
-              <Text style={styles.emptyStateText}>No WhatsApp sources configured</Text>
+              <Text style={styles.emptyStateText}>No WhatsApp contacts configured</Text>
               <Text style={styles.emptyStateSubtext}>
                 Add contacts to track for events
               </Text>

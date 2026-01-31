@@ -45,6 +45,7 @@ func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (
 
 	if handler != nil {
 		waClient.AddEventHandler(handler.HandleEvent)
+		handler.SetClient(waClient) // Enable history sync processing
 	}
 
 	return c, nil
@@ -91,6 +92,7 @@ func (c *Client) ReinitializeDevice() error {
 
 	if c.handler != nil {
 		c.WAClient.AddEventHandler(c.handler.HandleEvent)
+		c.handler.SetClient(c.WAClient) // Enable history sync processing
 	}
 
 	return nil

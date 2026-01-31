@@ -144,11 +144,11 @@ export function AddSourceModal({
       >
         <View style={styles.contactInfo}>
           <Text style={styles.contactName} numberOfLines={1}>
-            {item.name || item.identifier}
+            {item.name || `+${item.identifier}`}
           </Text>
           {item.name && item.name !== item.identifier && (
             <Text style={styles.contactIdentifier} numberOfLines={1}>
-              {item.identifier}
+              +{item.identifier}
             </Text>
           )}
           <Text style={styles.contactCount}>{item.message_count} messages</Text>

@@ -87,7 +87,7 @@ export function MainNavigator() {
         component={WhatsAppPreferencesScreen}
         options={({ navigation }) => ({
           headerShown: true,
-          title: 'WhatsApp Sources',
+          title: 'WhatsApp Contacts',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,

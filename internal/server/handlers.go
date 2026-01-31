@@ -87,20 +87,172 @@ func (s *Server) handleDiscoverChannels(w http.ResponseWriter, r *http.Request) 
 	respondJSON(w, http.StatusOK, channels)
 }
 
+// WhatsApp Top Contacts API
+
+// TopContactResponse represents a top contact for the Add Source modal
+type TopContactResponse struct {
+	Identifier   string `json:"identifier"`
+	Name         string `json:"name"`
+	MessageCount int    `json:"message_count"`
+	IsTracked    bool   `json:"is_tracked"`
+	ChannelID    *int64 `json:"channel_id,omitempty"`
+	Type         string `json:"type"`
+}
+
+func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Request) {
+	if s.waClient == nil || s.waClient.WAClient == nil {
+		// Return empty contacts if WhatsApp not connected
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TopContactResponse{},
+		})
+		return
+	}
+
+	// Get top contacts from message history
+	contacts, err := s.db.GetTopContactsBySourceType("whatsapp", 8)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// If no message history, fall back to discoverable channels (recent chats from WhatsApp)
+	if len(contacts) == 0 {
+		discoverableChannels, err := s.waClient.GetDiscoverableChannels()
+		if err == nil && len(discoverableChannels) > 0 {
+			// Filter to only contacts (not groups) and limit to 8
+			var contactChannels []whatsapp.DiscoverableChannel
+			for _, ch := range discoverableChannels {
+				if ch.Type == "sender" {
+					contactChannels = append(contactChannels, ch)
+				}
+			}
+			if len(contactChannels) > 8 {
+				contactChannels = contactChannels[:8]
+			}
+			// Convert to response format
+			response := make([]TopContactResponse, len(contactChannels))
+			for i, ch := range contactChannels {
+				// Check if already tracked
+				existingChannel, _ := s.db.GetChannelByIdentifier(ch.Identifier)
+				response[i] = TopContactResponse{
+					Identifier:   ch.Identifier,
+					Name:         ch.Name,
+					MessageCount: 0, // No message count from discovery
+					IsTracked:    existingChannel != nil,
+					Type:         ch.Type,
+				}
+				if existingChannel != nil {
+					response[i].ChannelID = &existingChannel.ID
+				}
+			}
+			respondJSON(w, http.StatusOK, map[string]interface{}{
+				"contacts": response,
+			})
+			return
+		}
+	}
+
+	// Convert to response format
+	response := make([]TopContactResponse, len(contacts))
+	for i, c := range contacts {
+		response[i] = TopContactResponse{
+			Identifier:   c.Identifier,
+			Name:         c.Name,
+			MessageCount: c.MessageCount,
+			IsTracked:    c.IsTracked,
+			Type:         c.Type,
+		}
+		if c.IsTracked {
+			response[i].ChannelID = &c.ChannelID
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"contacts": response,
+	})
+}
+
+func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		PhoneNumber string `json:"phone_number"`
+		CalendarID  string `json:"calendar_id"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	if req.PhoneNumber == "" {
+		respondError(w, http.StatusBadRequest, "phone_number is required")
+		return
+	}
+
+	if req.CalendarID == "" {
+		req.CalendarID = "primary"
+	}
+
+	// Normalize phone number - remove spaces, dashes, parentheses
+	phone := req.PhoneNumber
+	for _, char := range []string{" ", "-", "(", ")", "+"} {
+		phone = replaceAll(phone, char, "")
+	}
+
+	// Basic validation: should be 7-15 digits
+	if len(phone) < 7 || len(phone) > 15 {
+		respondError(w, http.StatusBadRequest, "Invalid phone number format")
+		return
+	}
+	for _, c := range phone {
+		if c < '0' || c > '9' {
+			respondError(w, http.StatusBadRequest, "Phone number must contain only digits")
+			return
+		}
+	}
+
+	// Create identifier in WhatsApp format
+	identifier := phone + "@s.whatsapp.net"
+
+	// Check if already tracked
+	existing, err := s.db.GetChannelByIdentifier(identifier)
+	if err == nil && existing != nil {
+		respondError(w, http.StatusConflict, "This phone number is already being tracked")
+		return
+	}
+
+	// Create the channel
+	channel, err := s.db.CreateChannel(database.ChannelTypeSender, identifier, req.PhoneNumber)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Update calendar ID
+	if err := s.db.UpdateChannel(channel.ID, channel.Name, req.CalendarID, true); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	channel.CalendarID = req.CalendarID
+	respondJSON(w, http.StatusCreated, channel)
+}
+
+// Helper function
+func replaceAll(s, old, new string) string {
+	result := s
+	for i := 0; i < len(result); i++ {
+		if i+len(old) <= len(result) && result[i:i+len(old)] == old {
+			result = result[:i] + new + result[i+len(old):]
+		}
+	}
+	return result
+}
+
 // Channels API
 
 func (s *Server) handleListChannels(w http.ResponseWriter, r *http.Request) {
-	typeFilter := r.URL.Query().Get("type")
-
-	var channels []*database.Channel
-	var err error
-
-	if typeFilter != "" {
-		channels, err = s.db.ListChannelsByType(database.ChannelType(typeFilter))
-	} else {
-		channels, err = s.db.ListChannels()
-	}
-
+	// Note: type filter removed - only contacts (sender type) are supported now
+	channels, err := s.db.ListChannels()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -125,8 +277,8 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Type != "sender" && req.Type != "group" {
-		respondError(w, http.StatusBadRequest, "type must be 'sender' or 'group'")
+	if req.Type != "sender" {
+		respondError(w, http.StatusBadRequest, "type must be 'sender' (contacts only)")
 		return
 	}
 

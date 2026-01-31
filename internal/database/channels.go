@@ -11,14 +11,13 @@ type ChannelType string
 
 const (
 	ChannelTypeSender ChannelType = "sender"
-	ChannelTypeGroup  ChannelType = "group"
 )
 
-// Channel represents a tracked communication channel (either a sender or group)
+// Channel represents a tracked communication channel (contacts only)
 type Channel struct {
 	ID         int64       `json:"id"`
-	Type       ChannelType `json:"type"`        // "sender" or "group"
-	Identifier string      `json:"identifier"`  // phone number for senders, JID for groups
+	Type       ChannelType `json:"type"`        // "sender" (contacts only)
+	Identifier string      `json:"identifier"`  // phone number for WhatsApp, user ID for Telegram
 	Name       string      `json:"name"`        // display name
 	CalendarID string      `json:"calendar_id"` // Google Calendar ID (defaults to "primary")
 	Enabled    bool        `json:"enabled"`     // whether to track this channel
@@ -67,29 +66,6 @@ func (d *DB) ListChannels() ([]*Channel, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list channels: %w", err)
-	}
-	defer rows.Close()
-
-	var channels []*Channel
-	for rows.Next() {
-		channel, err := scanChannelRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		channels = append(channels, channel)
-	}
-
-	return channels, rows.Err()
-}
-
-func (d *DB) ListChannelsByType(channelType ChannelType) ([]*Channel, error) {
-	rows, err := d.Query(
-		`SELECT id, type, identifier, name, calendar_id, enabled, created_at
-		 FROM channels WHERE type = ? ORDER BY created_at DESC`,
-		channelType,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list channels by type: %w", err)
 	}
 	defer rows.Close()
 

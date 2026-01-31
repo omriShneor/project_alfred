@@ -53,19 +53,17 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
     }
 
     if (sourceType === 'telegram') {
-      // Telegram uses 'contact', 'group', or 'channel'
-      const tgType = channel.type === 'sender' ? 'contact' : channel.type as 'contact' | 'group' | 'channel';
+      // Telegram uses 'contact' type for contacts
       createTgChannel.mutate({
-        type: tgType,
+        type: 'contact',
         identifier: channel.identifier,
         name: channel.name,
         calendar_id: calendarId,
       }, { onSuccess: () => onTrack?.() });
     } else {
-      // WhatsApp uses 'sender' or 'group'
-      const waType = channel.type === 'contact' ? 'sender' : channel.type as 'sender' | 'group';
+      // WhatsApp uses 'sender' type for contacts
       createWaChannel.mutate({
-        type: waType,
+        type: 'sender',
         identifier: channel.identifier,
         name: channel.name,
         calendar_id: calendarId,
@@ -92,8 +90,8 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Badge
-            label={channel.type === 'sender' || channel.type === 'contact' ? 'Contact' : channel.type === 'channel' ? 'Channel' : 'Group'}
-            variant={channel.type === 'contact' || channel.type === 'sender' ? 'sender' : channel.type === 'group' ? 'group' : 'custom'}
+            label="Contact"
+            variant="sender"
           />
           <Text style={styles.name} numberOfLines={1}>
             {channel.name}

@@ -231,9 +231,9 @@ func (d *DB) migrate() error {
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_message_history_source_type ON message_history(source_type)`)
 	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_calendar_events_source_type ON calendar_events(source_type)`)
 
-	// Update channels constraint to allow Telegram types
+	// Update channels constraint to allow Telegram contact types
 	// Note: SQLite doesn't support ALTER TABLE to modify CHECK constraints,
-	// so new types will be validated at application level
+	// so types are validated at application level. Only 'sender' (contacts) supported now.
 
 	// Gmail top contacts cache table for fast discovery
 	_, _ = d.Exec(`CREATE TABLE IF NOT EXISTS gmail_top_contacts (

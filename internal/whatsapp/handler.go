@@ -46,26 +46,23 @@ func (h *Handler) handleMessage(msg *events.Message) {
 		return
 	}
 
+	// Only process direct messages (contacts), skip groups
+	if msg.Info.IsGroup {
+		return
+	}
+
 	sender := msg.Info.Sender
-	chat := msg.Info.Chat
-	isGroup := msg.Info.IsGroup
+	identifier := sender.User
 
 	var sourceID int64
 	var tracked bool
 	var err error
-	var identifier string
 	var calendarID string
 
 	if h.debugAllMessages {
 		tracked = true
 		identifier = "debug"
 	} else {
-		if isGroup {
-			identifier = chat.String()
-		} else {
-			identifier = sender.User
-		}
-
 		var channelType source.ChannelType
 		tracked, sourceID, channelType, err = h.db.IsSourceChannelTracked(source.SourceTypeWhatsApp, identifier)
 		if err != nil {
@@ -87,12 +84,8 @@ func (h *Handler) handleMessage(msg *events.Message) {
 		return
 	}
 
-	// Log to stdout (not DB)
-	if isGroup {
-		fmt.Printf("[GROUP: %s] %s: %s\n", chat.String(), sender.User, text)
-	} else {
-		fmt.Printf("[DM: %s] %s\n", sender.User, text)
-	}
+	// Log to stdout
+	fmt.Printf("[WhatsApp DM: %s] %s\n", sender.User, text)
 
 	// Send to channel for assistant processing
 	select {
@@ -103,7 +96,6 @@ func (h *Handler) handleMessage(msg *events.Message) {
 		SenderID:   sender.String(),
 		SenderName: sender.User,
 		Text:       text,
-		IsGroup:    isGroup,
 		Timestamp:  msg.Info.Timestamp,
 		CalendarID: calendarID,
 	}:

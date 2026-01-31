@@ -38,6 +38,8 @@ func buildExcludeFromQuery() string {
 
 // DiscoverTopContacts finds the top N email contacts efficiently
 // Uses metadata-only fetching and filters out automated senders
+// TODO: Consider adding a simple ML spam filter to decide if a message is human or an auto-reply/mail-list
+// since the current naive solution is not good enough.
 func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
 	if c.service == nil {
 		return nil, fmt.Errorf("Gmail service not initialized")

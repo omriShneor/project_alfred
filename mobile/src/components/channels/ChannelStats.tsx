@@ -9,14 +9,10 @@ interface ChannelStatsProps {
 
 export function ChannelStats({ channels }: ChannelStatsProps) {
   const total = channels.length;
-  const contacts = channels.filter((c) => c.type === 'sender').length;
-  const groups = channels.filter((c) => c.type === 'group').length;
   const tracked = channels.filter((c) => c.is_tracked).length;
 
   const stats = [
-    { label: 'Total', value: total },
-    { label: 'Contacts', value: contacts },
-    { label: 'Groups', value: groups },
+    { label: 'Total Contacts', value: total },
     { label: 'Tracked', value: tracked },
   ];
 

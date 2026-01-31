@@ -15,10 +15,8 @@ const (
 type ChannelType string
 
 const (
-	// WhatsApp/Telegram channel types
-	ChannelTypeSender  ChannelType = "sender"
-	ChannelTypeGroup   ChannelType = "group"
-	ChannelTypeChannel ChannelType = "channel" // Telegram broadcast channels
+	// WhatsApp/Telegram channel type (contacts only)
+	ChannelTypeSender ChannelType = "sender"
 
 	// Gmail channel types
 	ChannelTypeDomain   ChannelType = "domain"
@@ -27,16 +25,15 @@ const (
 
 // Message represents a message from any source (WhatsApp, Telegram, Gmail)
 type Message struct {
-	SourceType  SourceType
-	SourceID    int64  // Channel/source database ID
-	Identifier  string // WhatsApp JID / Telegram chat ID / email address
-	SenderID    string
-	SenderName  string
-	Text        string
-	Subject     string // For emails
-	Timestamp   time.Time
-	IsGroup     bool
-	CalendarID  string // Target calendar for events
+	SourceType SourceType
+	SourceID   int64  // Channel/source database ID
+	Identifier string // WhatsApp phone number / Telegram user ID / email address
+	SenderID   string
+	SenderName string
+	Text       string
+	Subject    string // For emails
+	Timestamp  time.Time
+	CalendarID string // Target calendar for events
 }
 
 // Channel represents a tracked source (contact, group, email sender)

@@ -1,5 +1,13 @@
 export { useHealth } from './useHealth';
-export { useChannels, useDiscoverableChannels, useCreateChannel, useUpdateChannel, useDeleteChannel } from './useChannels';
+export {
+  useChannels,
+  useDiscoverableChannels,
+  useCreateChannel,
+  useUpdateChannel,
+  useDeleteChannel,
+  useWhatsAppTopContacts,
+  useAddWhatsAppCustomSource,
+} from './useChannels';
 export { useEvents, useEvent, useUpdateEvent, useConfirmEvent, useRejectEvent, useChannelHistory, useCalendars } from './useEvents';
 export { useDebounce } from './useDebounce';
 export {
@@ -34,4 +42,6 @@ export {
   useCreateTelegramChannel,
   useUpdateTelegramChannel,
   useDeleteTelegramChannel,
+  useTelegramTopContacts,
+  useAddTelegramCustomSource,
 } from './useTelegram';

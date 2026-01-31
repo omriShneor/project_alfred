@@ -1,4 +1,4 @@
-export type ChannelType = 'sender' | 'group' | 'channel';
+export type ChannelType = 'sender' | 'contact'; // contacts only (sender for WhatsApp, contact for Telegram)
 export type SourceType = 'whatsapp' | 'telegram' | 'gmail';
 
 export interface Channel {
@@ -13,7 +13,7 @@ export interface Channel {
 }
 
 export interface DiscoverableChannel {
-  type: ChannelType | 'contact' | 'channel'; // Telegram uses different type names
+  type: ChannelType; // 'sender' for WhatsApp, 'contact' for Telegram
   identifier: string;
   name: string;
   is_tracked: boolean;
@@ -31,4 +31,20 @@ export interface UpdateChannelRequest {
   name?: string;
   calendar_id?: string;
   enabled?: boolean;
+}
+
+// Top Contact for Add Source modal (WhatsApp/Telegram)
+export interface SourceTopContact {
+  identifier: string;
+  name: string;
+  message_count: number;
+  is_tracked: boolean;
+  channel_id?: number;
+  type: ChannelType; // 'sender' for WhatsApp, 'contact' for Telegram
+}
+
+// Request to add a custom source (phone number for WhatsApp, username for Telegram)
+export interface AddCustomSourceRequest {
+  value: string; // phone_number for WhatsApp, username for Telegram
+  calendar_id: string;
 }

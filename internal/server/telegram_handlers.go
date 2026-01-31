@@ -199,18 +199,12 @@ func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Map channel type
-	var channelType source.ChannelType
-	switch req.Type {
-	case "contact":
-		channelType = source.ChannelTypeSender
-	case "group":
-		channelType = source.ChannelTypeGroup
-	case "channel":
-		channelType = source.ChannelTypeChannel
-	default:
-		channelType = source.ChannelTypeSender
+	// Only contacts (sender type) are supported
+	if req.Type != "" && req.Type != "contact" && req.Type != "sender" {
+		respondError(w, http.StatusBadRequest, "Only contacts are supported (type must be 'contact' or 'sender')")
+		return
 	}
+	channelType := source.ChannelTypeSender
 
 	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, channelType, req.Identifier, req.Name, req.CalendarID)
 	if err != nil {
@@ -267,4 +261,148 @@ func (s *Server) handleDeleteTelegramChannel(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, map[string]string{
 		"message": "Channel deleted",
 	})
+}
+
+// Telegram Top Contacts API
+
+// TelegramTopContactResponse represents a top contact for the Add Source modal
+type TelegramTopContactResponse struct {
+	Identifier   string `json:"identifier"`
+	Name         string `json:"name"`
+	MessageCount int    `json:"message_count"`
+	IsTracked    bool   `json:"is_tracked"`
+	ChannelID    *int64 `json:"channel_id,omitempty"`
+	Type         string `json:"type"`
+}
+
+// handleTelegramTopContacts returns top contacts based on message history
+func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Request) {
+	if s.tgClient == nil || !s.tgClient.IsConnected() {
+		// Return empty contacts if Telegram not connected
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TelegramTopContactResponse{},
+		})
+		return
+	}
+
+	// Get top contacts from message history
+	contacts, err := s.db.GetTopContactsBySourceType("telegram", 8)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// If no message history, fall back to discoverable channels (recent chats from Telegram)
+	if len(contacts) == 0 {
+		discoverableChannels, err := s.tgClient.GetDiscoverableChannels(r.Context(), s.db)
+		if err == nil && len(discoverableChannels) > 0 {
+			// Filter to contacts only and limit to 8
+			var response []TelegramTopContactResponse
+			for _, ch := range discoverableChannels {
+				if ch.Type == "contact" {
+					resp := TelegramTopContactResponse{
+						Identifier:   ch.Identifier,
+						Name:         ch.Name,
+						MessageCount: 0, // No message count from discovery
+						IsTracked:    ch.IsTracked,
+						Type:         ch.Type,
+					}
+					if ch.IsTracked && ch.ChannelID != nil {
+						resp.ChannelID = ch.ChannelID
+					}
+					response = append(response, resp)
+					if len(response) >= 8 {
+						break
+					}
+				}
+			}
+			respondJSON(w, http.StatusOK, map[string]interface{}{
+				"contacts": response,
+			})
+			return
+		}
+	}
+
+	// Convert to response format
+	response := make([]TelegramTopContactResponse, len(contacts))
+	for i, c := range contacts {
+		response[i] = TelegramTopContactResponse{
+			Identifier:   c.Identifier,
+			Name:         c.Name,
+			MessageCount: c.MessageCount,
+			IsTracked:    c.IsTracked,
+			Type:         c.Type,
+		}
+		if c.IsTracked {
+			response[i].ChannelID = &c.ChannelID
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"contacts": response,
+	})
+}
+
+// TelegramCustomSourceRequest represents a request to add a custom Telegram source
+type TelegramCustomSourceRequest struct {
+	Username   string `json:"username"`
+	CalendarID string `json:"calendar_id"`
+}
+
+// handleTelegramCustomSource creates a Telegram channel from a username
+func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Request) {
+	if s.tgClient == nil || !s.tgClient.IsConnected() {
+		respondError(w, http.StatusServiceUnavailable, "Telegram not connected")
+		return
+	}
+
+	var req TelegramCustomSourceRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	if req.Username == "" {
+		respondError(w, http.StatusBadRequest, "username is required")
+		return
+	}
+
+	if req.CalendarID == "" {
+		req.CalendarID = "primary"
+	}
+
+	// Normalize username - remove @ prefix if present
+	username := req.Username
+	if len(username) > 0 && username[0] == '@' {
+		username = username[1:]
+	}
+
+	// Basic validation: 5-32 characters, alphanumeric and underscore, starts with letter
+	if len(username) < 5 || len(username) > 32 {
+		respondError(w, http.StatusBadRequest, "Username must be 5-32 characters")
+		return
+	}
+	if username[0] < 'a' || (username[0] > 'z' && username[0] < 'A') || username[0] > 'Z' {
+		respondError(w, http.StatusBadRequest, "Username must start with a letter")
+		return
+	}
+
+	// Use username as identifier (Telegram-style)
+	identifier := username
+
+	// Check if already tracked
+	existing, err := s.db.GetSourceChannelByIdentifier(source.SourceTypeTelegram, identifier)
+	if err == nil && existing != nil {
+		respondError(w, http.StatusConflict, "This username is already being tracked")
+		return
+	}
+
+	// Create the channel as a contact type
+	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, identifier, "@"+username, req.CalendarID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, channel)
 }

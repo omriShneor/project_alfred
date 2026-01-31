@@ -5,12 +5,15 @@ import {
   updateChannel,
   deleteChannel,
   discoverChannels,
+  getWhatsAppTopContacts,
+  addWhatsAppCustomSource,
 } from '../api/channels';
 import type {
   Channel,
   DiscoverableChannel,
   CreateChannelRequest,
   UpdateChannelRequest,
+  SourceTopContact,
 } from '../types/channel';
 
 export function useChannels(type?: string) {
@@ -59,6 +62,30 @@ export function useDeleteChannel() {
     mutationFn: (id: number) => deleteChannel(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
+      queryClient.invalidateQueries({ queryKey: ['discoverableChannels'] });
+    },
+  });
+}
+
+// WhatsApp top contacts hook
+export function useWhatsAppTopContacts(options?: { enabled?: boolean }) {
+  return useQuery<SourceTopContact[]>({
+    queryKey: ['whatsappTopContacts'],
+    queryFn: getWhatsAppTopContacts,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+// WhatsApp custom source mutation
+export function useAddWhatsAppCustomSource() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ phoneNumber, calendarId }: { phoneNumber: string; calendarId: string }) =>
+      addWhatsAppCustomSource(phoneNumber, calendarId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['channels'] });
+      queryClient.invalidateQueries({ queryKey: ['whatsappTopContacts'] });
       queryClient.invalidateQueries({ queryKey: ['discoverableChannels'] });
     },
   });

@@ -117,3 +117,48 @@ func (d *DB) CountMessages(channelID int64) (int, error) {
 	}
 	return count, nil
 }
+
+// TopContactStats represents a contact with message count for top contacts feature
+type TopContactStats struct {
+	ChannelID    int64  `json:"channel_id"`
+	Identifier   string `json:"identifier"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	MessageCount int    `json:"message_count"`
+	IsTracked    bool   `json:"is_tracked"`
+}
+
+// GetTopContactsBySourceType returns top contacts based on message count for a given source type
+func (d *DB) GetTopContactsBySourceType(sourceType string, limit int) ([]TopContactStats, error) {
+	rows, err := d.Query(`
+		SELECT
+			c.id,
+			c.identifier,
+			c.name,
+			c.type,
+			COUNT(mh.id) as message_count,
+			c.enabled as is_tracked
+		FROM channels c
+		LEFT JOIN message_history mh ON c.id = mh.channel_id
+		WHERE c.source_type = ?
+		GROUP BY c.id
+		HAVING message_count > 0
+		ORDER BY message_count DESC
+		LIMIT ?
+	`, sourceType, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get top contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []TopContactStats
+	for rows.Next() {
+		var c TopContactStats
+		if err := rows.Scan(&c.ChannelID, &c.Identifier, &c.Name, &c.Type, &c.MessageCount, &c.IsTracked); err != nil {
+			return nil, fmt.Errorf("failed to scan top contact: %w", err)
+		}
+		contacts = append(contacts, c)
+	}
+
+	return contacts, rows.Err()
+}

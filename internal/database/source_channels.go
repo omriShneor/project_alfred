@@ -100,30 +100,6 @@ func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel,
 	return channels, rows.Err()
 }
 
-// ListSourceChannelsByType lists channels for a source type filtered by channel type
-func (d *DB) ListSourceChannelsByType(sourceType source.SourceType, channelType source.ChannelType) ([]*SourceChannel, error) {
-	rows, err := d.Query(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled, created_at
-		 FROM channels WHERE source_type = ? AND type = ? ORDER BY created_at DESC`,
-		sourceType, channelType,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list source channels by type: %w", err)
-	}
-	defer rows.Close()
-
-	var channels []*SourceChannel
-	for rows.Next() {
-		channel, err := scanSourceChannelRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		channels = append(channels, channel)
-	}
-
-	return channels, rows.Err()
-}
-
 // ListEnabledSourceChannels lists all enabled channels for a source type
 func (d *DB) ListEnabledSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(

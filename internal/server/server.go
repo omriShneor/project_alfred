@@ -123,6 +123,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/whatsapp/pair", s.handleWhatsAppPair)
 	mux.HandleFunc("POST /api/whatsapp/reconnect", s.handleWhatsAppReconnect)
 	mux.HandleFunc("POST /api/whatsapp/disconnect", s.handleWhatsAppDisconnect)
+	mux.HandleFunc("GET /api/whatsapp/top-contacts", s.handleWhatsAppTopContacts)
+	mux.HandleFunc("POST /api/whatsapp/sources/custom", s.handleWhatsAppCustomSource)
 
 	// Telegram API
 	mux.HandleFunc("GET /api/telegram/status", s.handleTelegramStatus)
@@ -135,6 +137,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/telegram/channel", s.handleCreateTelegramChannel)
 	mux.HandleFunc("PUT /api/telegram/channel/{id}", s.handleUpdateTelegramChannel)
 	mux.HandleFunc("DELETE /api/telegram/channel/{id}", s.handleDeleteTelegramChannel)
+	mux.HandleFunc("GET /api/telegram/top-contacts", s.handleTelegramTopContacts)
+	mux.HandleFunc("POST /api/telegram/sources/custom", s.handleTelegramCustomSource)
 
 	// Discovery API
 	mux.HandleFunc("GET /api/discovery/channels", s.handleDiscoverChannels)

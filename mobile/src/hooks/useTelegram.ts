@@ -10,15 +10,19 @@ import {
   createTelegramChannel,
   updateTelegramChannel,
   deleteTelegramChannel,
+  getTelegramTopContacts,
+  addTelegramCustomSource,
   type TelegramStatus,
   type CreateTelegramChannelRequest,
   type UpdateTelegramChannelRequest,
 } from '../api/telegram';
+import type { SourceTopContact } from '../types/channel';
 
 // Query key constants
 const TELEGRAM_STATUS_KEY = ['telegramStatus'];
 const TELEGRAM_CHANNELS_KEY = ['telegramChannels'];
 const TELEGRAM_DISCOVERABLE_KEY = ['telegramDiscoverable'];
+const TELEGRAM_TOP_CONTACTS_KEY = ['telegramTopContacts'];
 
 // Hook to get Telegram status
 export function useTelegramStatus() {
@@ -123,6 +127,29 @@ export function useDeleteTelegramChannel() {
     mutationFn: (id: number) => deleteTelegramChannel(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TELEGRAM_CHANNELS_KEY });
+      queryClient.invalidateQueries({ queryKey: TELEGRAM_DISCOVERABLE_KEY });
+    },
+  });
+}
+
+// Hook to get top Telegram contacts
+export function useTelegramTopContacts(options?: { enabled?: boolean }) {
+  return useQuery<SourceTopContact[]>({
+    queryKey: TELEGRAM_TOP_CONTACTS_KEY,
+    queryFn: getTelegramTopContacts,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+// Hook to add custom Telegram source
+export function useAddTelegramCustomSource() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ username, calendarId }: { username: string; calendarId: string }) =>
+      addTelegramCustomSource(username, calendarId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TELEGRAM_CHANNELS_KEY });
+      queryClient.invalidateQueries({ queryKey: TELEGRAM_TOP_CONTACTS_KEY });
       queryClient.invalidateQueries({ queryKey: TELEGRAM_DISCOVERABLE_KEY });
     },
   });

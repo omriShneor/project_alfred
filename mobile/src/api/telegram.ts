@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { Channel, DiscoverableChannel } from '../types/channel';
+import type { Channel, DiscoverableChannel, SourceTopContact } from '../types/channel';
 
 // Telegram status response
 export interface TelegramStatus {
@@ -68,4 +68,18 @@ export async function updateTelegramChannel(id: number, data: UpdateTelegramChan
 // Delete a tracked Telegram channel
 export async function deleteTelegramChannel(id: number): Promise<void> {
   await apiClient.delete(`/api/telegram/channel/${id}`);
+}
+
+// Get top Telegram contacts based on message frequency
+export async function getTelegramTopContacts(): Promise<SourceTopContact[]> {
+  const response = await apiClient.get<{ contacts: SourceTopContact[] }>('/api/telegram/top-contacts');
+  return response.contacts || [];
+}
+
+// Add a custom Telegram source by username
+export async function addTelegramCustomSource(username: string, calendarId: string): Promise<Channel> {
+  return apiClient.post<Channel>('/api/telegram/sources/custom', {
+    username,
+    calendar_id: calendarId,
+  });
 }

@@ -10,15 +10,13 @@ import (
 	"github.com/omriShneor/project_alfred/internal/sse"
 )
 
-// Handler processes incoming Telegram messages
+// Handler processes incoming Telegram messages (contacts only)
 type Handler struct {
 	db               *database.DB
 	debugAllMessages bool
 	messageChan      chan source.Message
 	state            *sse.State
-	users            map[int64]*tg.User  // Cache of user info
-	chats            map[int64]*tg.Chat  // Cache of chat info
-	channels         map[int64]*tg.Channel // Cache of channel info
+	users            map[int64]*tg.User // Cache of user info
 }
 
 // NewHandler creates a new Telegram message handler
@@ -29,8 +27,6 @@ func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handl
 		messageChan:      make(chan source.Message, 100),
 		state:            state,
 		users:            make(map[int64]*tg.User),
-		chats:            make(map[int64]*tg.Chat),
-		channels:         make(map[int64]*tg.Channel),
 	}
 }
 
@@ -57,25 +53,20 @@ func (h *Handler) HandleUpdate(update tg.UpdatesClass) {
 	case *tg.UpdateShortMessage:
 		h.handleShortMessage(u)
 	case *tg.UpdateShortChatMessage:
-		h.handleShortChatMessage(u)
+		// Group messages not supported - only contacts
+		return
 	}
 }
 
-// cacheEntities caches user and chat information
+// cacheEntities caches user information
 func (h *Handler) cacheEntities(users []tg.UserClass, chats []tg.ChatClass) {
 	for _, u := range users {
 		if user, ok := u.(*tg.User); ok {
 			h.users[user.ID] = user
 		}
 	}
-	for _, c := range chats {
-		switch chat := c.(type) {
-		case *tg.Chat:
-			h.chats[chat.ID] = chat
-		case *tg.Channel:
-			h.channels[chat.ID] = chat
-		}
-	}
+	// Note: chats/channels not cached as we only support contacts
+	_ = chats
 }
 
 // handleSingleUpdate processes a single update
@@ -88,7 +79,7 @@ func (h *Handler) handleSingleUpdate(update tg.UpdateClass) {
 	}
 }
 
-// handleNewMessage processes a new message
+// handleNewMessage processes a new message (contacts only)
 func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 	message, ok := msg.(*tg.Message)
 	if !ok {
@@ -100,59 +91,22 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 		return
 	}
 
-	// Determine sender and chat info
+	// Only process direct messages from users (contacts), skip groups/channels
+	peer, ok := message.PeerID.(*tg.PeerUser)
+	if !ok {
+		return
+	}
+
+	chatIdentifier := fmt.Sprintf("%d", peer.UserID)
 	var senderID string
 	var senderName string
-	var chatIdentifier string
-	var isGroup bool
 
-	// Get peer information
-	switch peer := message.PeerID.(type) {
-	case *tg.PeerUser:
-		// Direct message
-		chatIdentifier = fmt.Sprintf("%d", peer.UserID)
-		isGroup = false
-		if user, ok := h.users[peer.UserID]; ok {
-			senderName = getUserName(user)
-			senderID = fmt.Sprintf("%d", user.ID)
-		} else {
-			senderName = fmt.Sprintf("User %d", peer.UserID)
-			senderID = chatIdentifier
-		}
-	case *tg.PeerChat:
-		// Group chat
-		chatIdentifier = fmt.Sprintf("chat_%d", peer.ChatID)
-		isGroup = true
-		if chat, ok := h.chats[peer.ChatID]; ok {
-			senderName = chat.Title
-		} else {
-			senderName = fmt.Sprintf("Chat %d", peer.ChatID)
-		}
-		// Get actual sender from FromID
-		if fromID, ok := message.FromID.(*tg.PeerUser); ok {
-			senderID = fmt.Sprintf("%d", fromID.UserID)
-			if user, ok := h.users[fromID.UserID]; ok {
-				senderName = getUserName(user)
-			}
-		}
-	case *tg.PeerChannel:
-		// Channel or supergroup
-		chatIdentifier = fmt.Sprintf("channel_%d", peer.ChannelID)
-		isGroup = true
-		if channel, ok := h.channels[peer.ChannelID]; ok {
-			senderName = channel.Title
-		} else {
-			senderName = fmt.Sprintf("Channel %d", peer.ChannelID)
-		}
-		// Get actual sender from FromID
-		if fromID, ok := message.FromID.(*tg.PeerUser); ok {
-			senderID = fmt.Sprintf("%d", fromID.UserID)
-			if user, ok := h.users[fromID.UserID]; ok {
-				senderName = getUserName(user)
-			}
-		}
-	default:
-		return
+	if user, ok := h.users[peer.UserID]; ok {
+		senderName = getUserName(user)
+		senderID = fmt.Sprintf("%d", user.ID)
+	} else {
+		senderName = fmt.Sprintf("User %d", peer.UserID)
+		senderID = chatIdentifier
 	}
 
 	// Check if tracked
@@ -186,11 +140,7 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 	}
 
 	// Log message
-	if isGroup {
-		fmt.Printf("[Telegram GROUP: %s] %s: %s\n", chatIdentifier, senderName, truncateText(text, 100))
-	} else {
-		fmt.Printf("[Telegram DM: %s] %s\n", senderName, truncateText(text, 100))
-	}
+	fmt.Printf("[Telegram DM: %s] %s\n", senderName, truncateText(text, 100))
 
 	// Send to processor
 	select {
@@ -201,7 +151,6 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 		SenderID:   senderID,
 		SenderName: senderName,
 		Text:       text,
-		IsGroup:    isGroup,
 		Timestamp:  time.Unix(int64(message.Date), 0),
 		CalendarID: calendarID,
 	}:
@@ -261,67 +210,6 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 		SenderID:   senderID,
 		SenderName: senderName,
 		Text:       msg.Message,
-		IsGroup:    false,
-		Timestamp:  time.Unix(int64(msg.Date), 0),
-		CalendarID: calendarID,
-	}:
-	default:
-		fmt.Println("Telegram: message channel full, dropping message")
-	}
-}
-
-// handleShortChatMessage processes a short group message update
-func (h *Handler) handleShortChatMessage(msg *tg.UpdateShortChatMessage) {
-	if msg.Message == "" {
-		return
-	}
-
-	chatIdentifier := fmt.Sprintf("chat_%d", msg.ChatID)
-	senderID := fmt.Sprintf("%d", msg.FromID)
-	senderName := fmt.Sprintf("User %d", msg.FromID)
-
-	if user, ok := h.users[msg.FromID]; ok {
-		senderName = getUserName(user)
-	}
-
-	// Check if tracked
-	var sourceID int64
-	var tracked bool
-	var calendarID string
-
-	if h.debugAllMessages {
-		tracked = true
-	} else {
-		var err error
-		tracked, sourceID, _, err = h.db.IsSourceChannelTracked(source.SourceTypeTelegram, chatIdentifier)
-		if err != nil {
-			fmt.Printf("Telegram: Error checking channel: %v\n", err)
-			return
-		}
-
-		if tracked {
-			channel, err := h.db.GetSourceChannelByID(sourceID)
-			if err == nil && channel != nil {
-				calendarID = channel.CalendarID
-			}
-		}
-	}
-
-	if !tracked {
-		return
-	}
-
-	fmt.Printf("[Telegram GROUP: %s] %s: %s\n", chatIdentifier, senderName, truncateText(msg.Message, 100))
-
-	select {
-	case h.messageChan <- source.Message{
-		SourceType: source.SourceTypeTelegram,
-		SourceID:   sourceID,
-		Identifier: chatIdentifier,
-		SenderID:   senderID,
-		SenderName: senderName,
-		Text:       msg.Message,
-		IsGroup:    true,
 		Timestamp:  time.Unix(int64(msg.Date), 0),
 		CalendarID: calendarID,
 	}:

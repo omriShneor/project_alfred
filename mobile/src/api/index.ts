@@ -8,27 +8,20 @@ export { getNotificationPrefs, updateEmailPrefs, registerPushToken, updatePushPr
 export { getOnboardingStatus, type OnboardingStatus } from './onboarding';
 export {
   getGmailStatus,
-  getGmailSettings,
-  updateGmailSettings,
-  discoverCategories,
-  discoverSenders,
-  discoverDomains,
   listEmailSources,
   createEmailSource,
-  getEmailSource,
   updateEmailSource,
   deleteEmailSource,
+  getTopContacts,
+  addCustomSource,
   type GmailStatus,
-  type GmailSettings,
   type EmailSource,
   type EmailSourceType,
   type CreateEmailSourceRequest,
   type UpdateEmailSourceRequest,
-  type DiscoveredCategory,
-  type DiscoveredSender,
-  type DiscoveredDomain,
+  type TopContact,
+  type AddCustomSourceRequest,
 } from './gmail';
-export { getFeatures, updateSmartCalendar, getSmartCalendarStatus } from './features';
 export { getAppStatus, completeOnboarding } from './app';
 export {
   getTelegramStatus,

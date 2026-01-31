@@ -235,6 +235,21 @@ func (d *DB) migrate() error {
 	// Note: SQLite doesn't support ALTER TABLE to modify CHECK constraints,
 	// so new types will be validated at application level
 
+	// Gmail top contacts cache table for fast discovery
+	_, _ = d.Exec(`CREATE TABLE IF NOT EXISTS gmail_top_contacts (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		email TEXT NOT NULL UNIQUE,
+		name TEXT,
+		email_count INTEGER DEFAULT 0,
+		last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+	)`)
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_gmail_top_contacts_email ON gmail_top_contacts(email)`)
+
+	// Add top_contacts_computed_at column to gmail_settings
+	if err := d.addColumnIfNotExists("gmail_settings", "top_contacts_computed_at", "DATETIME"); err != nil {
+		return fmt.Errorf("failed to add top_contacts_computed_at column: %w", err)
+	}
+
 	return nil
 }
 

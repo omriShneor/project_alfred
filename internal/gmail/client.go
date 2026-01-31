@@ -108,6 +108,29 @@ func (c *Client) GetMessage(messageID string) (*Email, error) {
 	return c.parseMessage(msg), nil
 }
 
+// GetMessageHeaders retrieves only the From header of a message (much faster than full message)
+func (c *Client) GetMessageHeaders(messageID string) (from string, err error) {
+	if c.service == nil {
+		return "", fmt.Errorf("Gmail service not initialized")
+	}
+
+	msg, err := c.service.Users.Messages.Get("me", messageID).
+		Format("metadata").
+		MetadataHeaders("From").
+		Do()
+	if err != nil {
+		return "", fmt.Errorf("failed to get message headers: %w", err)
+	}
+
+	for _, header := range msg.Payload.Headers {
+		if strings.EqualFold(header.Name, "From") {
+			return header.Value, nil
+		}
+	}
+
+	return "", nil
+}
+
 // GetMessagesSince retrieves messages received after a specific history ID or timestamp
 // Use query like "after:2024/01/20" for date-based filtering
 func (c *Client) GetMessagesSince(query string, maxResults int64) ([]*Email, error) {

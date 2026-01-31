@@ -1,21 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getGmailStatus,
-  getGmailSettings,
-  updateGmailSettings,
-  discoverCategories,
-  discoverSenders,
-  discoverDomains,
   listEmailSources,
   createEmailSource,
   updateEmailSource,
   deleteEmailSource,
+  getTopContacts,
+  addCustomSource,
 } from '../api/gmail';
 import type {
-  GmailSettings,
   EmailSourceType,
   CreateEmailSourceRequest,
   UpdateEmailSourceRequest,
+  AddCustomSourceRequest,
 } from '../types/gmail';
 
 export function useGmailStatus() {
@@ -23,49 +20,6 @@ export function useGmailStatus() {
     queryKey: ['gmailStatus'],
     queryFn: getGmailStatus,
     refetchInterval: 10000, // Poll every 10 seconds
-  });
-}
-
-export function useGmailSettings() {
-  return useQuery({
-    queryKey: ['gmailSettings'],
-    queryFn: getGmailSettings,
-  });
-}
-
-export function useUpdateGmailSettings() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: (settings: Partial<GmailSettings>) => updateGmailSettings(settings),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['gmailSettings'] });
-      queryClient.invalidateQueries({ queryKey: ['gmailStatus'] });
-    },
-  });
-}
-
-export function useDiscoverCategories() {
-  return useQuery({
-    queryKey: ['gmailDiscoverCategories'],
-    queryFn: discoverCategories,
-    enabled: false, // Only fetch when explicitly triggered
-  });
-}
-
-export function useDiscoverSenders(limit?: number) {
-  return useQuery({
-    queryKey: ['gmailDiscoverSenders', limit],
-    queryFn: () => discoverSenders(limit),
-    enabled: false, // Only fetch when explicitly triggered
-  });
-}
-
-export function useDiscoverDomains(limit?: number) {
-  return useQuery({
-    queryKey: ['gmailDiscoverDomains', limit],
-    queryFn: () => discoverDomains(limit),
-    enabled: false, // Only fetch when explicitly triggered
   });
 }
 
@@ -106,6 +60,27 @@ export function useDeleteEmailSource() {
     mutationFn: (id: number) => deleteEmailSource(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailSources'] });
+    },
+  });
+}
+
+// Top Contacts - cached contacts for fast discovery
+export function useTopContacts() {
+  return useQuery({
+    queryKey: ['gmailTopContacts'],
+    queryFn: getTopContacts,
+  });
+}
+
+// Add custom email or domain source
+export function useAddCustomSource() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: AddCustomSourceRequest) => addCustomSource(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['emailSources'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailTopContacts'] });
     },
   });
 }

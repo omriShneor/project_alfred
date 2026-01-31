@@ -6,14 +6,6 @@ import (
 	"strings"
 )
 
-// GmailCategory represents a Gmail category
-type GmailCategory struct {
-	ID          string `json:"id"`          // e.g., "CATEGORY_PRIMARY"
-	Name        string `json:"name"`        // e.g., "Primary"
-	Description string `json:"description"` // Human-readable description
-	EmailCount  int    `json:"email_count"` // Approximate count of emails
-}
-
 // EmailSender represents a frequent email sender
 type EmailSender struct {
 	Email      string `json:"email"`
@@ -21,70 +13,61 @@ type EmailSender struct {
 	EmailCount int    `json:"email_count"`
 }
 
-// EmailDomain represents a frequent email domain
-type EmailDomain struct {
-	Domain     string `json:"domain"` // e.g., "microsoft.com"
-	EmailCount int    `json:"email_count"`
+// automatedSenderPatterns contains patterns to identify automated/non-human senders
+var automatedSenderPatterns = []string{
+	"noreply", "no-reply", "do-not-reply", "donotreply",
+	"notifications", "notification", "notify",
+	"calendar-notification", "calendar@google",
+	"mailer-daemon", "postmaster", "bounce",
+	"newsletter", "news@", "updates@",
+	"automated", "auto@", "system@",
 }
 
-// Standard Gmail categories
-var GmailCategories = []GmailCategory{
-	{ID: "CATEGORY_PRIMARY", Name: "Primary", Description: "Important personal emails"},
-	{ID: "CATEGORY_SOCIAL", Name: "Social", Description: "Social network notifications"},
-	{ID: "CATEGORY_PROMOTIONS", Name: "Promotions", Description: "Marketing and promotional emails"},
-	{ID: "CATEGORY_UPDATES", Name: "Updates", Description: "Receipts, confirmations, statements"},
-	{ID: "CATEGORY_FORUMS", Name: "Forums", Description: "Mailing lists and forums"},
+// isAutomatedSender checks if an email address belongs to an automated sender
+func isAutomatedSender(email string) bool {
+	email = strings.ToLower(email)
+	for _, pattern := range automatedSenderPatterns {
+		if strings.Contains(email, pattern) {
+			return true
+		}
+	}
+	return false
 }
 
-// DiscoverCategories returns Gmail categories with email counts
-func (c *Client) DiscoverCategories() ([]GmailCategory, error) {
+// DiscoverTopContacts finds the top N email contacts efficiently
+// Uses metadata-only fetching and filters out automated senders
+func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
 	if c.service == nil {
 		return nil, fmt.Errorf("Gmail service not initialized")
 	}
 
-	categories := make([]GmailCategory, len(GmailCategories))
-	copy(categories, GmailCategories)
-
-	for i := range categories {
-		// Query for emails in each category
-		query := fmt.Sprintf("category:%s", strings.ToLower(strings.TrimPrefix(categories[i].ID, "CATEGORY_")))
-		messages, err := c.ListMessages(query, 1)
-		if err != nil {
-			// If we can't count, just continue
-			continue
-		}
-		// Use the list count as an approximation
-		// Note: This is a rough estimate since we're only getting the first page
-		if len(messages) > 0 {
-			categories[i].EmailCount = len(messages)
-		}
-	}
-
-	return categories, nil
-}
-
-// DiscoverSenders finds frequent email senders from recent emails
-func (c *Client) DiscoverSenders(limit int) ([]EmailSender, error) {
-	if c.service == nil {
-		return nil, fmt.Errorf("Gmail service not initialized")
-	}
-
-	// Get recent emails from inbox
-	messages, err := c.ListMessages("in:inbox", 500)
+	// Use category:primary to exclude Promotions, Social, Updates at API level
+	messages, err := c.ListMessages("in:inbox category:primary", 100)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list messages: %w", err)
 	}
 
-	// Count senders
+	// Count senders using metadata-only fetch (much faster)
 	senderCounts := make(map[string]*EmailSender)
 	for _, msg := range messages {
-		email, err := c.GetMessage(msg.Id)
-		if err != nil {
+		// Use efficient headers-only fetch instead of full message
+		from, err := c.GetMessageHeaders(msg.Id)
+		if err != nil || from == "" {
 			continue
 		}
 
-		senderEmail := ExtractSenderEmail(email.From)
-		senderName := ExtractSenderName(email.From)
+		senderEmail := ExtractSenderEmail(from)
+		senderName := ExtractSenderName(from)
+
+		if senderEmail == "" {
+			continue
+		}
+
+		// Skip automated senders (noreply, notifications, newsletters, etc.)
+		if isAutomatedSender(senderEmail) {
+			fmt.Printf("Gmail discovery: filtering out automated sender: %s\n", senderEmail)
+			continue
+		}
 
 		if sender, exists := senderCounts[senderEmail]; exists {
 			sender.EmailCount++
@@ -113,52 +96,4 @@ func (c *Client) DiscoverSenders(limit int) ([]EmailSender, error) {
 	}
 
 	return senders, nil
-}
-
-// DiscoverDomains finds frequent email domains from recent emails
-func (c *Client) DiscoverDomains(limit int) ([]EmailDomain, error) {
-	if c.service == nil {
-		return nil, fmt.Errorf("Gmail service not initialized")
-	}
-
-	// Get recent emails from inbox
-	messages, err := c.ListMessages("in:inbox", 500)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list messages: %w", err)
-	}
-
-	// Count domains
-	domainCounts := make(map[string]int)
-	for _, msg := range messages {
-		email, err := c.GetMessage(msg.Id)
-		if err != nil {
-			continue
-		}
-
-		senderEmail := ExtractSenderEmail(email.From)
-		domain := ExtractDomain(senderEmail)
-		if domain != "" {
-			domainCounts[domain]++
-		}
-	}
-
-	// Convert to slice and sort by count
-	domains := make([]EmailDomain, 0, len(domainCounts))
-	for domain, count := range domainCounts {
-		domains = append(domains, EmailDomain{
-			Domain:     domain,
-			EmailCount: count,
-		})
-	}
-
-	sort.Slice(domains, func(i, j int) bool {
-		return domains[i].EmailCount > domains[j].EmailCount
-	})
-
-	// Limit results
-	if len(domains) > limit {
-		domains = domains[:limit]
-	}
-
-	return domains, nil
 }

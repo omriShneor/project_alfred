@@ -16,9 +16,13 @@ interface ModalProps {
   onClose: () => void;
   title?: string;
   children: React.ReactNode;
+  scrollable?: boolean;
 }
 
-export function Modal({ visible, onClose, title, children }: ModalProps) {
+export function Modal({ visible, onClose, title, children, scrollable = true }: ModalProps) {
+  const ContentWrapper = scrollable ? ScrollView : View;
+  const contentProps = scrollable ? { keyboardShouldPersistTaps: 'handled' as const } : {};
+
   return (
     <RNModal
       visible={visible}
@@ -37,12 +41,9 @@ export function Modal({ visible, onClose, title, children }: ModalProps) {
               <Text style={styles.closeText}>✕</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView
-            style={styles.content}
-            keyboardShouldPersistTaps="handled"
-          >
+          <ContentWrapper style={styles.content} {...contentProps}>
             {children}
-          </ScrollView>
+          </ContentWrapper>
         </View>
       </KeyboardAvoidingView>
     </RNModal>

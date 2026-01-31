@@ -7,12 +7,6 @@ export interface GmailStatus {
   last_poll_at?: string;
 }
 
-export interface GmailSettings {
-  enabled: boolean;
-  poll_interval_minutes: number;
-  last_poll_at?: string;
-}
-
 export type EmailSourceType = 'category' | 'sender' | 'domain';
 
 export interface EmailSource {
@@ -38,20 +32,15 @@ export interface UpdateEmailSourceRequest {
   calendar_id?: string;
 }
 
-export interface DiscoveredCategory {
-  id: string;
-  name: string;
-  description: string;
-  email_count: number;
-}
-
-export interface DiscoveredSender {
+export interface TopContact {
   email: string;
   name: string;
   email_count: number;
+  is_tracked: boolean;
+  source_id?: number;
 }
 
-export interface DiscoveredDomain {
-  domain: string;
-  email_count: number;
+export interface AddCustomSourceRequest {
+  value: string;
+  calendar_id: string;
 }

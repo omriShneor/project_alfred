@@ -15,22 +15,13 @@ export { usePushNotifications } from './usePushNotifications';
 export { useTodayEvents } from './useTodayEvents';
 export {
   useGmailStatus,
-  useGmailSettings,
-  useUpdateGmailSettings,
-  useDiscoverCategories,
-  useDiscoverSenders,
-  useDiscoverDomains,
   useEmailSources,
   useCreateEmailSource,
   useUpdateEmailSource,
   useDeleteEmailSource,
+  useTopContacts,
+  useAddCustomSource,
 } from './useGmail';
-export {
-  useFeatures,
-  useUpdateSmartCalendar,
-  useSmartCalendarStatus,
-  useSmartCalendarEnabled,
-} from './useFeatures';
 export { useAppStatus, useCompleteOnboarding, useIsOnboarded } from './useAppStatus';
 export {
   useTelegramStatus,

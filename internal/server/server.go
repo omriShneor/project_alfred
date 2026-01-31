@@ -139,7 +139,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Discovery API
 	mux.HandleFunc("GET /api/discovery/channels", s.handleDiscoverChannels)
 
-	// Channel Registry API
+	//Whatsapp Channel Registry API
 	mux.HandleFunc("GET /api/channel", s.handleListChannels)
 	mux.HandleFunc("POST /api/channel", s.handleCreateChannel)
 	mux.HandleFunc("PUT /api/channel/{id}", s.handleUpdateChannel)
@@ -169,27 +169,16 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/notifications/push/register", s.handleRegisterPushToken)
 	mux.HandleFunc("PUT /api/notifications/push", s.handleUpdatePushPrefs)
 
-	// Gmail API
+	// Gmail Top Contacts API (cached, fast discovery)
+	mux.HandleFunc("GET /api/gmail/top-contacts", s.handleGetTopContacts)
+	mux.HandleFunc("POST /api/gmail/sources/custom", s.handleAddCustomSource)
+
+	// Gmail Sources API
 	mux.HandleFunc("GET /api/gmail/status", s.handleGmailStatus)
-	mux.HandleFunc("GET /api/gmail/settings", s.handleGmailSettings)
-	mux.HandleFunc("PUT /api/gmail/settings", s.handleUpdateGmailSettings)
-
-	// Gmail Discovery API
-	mux.HandleFunc("GET /api/gmail/discover/categories", s.handleDiscoverGmailCategories)
-	mux.HandleFunc("GET /api/gmail/discover/senders", s.handleDiscoverGmailSenders)
-	mux.HandleFunc("GET /api/gmail/discover/domains", s.handleDiscoverGmailDomains)
-
-	// Email Sources API (similar to WhatsApp channels)
 	mux.HandleFunc("GET /api/gmail/sources", s.handleListEmailSources)
 	mux.HandleFunc("POST /api/gmail/sources", s.handleCreateEmailSource)
-	mux.HandleFunc("GET /api/gmail/sources/{id}", s.handleGetEmailSource)
 	mux.HandleFunc("PUT /api/gmail/sources/{id}", s.handleUpdateEmailSource)
 	mux.HandleFunc("DELETE /api/gmail/sources/{id}", s.handleDeleteEmailSource)
-
-	// Features API (legacy - kept for backward compatibility)
-	mux.HandleFunc("GET /api/features", s.handleGetFeatures)
-	mux.HandleFunc("PUT /api/features/smart-calendar", s.handleUpdateSmartCalendar)
-	mux.HandleFunc("GET /api/features/smart-calendar/status", s.handleGetSmartCalendarStatus)
 
 	// App Status API (new simplified flow)
 	mux.HandleFunc("GET /api/app/status", s.handleGetAppStatus)
@@ -273,6 +262,8 @@ func (s *Server) initializeGmailClient() error {
 			fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
 		} else {
 			fmt.Println("Gmail worker started")
+			// Force refresh top contacts on re-authentication
+			s.gmailWorker.RefreshTopContactsNow()
 		}
 	}
 

@@ -8,6 +8,7 @@ import {
   FlatList,
   Switch,
   Alert,
+  TextInput,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LoadingSpinner, Card, Button, Modal, Select } from '../../components/common';
@@ -18,62 +19,35 @@ import {
   useCreateEmailSource,
   useUpdateEmailSource,
   useDeleteEmailSource,
-  useDiscoverCategories,
-  useDiscoverSenders,
-  useDiscoverDomains,
+  useTopContacts,
+  useAddCustomSource,
   useCalendars,
 } from '../../hooks';
-import type {
-  EmailSource,
-  EmailSourceType,
-  DiscoveredCategory,
-  DiscoveredSender,
-  DiscoveredDomain,
-} from '../../types/gmail';
-
-type DiscoveryTab = 'categories' | 'senders' | 'domains';
-
-interface SelectedItem {
-  type: EmailSourceType;
-  identifier: string;
-  name: string;
-}
+import type { EmailSource, EmailSourceType, TopContact } from '../../types/gmail';
+import type { Calendar } from '../../types/event';
 
 export function GmailPreferencesScreen() {
   const { data: gmailStatus } = useGmailStatus();
 
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
-  const [activeDiscoveryTab, setActiveDiscoveryTab] = useState<DiscoveryTab>('categories');
-  const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [customInput, setCustomInput] = useState('');
+  const [customInputError, setCustomInputError] = useState<string | null>(null);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
   const googleConnected = gmailStatus?.connected ?? false;
   const { data: calendars } = useCalendars(googleConnected);
+  const { data: topContacts, isLoading: contactsLoading } = useTopContacts();
 
   const createSource = useCreateEmailSource();
   const updateSource = useUpdateEmailSource();
   const deleteSource = useDeleteEmailSource();
-
-  const {
-    data: categories,
-    isLoading: categoriesLoading,
-    refetch: refetchCategories,
-  } = useDiscoverCategories();
-  const {
-    data: senders,
-    isLoading: sendersLoading,
-    refetch: refetchSenders,
-  } = useDiscoverSenders(50);
-  const {
-    data: domains,
-    isLoading: domainsLoading,
-    refetch: refetchDomains,
-  } = useDiscoverDomains(50);
+  const addCustomSource = useAddCustomSource();
 
   useEffect(() => {
     if (calendars && calendars.length > 0 && !selectedCalendarId) {
-      const primaryCalendar = calendars.find((c) => c.primary);
+      const primaryCalendar = calendars.find((c: Calendar) => c.primary);
       setSelectedCalendarId(primaryCalendar?.id || calendars[0].id);
     }
   }, [calendars, selectedCalendarId]);
@@ -111,7 +85,6 @@ export function GmailPreferencesScreen() {
   };
 
   const handleOpenAddSourceModal = () => {
-    // Check if Gmail is properly connected
     if (!gmailStatus?.connected || !gmailStatus?.has_scopes) {
       Alert.alert(
         'Gmail Not Connected',
@@ -121,61 +94,82 @@ export function GmailPreferencesScreen() {
       return;
     }
 
-    setSelectedItems([]);
-    setActiveDiscoveryTab('categories');
+    setSelectedContacts(new Set());
+    setCustomInput('');
+    setCustomInputError(null);
     setAddSourceModalVisible(true);
-    refetchCategories();
-    refetchSenders();
-    refetchDomains();
   };
 
-  const toggleItemSelection = (item: SelectedItem) => {
-    setSelectedItems((prev) => {
-      const exists = prev.some(
-        (i) => i.type === item.type && i.identifier === item.identifier
-      );
-      if (exists) {
-        return prev.filter(
-          (i) => !(i.type === item.type && i.identifier === item.identifier)
-        );
+  const toggleContactSelection = (email: string) => {
+    setSelectedContacts((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(email)) {
+        newSet.delete(email);
+      } else {
+        newSet.add(email);
       }
-      return [...prev, item];
+      return newSet;
     });
   };
 
-  const isItemSelected = (type: EmailSourceType, identifier: string) => {
-    return selectedItems.some(
-      (i) => i.type === type && i.identifier === identifier
-    );
+  const validateCustomInput = (value: string): string | null => {
+    if (!value.trim()) return null;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const domainRegex = /^@?[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}$/;
+    if (emailRegex.test(value) || domainRegex.test(value)) {
+      return null;
+    }
+    return 'Enter a valid email (user@domain.com) or domain (domain.com)';
   };
 
-  const isSourceAlreadyAdded = (type: EmailSourceType, identifier: string) => {
-    return sources?.some(
-      (s) => s.type === type && s.identifier === identifier
-    );
-  };
-
-  const handleAddSelectedSources = async () => {
-    if (selectedItems.length === 0) {
-      Alert.alert('Error', 'Please select at least one source to add');
+  const handleAddCustom = async () => {
+    const error = validateCustomInput(customInput);
+    if (error) {
+      setCustomInputError(error);
       return;
     }
+
     if (!selectedCalendarId) {
       Alert.alert('Error', 'Please select a calendar');
       return;
     }
 
     try {
-      for (const item of selectedItems) {
+      await addCustomSource.mutateAsync({
+        value: customInput.trim(),
+        calendar_id: selectedCalendarId,
+      });
+      setCustomInput('');
+      setCustomInputError(null);
+      setAddSourceModalVisible(false);
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to add source');
+    }
+  };
+
+  const handleAddSelectedContacts = async () => {
+    if (selectedContacts.size === 0) {
+      Alert.alert('Error', 'Please select at least one contact');
+      return;
+    }
+
+    if (!selectedCalendarId) {
+      Alert.alert('Error', 'Please select a calendar');
+      return;
+    }
+
+    try {
+      for (const email of selectedContacts) {
+        const contact = topContacts?.find((c: TopContact) => c.email === email);
         await createSource.mutateAsync({
-          type: item.type,
-          identifier: item.identifier,
-          name: item.name,
+          type: 'sender',
+          identifier: email,
+          name: contact?.name || email,
           calendar_id: selectedCalendarId,
         });
       }
+      setSelectedContacts(new Set());
       setAddSourceModalVisible(false);
-      setSelectedItems([]);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to add sources');
     }
@@ -199,70 +193,26 @@ export function GmailPreferencesScreen() {
     }
   };
 
-  const renderCategoryItem = ({ item }: { item: DiscoveredCategory }) => {
-    const alreadyAdded = isSourceAlreadyAdded('category', item.id);
-    const selected = isItemSelected('category', item.id);
+  const renderContactItem = ({ item }: { item: TopContact }) => {
+    const selected = selectedContacts.has(item.email);
     return (
       <TouchableOpacity
-        style={[styles.discoveryItem, selected && styles.discoveryItemSelected, alreadyAdded && styles.discoveryItemDisabled]}
-        onPress={() => !alreadyAdded && toggleItemSelection({ type: 'category', identifier: item.id, name: item.name })}
-        disabled={alreadyAdded}
+        style={[styles.contactItem, selected && styles.contactItemSelected, item.is_tracked && styles.contactItemDisabled]}
+        onPress={() => !item.is_tracked && toggleContactSelection(item.email)}
+        disabled={item.is_tracked}
       >
-        <View style={styles.discoveryItemContent}>
-          <Text style={styles.discoveryItemName}>{item.name}</Text>
-          <Text style={styles.discoveryItemDescription}>{item.description}</Text>
-          <Text style={styles.discoveryItemCount}>{item.email_count} emails</Text>
+        <View style={styles.contactInfo}>
+          <Text style={styles.contactName} numberOfLines={1}>
+            {item.name || item.email}
+          </Text>
+          {item.name && (
+            <Text style={styles.contactEmail} numberOfLines={1}>
+              {item.email}
+            </Text>
+          )}
+          <Text style={styles.contactCount}>{item.email_count} emails</Text>
         </View>
-        {alreadyAdded ? (
-          <Feather name="check-circle" size={20} color={colors.success} />
-        ) : selected ? (
-          <Feather name="check-square" size={20} color={colors.primary} />
-        ) : (
-          <Feather name="square" size={20} color={colors.textSecondary} />
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  const renderSenderItem = ({ item }: { item: DiscoveredSender }) => {
-    const alreadyAdded = isSourceAlreadyAdded('sender', item.email);
-    const selected = isItemSelected('sender', item.email);
-    return (
-      <TouchableOpacity
-        style={[styles.discoveryItem, selected && styles.discoveryItemSelected, alreadyAdded && styles.discoveryItemDisabled]}
-        onPress={() => !alreadyAdded && toggleItemSelection({ type: 'sender', identifier: item.email, name: item.name || item.email })}
-        disabled={alreadyAdded}
-      >
-        <View style={styles.discoveryItemContent}>
-          <Text style={styles.discoveryItemName}>{item.name || item.email}</Text>
-          {item.name && <Text style={styles.discoveryItemDescription}>{item.email}</Text>}
-          <Text style={styles.discoveryItemCount}>{item.email_count} emails</Text>
-        </View>
-        {alreadyAdded ? (
-          <Feather name="check-circle" size={20} color={colors.success} />
-        ) : selected ? (
-          <Feather name="check-square" size={20} color={colors.primary} />
-        ) : (
-          <Feather name="square" size={20} color={colors.textSecondary} />
-        )}
-      </TouchableOpacity>
-    );
-  };
-
-  const renderDomainItem = ({ item }: { item: DiscoveredDomain }) => {
-    const alreadyAdded = isSourceAlreadyAdded('domain', item.domain);
-    const selected = isItemSelected('domain', item.domain);
-    return (
-      <TouchableOpacity
-        style={[styles.discoveryItem, selected && styles.discoveryItemSelected, alreadyAdded && styles.discoveryItemDisabled]}
-        onPress={() => !alreadyAdded && toggleItemSelection({ type: 'domain', identifier: item.domain, name: item.domain })}
-        disabled={alreadyAdded}
-      >
-        <View style={styles.discoveryItemContent}>
-          <Text style={styles.discoveryItemName}>{item.domain}</Text>
-          <Text style={styles.discoveryItemCount}>{item.email_count} emails</Text>
-        </View>
-        {alreadyAdded ? (
+        {item.is_tracked ? (
           <Feather name="check-circle" size={20} color={colors.success} />
         ) : selected ? (
           <Feather name="check-square" size={20} color={colors.primary} />
@@ -300,19 +250,14 @@ export function GmailPreferencesScreen() {
     </View>
   );
 
-  const calendarOptions = calendars?.map((c) => ({
+  const calendarOptions = calendars?.map((c: Calendar) => ({
     label: c.summary + (c.primary ? ' (Primary)' : ''),
     value: c.id,
   })) || [];
 
-  const isDiscoveryLoading =
-    (activeDiscoveryTab === 'categories' && categoriesLoading) ||
-    (activeDiscoveryTab === 'senders' && sendersLoading) ||
-    (activeDiscoveryTab === 'domains' && domainsLoading);
-
-  const currentDiscoveryData =
-    activeDiscoveryTab === 'categories' ? categories :
-    activeDiscoveryTab === 'senders' ? senders : domains;
+  // Filter out already tracked contacts
+  const availableContacts = topContacts?.filter((c) => !c.is_tracked) || [];
+  const hasSelectableContacts = availableContacts.length > 0;
 
   return (
     <View style={styles.screen}>
@@ -343,7 +288,7 @@ export function GmailPreferencesScreen() {
               <Feather name="inbox" size={40} color={colors.textSecondary} />
               <Text style={styles.emptyStateText}>No email sources configured</Text>
               <Text style={styles.emptyStateSubtext}>
-                Add categories, senders, or domains to track for events
+                Add contacts or domains to track for events
               </Text>
             </View>
           )}
@@ -354,28 +299,8 @@ export function GmailPreferencesScreen() {
         visible={addSourceModalVisible}
         onClose={() => setAddSourceModalVisible(false)}
         title="Add Email Source"
+        scrollable={false}
       >
-        <View style={styles.modalTabContainer}>
-          <TouchableOpacity
-            style={[styles.modalTab, activeDiscoveryTab === 'categories' && styles.modalTabActive]}
-            onPress={() => setActiveDiscoveryTab('categories')}
-          >
-            <Text style={[styles.modalTabText, activeDiscoveryTab === 'categories' && styles.modalTabTextActive]}>Categories</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modalTab, activeDiscoveryTab === 'senders' && styles.modalTabActive]}
-            onPress={() => setActiveDiscoveryTab('senders')}
-          >
-            <Text style={[styles.modalTabText, activeDiscoveryTab === 'senders' && styles.modalTabTextActive]}>Senders</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.modalTab, activeDiscoveryTab === 'domains' && styles.modalTabActive]}
-            onPress={() => setActiveDiscoveryTab('domains')}
-          >
-            <Text style={[styles.modalTabText, activeDiscoveryTab === 'domains' && styles.modalTabTextActive]}>Domains</Text>
-          </TouchableOpacity>
-        </View>
-
         <View style={styles.calendarSection}>
           <Text style={styles.calendarLabel}>Target Calendar</Text>
           <Select
@@ -386,38 +311,69 @@ export function GmailPreferencesScreen() {
           />
         </View>
 
-        <View style={styles.discoveryList}>
-          {isDiscoveryLoading ? (
+        {/* Suggested Contacts Section */}
+        <View style={styles.suggestedSection}>
+          <Text style={styles.sectionLabel}>Suggested Contacts</Text>
+          {contactsLoading ? (
             <LoadingSpinner />
-          ) : !currentDiscoveryData || currentDiscoveryData.length === 0 ? (
-            <View style={styles.emptyDiscovery}>
-              <Text style={styles.emptyDiscoveryText}>No {activeDiscoveryTab} found</Text>
-            </View>
-          ) : (
+          ) : topContacts && topContacts.length > 0 ? (
             <FlatList
-              data={currentDiscoveryData as any[]}
-              keyExtractor={(item, index) =>
-                activeDiscoveryTab === 'categories' ? (item as DiscoveredCategory).id :
-                activeDiscoveryTab === 'senders' ? (item as DiscoveredSender).email :
-                (item as DiscoveredDomain).domain
-              }
-              renderItem={
-                activeDiscoveryTab === 'categories' ? (renderCategoryItem as any) :
-                activeDiscoveryTab === 'senders' ? (renderSenderItem as any) :
-                (renderDomainItem as any)
-              }
-              style={styles.discoveryFlatList}
+              data={topContacts}
+              keyExtractor={(item) => item.email}
+              renderItem={renderContactItem}
+              style={styles.contactList}
               ItemSeparatorComponent={() => <View style={styles.separator} />}
+            />
+          ) : (
+            <View style={styles.emptyContacts}>
+              <Text style={styles.emptyContactsText}>No contacts found</Text>
+              <Text style={styles.emptyContactsSubtext}>
+                Add a custom email or domain below
+              </Text>
+            </View>
+          )}
+
+          {hasSelectableContacts && selectedContacts.size > 0 && (
+            <Button
+              title={`Add ${selectedContacts.size} Contact${selectedContacts.size !== 1 ? 's' : ''}`}
+              onPress={handleAddSelectedContacts}
+              loading={createSource.isPending}
+              style={styles.addContactsButton}
             />
           )}
         </View>
 
-        <View style={styles.modalFooter}>
+        {/* Custom Input Section */}
+        <View style={styles.customSection}>
+          <Text style={styles.sectionLabel}>Or add a custom email/domain</Text>
+          <TextInput
+            style={[styles.customInput, customInputError && styles.customInputError]}
+            value={customInput}
+            onChangeText={(text) => {
+              setCustomInput(text);
+              if (customInputError) setCustomInputError(null);
+            }}
+            placeholder="e.g. boss@work.com or acme.com"
+            placeholderTextColor={colors.textSecondary}
+            keyboardType="email-address"
+            autoCapitalize="none"
+            autoCorrect={false}
+            onBlur={() => {
+              if (customInput.trim()) {
+                setCustomInputError(validateCustomInput(customInput));
+              }
+            }}
+          />
+          {customInputError && (
+            <Text style={styles.errorText}>{customInputError}</Text>
+          )}
           <Button
-            title={`Add ${selectedItems.length} Source${selectedItems.length !== 1 ? 's' : ''}`}
-            onPress={handleAddSelectedSources}
-            loading={createSource.isPending}
-            disabled={selectedItems.length === 0}
+            title="Add Custom"
+            variant="outline"
+            onPress={handleAddCustom}
+            loading={addCustomSource.isPending}
+            disabled={!customInput.trim()}
+            style={styles.addCustomButton}
           />
         </View>
       </Modal>
@@ -527,30 +483,6 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
   },
-  modalTabContainer: {
-    flexDirection: 'row',
-    borderRadius: 8,
-    backgroundColor: colors.background,
-    padding: 4,
-    marginBottom: 16,
-  },
-  modalTab: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 6,
-  },
-  modalTabActive: {
-    backgroundColor: colors.card,
-  },
-  modalTabText: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.textSecondary,
-  },
-  modalTabTextActive: {
-    color: colors.primary,
-  },
   calendarSection: {
     marginBottom: 16,
   },
@@ -560,57 +492,91 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 8,
   },
-  discoveryList: {
-    maxHeight: 300,
+  sectionLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.text,
+    marginBottom: 12,
+  },
+  suggestedSection: {
     marginBottom: 16,
   },
-  discoveryFlatList: {
-    maxHeight: 300,
+  contactList: {
+    maxHeight: 200,
   },
-  discoveryItem: {
+  contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 8,
     borderRadius: 8,
   },
-  discoveryItemSelected: {
+  contactItemSelected: {
     backgroundColor: colors.primary + '10',
   },
-  discoveryItemDisabled: {
+  contactItemDisabled: {
     opacity: 0.5,
   },
-  discoveryItemContent: {
+  contactInfo: {
     flex: 1,
     marginRight: 12,
   },
-  discoveryItemName: {
+  contactName: {
     fontSize: 15,
     fontWeight: '500',
     color: colors.text,
   },
-  discoveryItemDescription: {
+  contactEmail: {
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 2,
   },
-  discoveryItemCount: {
+  contactCount: {
     fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
   },
-  emptyDiscovery: {
+  emptyContacts: {
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingVertical: 16,
   },
-  emptyDiscoveryText: {
+  emptyContactsText: {
     fontSize: 14,
     color: colors.textSecondary,
   },
-  modalFooter: {
-    paddingTop: 16,
+  emptyContactsSubtext: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  addContactsButton: {
+    marginTop: 12,
+  },
+  customSection: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    paddingTop: 16,
+  },
+  customInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: colors.text,
+    backgroundColor: colors.background,
+  },
+  customInputError: {
+    borderColor: colors.danger,
+  },
+  errorText: {
+    fontSize: 12,
+    color: colors.danger,
+    marginTop: 4,
+  },
+  addCustomButton: {
+    marginTop: 12,
   },
 });

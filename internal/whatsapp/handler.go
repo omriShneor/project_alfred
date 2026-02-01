@@ -9,6 +9,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -51,7 +52,50 @@ func (h *Handler) HandleEvent(evt interface{}) {
 		h.handleMessage(v)
 	case *events.HistorySync:
 		go h.handleHistorySync(v) // Run async to not block event handler
+	case *events.AppStateSyncComplete:
+		h.handleAppStateSyncComplete(v) // Fallback for contact name sync
 	}
+}
+
+// handleAppStateSyncComplete handles contact sync events as fallback/additional sync
+// From GitHub issue #583:
+//   - critical_block: PushNames of recently messaged users
+//   - critical_unblock_low: Full contact list
+func (h *Handler) handleAppStateSyncComplete(evt *events.AppStateSyncComplete) {
+	switch evt.Name {
+	case appstate.WAPatchCriticalBlock:
+		fmt.Println("AppStateSyncComplete: (critical_block)")
+		go h.refreshTopContactNames()
+
+	case appstate.WAPatchCriticalUnblockLow:
+		fmt.Println("AppStateSyncComplete: (critical_unblock_low)")
+		go h.refreshAllContactNames()
+	}
+}
+
+func (h *Handler) forceSyncContactsAndRefresh() {
+	if h.wClient == nil {
+		fmt.Println("ForceSyncContacts: WhatsApp client not available")
+		return
+	}
+
+	fmt.Println("ForceSyncContacts: Attempting to sync contact list via FetchAppState")
+
+	err := h.wClient.FetchAppState(context.Background(), appstate.WAPatchCriticalUnblockLow, true, false)
+	if err != nil {
+		fmt.Printf("ForceSyncContacts: FetchAppState failed: %v (will rely on events)\n", err)
+	} else {
+		fmt.Println("ForceSyncContacts: FetchAppState succeeded")
+	}
+
+	// Small delay to let the store populate
+	time.Sleep(500 * time.Millisecond)
+
+	// Phase 1: Refresh top senders first (for fast Add Contact modal)
+	h.refreshTopContactNames()
+
+	// Phase 2: Refresh all remaining contacts
+	h.refreshAllContactNames()
 }
 
 func (h *Handler) handleMessage(msg *events.Message) {
@@ -148,6 +192,14 @@ func extractText(msg *events.Message) string {
 
 const maxHistoryMessagesPerContact = 25
 
+// senderInfo tracks accurate message stats for a sender during HistorySync
+type senderInfo struct {
+	identifier    string
+	jid           types.JID
+	messageCount  int
+	lastMessageAt *time.Time
+}
+
 // handleHistorySync processes the HistorySync event from WhatsApp
 // This runs in a goroutine to not block the event handler
 func (h *Handler) handleHistorySync(evt *events.HistorySync) {
@@ -158,6 +210,9 @@ func (h *Handler) handleHistorySync(evt *events.HistorySync) {
 
 	conversations := evt.Data.GetConversations()
 	fmt.Printf("HistorySync: Processing %d conversations\n", len(conversations))
+
+	// Track ACCURATE message counts per sender (not limited to 25)
+	senderStats := make(map[string]*senderInfo)
 
 	processedContacts := 0
 	for _, conv := range conversations {
@@ -177,18 +232,54 @@ func (h *Handler) handleHistorySync(evt *events.HistorySync) {
 			continue
 		}
 
+		identifier := chatJID.User
+
+		if _, exists := senderStats[identifier]; !exists {
+			senderStats[identifier] = &senderInfo{
+				identifier:   identifier,
+				jid:          chatJID,
+				messageCount: 0,
+			}
+		}
+		senderStats[identifier].messageCount += len(messages)
+
+		if len(messages) > 0 {
+			lastMsg := messages[0]
+			if parsedEvt, err := h.wClient.ParseWebMessage(chatJID, lastMsg.GetMessage()); err == nil {
+				ts := parsedEvt.Info.Timestamp
+				// Only update if this is more recent
+				if senderStats[identifier].lastMessageAt == nil || ts.After(*senderStats[identifier].lastMessageAt) {
+					senderStats[identifier].lastMessageAt = &ts
+				}
+			}
+		}
+
 		if h.processConversationHistory(chatJID, messages) {
 			processedContacts++
 		}
 	}
 
-	fmt.Printf("HistorySync: Completed - processed %d contacts\n", processedContacts)
+	fmt.Printf("HistorySync: Found %d unique senders\n", len(senderStats))
 
-	// Phase 1: Immediately refresh names for top contacts (for Add Source modal)
-	h.refreshTopContactNames()
+	statsUpdated := 0
+	for identifier, info := range senderStats {
+		channel, err := h.db.GetSourceChannelByIdentifier(source.SourceTypeWhatsApp, identifier)
+		if err != nil || channel == nil {
+			continue
+		}
 
-	// Phase 2: Background refresh for all remaining contacts
-	go h.refreshAllContactNames()
+		if err := h.db.UpdateChannelStats(channel.ID, info.messageCount, info.lastMessageAt); err != nil {
+			fmt.Printf("HistorySync: Failed to update stats for %s: %v\n", identifier, err)
+			continue
+		}
+		statsUpdated++
+	}
+
+	fmt.Printf("HistorySync: Completed - processed %d contacts, updated stats for %d\n", processedContacts, statsUpdated)
+
+	// Force sync contacts and refresh names immediately
+	// This uses FetchAppState to get contacts ASAP, with AppStateSyncComplete as fallback
+	go h.forceSyncContactsAndRefresh()
 }
 
 // processConversationHistory stores messages from a single conversation
@@ -302,64 +393,51 @@ func (h *Handler) getOrCreateHistoryChannel(identifier string, jid types.JID) (*
 
 // Contact name refresh after HistorySync
 
-// getContactName looks up a contact name from the WhatsApp contact store
-func (h *Handler) getContactName(identifier string) string {
-	if h.wClient == nil || h.wClient.Store == nil || h.wClient.Store.Contacts == nil {
-		return ""
-	}
-
-	jid, err := types.ParseJID(identifier + "@s.whatsapp.net")
-	if err != nil {
-		return ""
-	}
-
-	contact, err := h.wClient.Store.Contacts.GetContact(context.Background(), jid)
-	if err != nil {
-		return ""
-	}
-
-	if contact.FullName != "" {
-		return contact.FullName
-	}
-	if contact.PushName != "" {
-		return contact.PushName
-	}
-	return ""
-}
-
-// refreshTopContactNames updates names for top 8 contacts by message count
+// refreshTopContactNames updates names for top 8 contacts by ACTUAL message count
 // This runs immediately after HistorySync to ensure the Add Source modal shows names ASAP
 func (h *Handler) refreshTopContactNames() {
 	if h.wClient == nil || h.wClient.Store == nil || h.wClient.Store.Contacts == nil {
 		return
 	}
 
-	// Get top contacts from DB (same query used by the API)
-	topContacts, err := h.db.GetTopContactsBySourceType(string(source.SourceTypeWhatsApp), 8)
+	// Get all contacts from WhatsApp store (batch lookup)
+	allContacts, err := h.wClient.Store.Contacts.GetAllContacts(context.Background())
 	if err != nil {
-		fmt.Printf("RefreshTopNames: Failed to get top contacts: %v\n", err)
+		fmt.Printf("RefreshTopNames: Failed to get contacts: %v\n", err)
+		return
+	}
+
+	// Get top 8 contacts by ACTUAL message count (from channels.total_message_count)
+	topChannels, err := h.db.GetTopChannelsByMessageCount(source.SourceTypeWhatsApp, 8)
+	if err != nil {
+		fmt.Printf("RefreshTopNames: Failed to get top channels: %v\n", err)
 		return
 	}
 
 	updated := 0
-	for _, contact := range topContacts {
-		// Skip if already has a real name
-		if contact.Name != contact.Identifier {
+	for _, channel := range topChannels {
+		// Skip if already has a real name (name != identifier)
+		if channel.Name != channel.Identifier {
 			continue
 		}
 
-		// Try to get name from WhatsApp contact store
-		name := h.getContactName(contact.Identifier)
-		if name != "" && name != contact.Identifier {
-			// Get the channel to preserve its calendar_id and enabled state
-			channel, err := h.db.GetSourceChannelByID(contact.ChannelID)
-			if err != nil || channel == nil {
-				continue
+		// Look up in contacts map
+		jid, err := types.ParseJID(channel.Identifier + "@s.whatsapp.net")
+		if err != nil {
+			continue
+		}
+
+		if contact, ok := allContacts[jid]; ok {
+			name := contact.FullName
+			if name == "" {
+				name = contact.PushName
 			}
-			if err := h.db.UpdateSourceChannel(contact.ChannelID, name, channel.CalendarID, channel.Enabled); err != nil {
-				continue
+			if name != "" && name != channel.Identifier {
+				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.CalendarID, channel.Enabled); err != nil {
+					continue
+				}
+				updated++
 			}
-			updated++
 		}
 	}
 
@@ -375,8 +453,12 @@ func (h *Handler) refreshAllContactNames() {
 		return
 	}
 
-	// Small delay to let contact store fully populate
-	time.Sleep(2 * time.Second)
+	// Get all contacts from WhatsApp store (batch lookup)
+	allContacts, err := h.wClient.Store.Contacts.GetAllContacts(context.Background())
+	if err != nil {
+		fmt.Printf("RefreshAllNames: Failed to get contacts: %v\n", err)
+		return
+	}
 
 	// Get all WhatsApp channels
 	channels, err := h.db.ListSourceChannels(source.SourceTypeWhatsApp)
@@ -392,17 +474,27 @@ func (h *Handler) refreshAllContactNames() {
 			continue
 		}
 
-		// Try to get name from WhatsApp contact store
-		name := h.getContactName(channel.Identifier)
-		if name != "" && name != channel.Identifier {
-			if err := h.db.UpdateSourceChannel(channel.ID, name, channel.CalendarID, channel.Enabled); err != nil {
-				continue
+		// Look up in contacts map
+		jid, err := types.ParseJID(channel.Identifier + "@s.whatsapp.net")
+		if err != nil {
+			continue
+		}
+
+		if contact, ok := allContacts[jid]; ok {
+			name := contact.FullName
+			if name == "" {
+				name = contact.PushName
 			}
-			updated++
+			if name != "" && name != channel.Identifier {
+				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.CalendarID, channel.Enabled); err != nil {
+					continue
+				}
+				updated++
+			}
 		}
 	}
 
 	if updated > 0 {
-		fmt.Printf("RefreshAllNames: Updated %d contact names in background\n", updated)
+		fmt.Printf("RefreshAllNames: Updated %d contact names\n", updated)
 	}
 }

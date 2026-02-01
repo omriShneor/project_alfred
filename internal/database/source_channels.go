@@ -10,14 +10,16 @@ import (
 
 // SourceChannel represents a tracked channel with source type information
 type SourceChannel struct {
-	ID         int64             `json:"id"`
-	SourceType source.SourceType `json:"source_type"`
-	Type       source.ChannelType `json:"type"`
-	Identifier string            `json:"identifier"`
-	Name       string            `json:"name"`
-	CalendarID string            `json:"calendar_id"`
-	Enabled    bool              `json:"enabled"`
-	CreatedAt  time.Time         `json:"created_at"`
+	ID                int64              `json:"id"`
+	SourceType        source.SourceType  `json:"source_type"`
+	Type              source.ChannelType `json:"type"`
+	Identifier        string             `json:"identifier"`
+	Name              string             `json:"name"`
+	CalendarID        string             `json:"calendar_id"`
+	Enabled           bool               `json:"enabled"`
+	TotalMessageCount int                `json:"total_message_count"` // Actual message count from HistorySync
+	LastMessageAt     *time.Time         `json:"last_message_at"`     // Timestamp of most recent message
+	CreatedAt         time.Time          `json:"created_at"`
 }
 
 // ToSourceChannel converts a SourceChannel to source.Channel
@@ -162,6 +164,52 @@ func (d *DB) IsSourceChannelTracked(sourceType source.SourceType, identifier str
 		return false, 0, "", fmt.Errorf("failed to check source channel: %w", err)
 	}
 	return true, id, channelType, nil
+}
+
+// UpdateChannelStats updates the message count and last message time for a channel
+func (d *DB) UpdateChannelStats(id int64, totalMessageCount int, lastMessageAt *time.Time) error {
+	_, err := d.Exec(`
+		UPDATE channels
+		SET total_message_count = ?, last_message_at = ?
+		WHERE id = ?
+	`, totalMessageCount, lastMessageAt, id)
+	if err != nil {
+		return fmt.Errorf("failed to update channel stats: %w", err)
+	}
+	return nil
+}
+
+// GetTopChannelsByMessageCount returns top channels by actual message count
+// This uses total_message_count which is populated during HistorySync with accurate counts
+func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit int) ([]*SourceChannel, error) {
+	rows, err := d.Query(`
+		SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled,
+		       total_message_count, last_message_at, created_at
+		FROM channels
+		WHERE source_type = ? AND total_message_count > 0
+		ORDER BY total_message_count DESC
+		LIMIT ?
+	`, sourceType, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get top channels: %w", err)
+	}
+	defer rows.Close()
+
+	var channels []*SourceChannel
+	for rows.Next() {
+		var c SourceChannel
+		var lastMsgAt sql.NullTime
+		if err := rows.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name,
+			&c.CalendarID, &c.Enabled, &c.TotalMessageCount, &lastMsgAt, &c.CreatedAt); err != nil {
+			continue
+		}
+		if lastMsgAt.Valid {
+			c.LastMessageAt = &lastMsgAt.Time
+		}
+		channels = append(channels, &c)
+	}
+
+	return channels, rows.Err()
 }
 
 func scanSourceChannel(row *sql.Row) (*SourceChannel, error) {

@@ -250,6 +250,20 @@ func (d *DB) migrate() error {
 		return fmt.Errorf("failed to add top_contacts_computed_at column: %w", err)
 	}
 
+	// Add total_message_count to channels for accurate contact ranking
+	// (message_history is capped at 25, so we need actual counts from HistorySync)
+	if err := d.addColumnIfNotExists("channels", "total_message_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return fmt.Errorf("failed to add total_message_count to channels: %w", err)
+	}
+
+	// Add last_message_at to channels for recency-based sorting
+	if err := d.addColumnIfNotExists("channels", "last_message_at", "DATETIME"); err != nil {
+		return fmt.Errorf("failed to add last_message_at to channels: %w", err)
+	}
+
+	// Index for fast top-N queries by message count
+	_, _ = d.Exec(`CREATE INDEX IF NOT EXISTS idx_channels_source_count ON channels(source_type, total_message_count DESC)`)
+
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
@@ -108,15 +109,15 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Get top contacts from message history
-	contacts, err := s.db.GetTopContactsBySourceType("whatsapp", 8)
+	// Get top contacts by ACTUAL message count (from channels.total_message_count)
+	channels, err := s.db.GetTopChannelsByMessageCount(source.SourceTypeWhatsApp, 8)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	// If no message history, fall back to discoverable channels (recent chats from WhatsApp)
-	if len(contacts) == 0 {
+	// If no stats available yet, fall back to discoverable channels (recent chats from WhatsApp)
+	if len(channels) == 0 {
 		discoverableChannels, err := s.waClient.GetDiscoverableChannels()
 		if err == nil && len(discoverableChannels) > 0 {
 			// Filter to only contacts (not groups) and limit to 8
@@ -152,18 +153,18 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	// Convert to response format
-	response := make([]TopContactResponse, len(contacts))
-	for i, c := range contacts {
+	// Convert to response format using accurate message counts
+	response := make([]TopContactResponse, len(channels))
+	for i, c := range channels {
 		response[i] = TopContactResponse{
 			Identifier:   c.Identifier,
 			Name:         c.Name,
-			MessageCount: c.MessageCount,
-			IsTracked:    c.IsTracked,
-			Type:         c.Type,
+			MessageCount: c.TotalMessageCount, // Accurate count from HistorySync
+			IsTracked:    c.Enabled,
+			Type:         string(c.Type),
 		}
-		if c.IsTracked {
-			response[i].ChannelID = &c.ChannelID
+		if c.Enabled {
+			response[i].ChannelID = &c.ID
 		}
 	}
 
@@ -405,7 +406,8 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGCalListCalendars(w http.ResponseWriter, r *http.Request) {
 	if s.gcalClient == nil || !s.gcalClient.IsAuthenticated() {
-		respondError(w, http.StatusServiceUnavailable, "Google Calendar not connected")
+		// Return empty array instead of error - allows UI to gracefully handle missing GCal
+		respondJSON(w, http.StatusOK, []interface{}{})
 		return
 	}
 

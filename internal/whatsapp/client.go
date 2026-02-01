@@ -9,6 +9,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
@@ -23,6 +24,11 @@ type Client struct {
 func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (*Client, error) {
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 	clientLog := waLog.Stdout("Client", "DEBUG", true)
+
+	// Set device properties so WhatsApp shows "Chrome (Linux)" instead of "Unknown"
+	store.DeviceProps.Os = stringPtr("Linux")
+	store.DeviceProps.PlatformType = store.DeviceProps.PlatformType.Enum()
+	store.DeviceProps.RequireFullSync = boolPtr(false)
 
 	container, err := sqlstore.New(context.Background(), "sqlite3", "file:"+dbPath+"?_foreign_keys=on", dbLog)
 	if err != nil {
@@ -201,4 +207,13 @@ func (c *Client) Reconnect(ctx context.Context, state *sse.State) {
 			return
 		}
 	}
+}
+
+// Helper functions for creating pointers
+func stringPtr(s string) *string {
+	return &s
+}
+
+func boolPtr(b bool) *bool {
+	return &b
 }

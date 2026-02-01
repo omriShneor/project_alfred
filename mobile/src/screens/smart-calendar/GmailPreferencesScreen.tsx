@@ -9,6 +9,8 @@ import {
   Switch,
   Alert,
   TextInput,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { LoadingSpinner, Card, Button, Modal, Select } from '../../components/common';
@@ -26,14 +28,42 @@ import {
 import type { EmailSource, EmailSourceType, TopContact } from '../../types/gmail';
 import type { Calendar } from '../../types/event';
 
+interface CustomEntry {
+  identifier: string;
+  name: string;
+}
+
 export function GmailPreferencesScreen() {
   const { data: gmailStatus } = useGmailStatus();
 
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
+  const [customEntries, setCustomEntries] = useState<CustomEntry[]>([]);
   const [customInput, setCustomInput] = useState('');
   const [customInputError, setCustomInputError] = useState<string | null>(null);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
+  const [isCustomInputFocused, setIsCustomInputFocused] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isAdding, setIsAdding] = useState(false);
+
+  // Track keyboard visibility
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setIsCustomInputFocused(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
   const googleConnected = gmailStatus?.connected ?? false;
@@ -95,6 +125,7 @@ export function GmailPreferencesScreen() {
     }
 
     setSelectedContacts(new Set());
+    setCustomEntries([]);
     setCustomInput('');
     setCustomInputError(null);
     setAddSourceModalVisible(true);
@@ -112,6 +143,15 @@ export function GmailPreferencesScreen() {
     });
   };
 
+  const removeCustomEntry = (identifier: string) => {
+    setCustomEntries((prev) => prev.filter((e) => e.identifier !== identifier));
+    setSelectedContacts((prev) => {
+      const newSet = new Set(prev);
+      newSet.delete(identifier);
+      return newSet;
+    });
+  };
+
   const validateCustomInput = (value: string): string | null => {
     if (!value.trim()) return null;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -122,56 +162,72 @@ export function GmailPreferencesScreen() {
     return 'Enter a valid email (user@domain.com) or domain (domain.com)';
   };
 
-  const handleAddCustom = async () => {
+  const handleAddCustomToList = () => {
     const error = validateCustomInput(customInput);
     if (error) {
       setCustomInputError(error);
       return;
     }
 
-    if (!selectedCalendarId) {
-      Alert.alert('Error', 'Please select a calendar');
+    const trimmedValue = customInput.trim();
+
+    // Check if already in custom entries
+    if (customEntries.some((e) => e.identifier === trimmedValue)) {
+      setCustomInputError('Already added');
       return;
     }
 
-    try {
-      await addCustomSource.mutateAsync({
-        value: customInput.trim(),
-        calendar_id: selectedCalendarId,
-      });
-      setCustomInput('');
-      setCustomInputError(null);
-      setAddSourceModalVisible(false);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to add source');
+    // Check if already in top contacts
+    if (topContacts?.some((c: TopContact) => c.email === trimmedValue)) {
+      setCustomInputError('Already in suggested contacts');
+      return;
     }
+
+    // Add to custom entries and select it
+    setCustomEntries((prev) => [...prev, { identifier: trimmedValue, name: trimmedValue }]);
+    setSelectedContacts((prev) => new Set(prev).add(trimmedValue));
+    setCustomInput('');
+    setCustomInputError(null);
+    Keyboard.dismiss();
   };
 
-  const handleAddSelectedContacts = async () => {
-    if (selectedContacts.size === 0) {
-      Alert.alert('Error', 'Please select at least one contact');
-      return;
-    }
-
+  const handleAddAllSelected = async () => {
     if (!selectedCalendarId) {
       Alert.alert('Error', 'Please select a calendar');
       return;
     }
 
+    setIsAdding(true);
     try {
+      // Add selected top contacts
       for (const email of selectedContacts) {
         const contact = topContacts?.find((c: TopContact) => c.email === email);
-        await createSource.mutateAsync({
-          type: 'sender',
-          identifier: email,
-          name: contact?.name || email,
+        if (contact && !contact.is_tracked) {
+          await createSource.mutateAsync({
+            type: 'sender',
+            identifier: email,
+            name: contact.name || email,
+            calendar_id: selectedCalendarId,
+          });
+        }
+      }
+
+      // Add custom entries
+      const customToAdd = customEntries.filter((e) => selectedContacts.has(e.identifier));
+      for (const entry of customToAdd) {
+        await addCustomSource.mutateAsync({
+          value: entry.identifier,
           calendar_id: selectedCalendarId,
         });
       }
+
       setSelectedContacts(new Set());
+      setCustomEntries([]);
       setAddSourceModalVisible(false);
     } catch (error: any) {
       Alert.alert('Error', error.message || 'Failed to add sources');
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -193,33 +249,76 @@ export function GmailPreferencesScreen() {
     }
   };
 
-  const renderContactItem = ({ item }: { item: TopContact }) => {
+  // Total selected count
+  const totalSelected = selectedContacts.size;
+
+  const renderContactItem = (item: TopContact, index: number) => {
     const selected = selectedContacts.has(item.email);
     return (
-      <TouchableOpacity
-        style={[styles.contactItem, selected && styles.contactItemSelected, item.is_tracked && styles.contactItemDisabled]}
-        onPress={() => !item.is_tracked && toggleContactSelection(item.email)}
-        disabled={item.is_tracked}
-      >
-        <View style={styles.contactInfo}>
-          <Text style={styles.contactName} numberOfLines={1}>
-            {item.name || item.email}
-          </Text>
-          {item.name && (
-            <Text style={styles.contactEmail} numberOfLines={1}>
-              {item.email}
+      <React.Fragment key={item.email}>
+        {index > 0 && <View style={styles.separator} />}
+        <TouchableOpacity
+          style={[styles.contactItem, selected && styles.contactItemSelected, item.is_tracked && styles.contactItemDisabled]}
+          onPress={() => !item.is_tracked && toggleContactSelection(item.email)}
+          disabled={item.is_tracked}
+        >
+          <View style={styles.contactInfo}>
+            <Text style={styles.contactName} numberOfLines={1}>
+              {item.name || item.email}
             </Text>
+            {item.name && (
+              <Text style={styles.contactEmail} numberOfLines={1}>
+                {item.email}
+              </Text>
+            )}
+            <Text style={styles.contactCount}>{item.email_count} emails</Text>
+          </View>
+          {item.is_tracked ? (
+            <Feather name="check-circle" size={20} color={colors.success} />
+          ) : selected ? (
+            <Feather name="check-square" size={20} color={colors.primary} />
+          ) : (
+            <Feather name="square" size={20} color={colors.textSecondary} />
           )}
-          <Text style={styles.contactCount}>{item.email_count} emails</Text>
-        </View>
-        {item.is_tracked ? (
-          <Feather name="check-circle" size={20} color={colors.success} />
-        ) : selected ? (
-          <Feather name="check-square" size={20} color={colors.primary} />
-        ) : (
-          <Feather name="square" size={20} color={colors.textSecondary} />
-        )}
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </React.Fragment>
+    );
+  };
+
+  const renderCustomEntry = (entry: CustomEntry, index: number) => {
+    const selected = selectedContacts.has(entry.identifier);
+    return (
+      <React.Fragment key={`custom-${entry.identifier}`}>
+        {index > 0 && <View style={styles.separator} />}
+        <TouchableOpacity
+          style={[styles.contactItem, selected && styles.contactItemSelected]}
+          onPress={() => toggleContactSelection(entry.identifier)}
+        >
+          <View style={styles.contactInfo}>
+            <View style={styles.customEntryHeader}>
+              <Text style={styles.contactName} numberOfLines={1}>
+                {entry.identifier}
+              </Text>
+              <View style={styles.customBadge}>
+                <Text style={styles.customBadgeText}>Custom</Text>
+              </View>
+            </View>
+          </View>
+          <View style={styles.customEntryActions}>
+            {selected ? (
+              <Feather name="check-square" size={20} color={colors.primary} />
+            ) : (
+              <Feather name="square" size={20} color={colors.textSecondary} />
+            )}
+            <TouchableOpacity
+              style={styles.removeButton}
+              onPress={() => removeCustomEntry(entry.identifier)}
+            >
+              <Feather name="x" size={18} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </React.Fragment>
     );
   };
 
@@ -254,10 +353,6 @@ export function GmailPreferencesScreen() {
     label: c.summary + (c.primary ? ' (Primary)' : ''),
     value: c.id,
   })) || [];
-
-  // Filter out already tracked contacts
-  const availableContacts = topContacts?.filter((c) => !c.is_tracked) || [];
-  const hasSelectableContacts = availableContacts.length > 0;
 
   return (
     <View style={styles.screen}>
@@ -299,7 +394,25 @@ export function GmailPreferencesScreen() {
         visible={addSourceModalVisible}
         onClose={() => setAddSourceModalVisible(false)}
         title="Add Email Source"
-        scrollable={false}
+        footer={
+          isCustomInputFocused && keyboardHeight > 0 ? (
+            <View style={styles.floatingFooter}>
+              <Button
+                title="Add to List"
+                onPress={handleAddCustomToList}
+                disabled={!customInput.trim()}
+              />
+            </View>
+          ) : totalSelected > 0 ? (
+            <View style={styles.floatingFooter}>
+              <Button
+                title={`Add ${totalSelected} Source${totalSelected !== 1 ? 's' : ''}`}
+                onPress={handleAddAllSelected}
+                loading={isAdding || createSource.isPending || addCustomSource.isPending}
+              />
+            </View>
+          ) : undefined
+        }
       >
         <View style={styles.calendarSection}>
           <Text style={styles.calendarLabel}>Target Calendar</Text>
@@ -311,19 +424,25 @@ export function GmailPreferencesScreen() {
           />
         </View>
 
+        {/* Custom Entries Section (shown at top if any) */}
+        {customEntries.length > 0 && (
+          <View style={styles.customEntriesSection}>
+            <Text style={styles.sectionLabel}>Custom Entries</Text>
+            <View style={styles.contactList}>
+              {customEntries.map((entry, index) => renderCustomEntry(entry, index))}
+            </View>
+          </View>
+        )}
+
         {/* Suggested Contacts Section */}
         <View style={styles.suggestedSection}>
           <Text style={styles.sectionLabel}>Suggested Contacts</Text>
           {contactsLoading ? (
             <LoadingSpinner />
           ) : topContacts && topContacts.length > 0 ? (
-            <FlatList
-              data={topContacts}
-              keyExtractor={(item) => item.email}
-              renderItem={renderContactItem}
-              style={styles.contactList}
-              ItemSeparatorComponent={() => <View style={styles.separator} />}
-            />
+            <View style={styles.contactList}>
+              {topContacts.map((item, index) => renderContactItem(item, index))}
+            </View>
           ) : (
             <View style={styles.emptyContacts}>
               <Text style={styles.emptyContactsText}>No contacts found</Text>
@@ -332,49 +451,43 @@ export function GmailPreferencesScreen() {
               </Text>
             </View>
           )}
-
-          {hasSelectableContacts && selectedContacts.size > 0 && (
-            <Button
-              title={`Add ${selectedContacts.size} Contact${selectedContacts.size !== 1 ? 's' : ''}`}
-              onPress={handleAddSelectedContacts}
-              loading={createSource.isPending}
-              style={styles.addContactsButton}
-            />
-          )}
         </View>
 
         {/* Custom Input Section */}
         <View style={styles.customSection}>
-          <Text style={styles.sectionLabel}>Or add a custom email/domain</Text>
-          <TextInput
-            style={[styles.customInput, customInputError && styles.customInputError]}
-            value={customInput}
-            onChangeText={(text) => {
-              setCustomInput(text);
-              if (customInputError) setCustomInputError(null);
-            }}
-            placeholder="e.g. boss@work.com or acme.com"
-            placeholderTextColor={colors.textSecondary}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            onBlur={() => {
-              if (customInput.trim()) {
-                setCustomInputError(validateCustomInput(customInput));
-              }
-            }}
-          />
+          <Text style={styles.sectionLabel}>Add manually</Text>
+          <View style={styles.customInputRow}>
+            <TextInput
+              style={[styles.customInput, customInputError && styles.customInputError]}
+              value={customInput}
+              onChangeText={(text) => {
+                setCustomInput(text);
+                if (customInputError) setCustomInputError(null);
+              }}
+              placeholder="e.g. boss@work.com or acme.com"
+              placeholderTextColor={colors.textSecondary}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              onFocus={() => setIsCustomInputFocused(true)}
+              onBlur={() => {
+                if (customInput.trim()) {
+                  setCustomInputError(validateCustomInput(customInput));
+                }
+              }}
+            />
+            {!isCustomInputFocused && customInput.trim() && (
+              <TouchableOpacity
+                style={styles.addToListButton}
+                onPress={handleAddCustomToList}
+              >
+                <Feather name="plus" size={20} color={colors.primary} />
+              </TouchableOpacity>
+            )}
+          </View>
           {customInputError && (
             <Text style={styles.errorText}>{customInputError}</Text>
           )}
-          <Button
-            title="Add Custom"
-            variant="outline"
-            onPress={handleAddCustom}
-            loading={addCustomSource.isPending}
-            disabled={!customInput.trim()}
-            style={styles.addCustomButton}
-          />
         </View>
       </Modal>
     </View>
@@ -498,11 +611,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: 12,
   },
+  customEntriesSection: {
+    marginBottom: 16,
+  },
   suggestedSection: {
     marginBottom: 16,
   },
   contactList: {
-    maxHeight: 200,
+    // No maxHeight - let the Modal's ScrollView handle scrolling
   },
   contactItem: {
     flexDirection: 'row',
@@ -537,6 +653,31 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 2,
   },
+  customEntryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  customBadge: {
+    marginLeft: 8,
+    backgroundColor: colors.primary + '20',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  customBadgeText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.primary,
+    textTransform: 'uppercase',
+  },
+  customEntryActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  removeButton: {
+    marginLeft: 12,
+    padding: 4,
+  },
   emptyContacts: {
     alignItems: 'center',
     paddingVertical: 16,
@@ -550,15 +691,17 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
-  addContactsButton: {
-    marginTop: 12,
-  },
   customSection: {
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: 16,
   },
+  customInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   customInput: {
+    flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 8,
@@ -571,12 +714,21 @@ const styles = StyleSheet.create({
   customInputError: {
     borderColor: colors.danger,
   },
+  addToListButton: {
+    marginLeft: 8,
+    padding: 10,
+    backgroundColor: colors.primary + '15',
+    borderRadius: 8,
+  },
   errorText: {
     fontSize: 12,
     color: colors.danger,
     marginTop: 4,
   },
-  addCustomButton: {
-    marginTop: 12,
+  floatingFooter: {
+    backgroundColor: colors.card,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
 });

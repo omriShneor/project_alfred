@@ -432,6 +432,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: 16,
+    paddingBottom: 16,
   },
   customInputRow: {
     flexDirection: 'row',

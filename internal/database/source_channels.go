@@ -186,7 +186,7 @@ func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit in
 		SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled,
 		       total_message_count, last_message_at, created_at
 		FROM channels
-		WHERE source_type = ? AND total_message_count > 0
+		WHERE source_type = ? AND total_message_count > 1
 		ORDER BY total_message_count DESC
 		LIMIT ?
 	`, sourceType, limit)

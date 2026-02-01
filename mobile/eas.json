@@ -1,7 +1,6 @@
 {
   "cli": {
-    "version": ">= 5.0.0",
-    "packageManager": "npm"
+    "version": ">= 5.0.0"
   },
   "build": {
     "development": {

@@ -176,7 +176,6 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		PhoneNumber string `json:"phone_number"`
-		CalendarID  string `json:"calendar_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -187,10 +186,6 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 	if req.PhoneNumber == "" {
 		respondError(w, http.StatusBadRequest, "phone_number is required")
 		return
-	}
-
-	if req.CalendarID == "" {
-		req.CalendarID = "primary"
 	}
 
 	// Normalize phone number - remove spaces, dashes, parentheses
@@ -228,13 +223,6 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Update calendar ID
-	if err := s.db.UpdateChannel(channel.ID, channel.Name, req.CalendarID, true); err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	channel.CalendarID = req.CalendarID
 	respondJSON(w, http.StatusCreated, channel)
 }
 
@@ -266,7 +254,6 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 		Type       string `json:"type"`
 		Identifier string `json:"identifier"`
 		Name       string `json:"name"`
-		CalendarID string `json:"calendar_id"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -287,18 +274,13 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	// Check if channel already exists (may have been created by history sync)
 	existingChannel, err := s.db.GetChannelByIdentifier(req.Identifier)
 	if err == nil && existingChannel != nil {
-		// Channel exists - update it (enable it, update name and calendar_id)
-		calendarID := req.CalendarID
-		if calendarID == "" {
-			calendarID = "primary"
-		}
-		if err := s.db.UpdateChannel(existingChannel.ID, req.Name, calendarID, true); err != nil {
+		// Channel exists - update it (enable it, update name)
+		if err := s.db.UpdateChannel(existingChannel.ID, req.Name, true); err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to enable channel: %v", err))
 			return
 		}
 		// Return updated channel
 		existingChannel.Name = req.Name
-		existingChannel.CalendarID = calendarID
 		existingChannel.Enabled = true
 		respondJSON(w, http.StatusOK, existingChannel)
 		return
@@ -309,16 +291,6 @@ func (s *Server) handleCreateChannel(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create channel: %v", err))
 		return
-	}
-
-	// Update calendar_id if provided
-	if req.CalendarID != "" {
-		if err := s.db.UpdateChannel(channel.ID, channel.Name, req.CalendarID, true); err != nil {
-			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update channel: %v", err))
-			return
-		}
-		channel.CalendarID = req.CalendarID
-		channel.Enabled = true
 	}
 
 	respondJSON(w, http.StatusCreated, channel)
@@ -332,9 +304,8 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name       string `json:"name"`
-		CalendarID string `json:"calendar_id"`
-		Enabled    bool   `json:"enabled"`
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -342,7 +313,7 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.UpdateChannel(id, req.Name, req.CalendarID, req.Enabled); err != nil {
+	if err := s.db.UpdateChannel(id, req.Name, req.Enabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -858,13 +829,30 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if Google Calendar is connected
-	if s.gcalClient == nil || !s.gcalClient.IsAuthenticated() {
-		respondError(w, http.StatusServiceUnavailable, "Google Calendar not connected")
+	// Check if sync is enabled and Google Calendar is connected
+	gcalSettings, _ := s.db.GetGCalSettings()
+	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && s.gcalClient != nil && s.gcalClient.IsAuthenticated()
+
+	// If not syncing to Google Calendar, just confirm the event locally
+	if !shouldSync {
+		var newStatus database.EventStatus
+		if event.ActionType == database.EventActionDelete {
+			newStatus = database.EventStatusDeleted
+		} else {
+			newStatus = database.EventStatusConfirmed
+		}
+
+		if err := s.db.UpdateEventStatus(id, newStatus); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to confirm event: %v", err))
+			return
+		}
+
+		updatedEvent, _ := s.db.GetEventByID(id)
+		respondJSON(w, http.StatusOK, updatedEvent)
 		return
 	}
 
-	// Execute the action based on event type
+	// Sync to Google Calendar
 	var googleEventID string
 	switch event.ActionType {
 	case database.EventActionCreate:
@@ -900,9 +888,13 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case database.EventActionUpdate:
+		// If no Google event ID, just confirm locally (event was created before sync was enabled)
 		if event.GoogleEventID == nil {
-			respondError(w, http.StatusBadRequest, "no Google event ID to update")
-			return
+			if err := s.db.UpdateEventStatus(id, database.EventStatusConfirmed); err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to confirm event: %v", err))
+				return
+			}
+			break
 		}
 
 		endTime := event.StartTime.Add(1 * 60 * 60 * 1000000000)
@@ -935,9 +927,13 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case database.EventActionDelete:
+		// If no Google event ID, just mark as deleted locally
 		if event.GoogleEventID == nil {
-			respondError(w, http.StatusBadRequest, "no Google event ID to delete")
-			return
+			if err := s.db.UpdateEventStatus(id, database.EventStatusDeleted); err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to delete event: %v", err))
+				return
+			}
+			break
 		}
 
 		err = s.gcalClient.DeleteEvent(event.CalendarID, *event.GoogleEventID)
@@ -1372,4 +1368,47 @@ func (s *Server) handleUpdatePushPrefs(w http.ResponseWriter, r *http.Request) {
 
 	prefs, _ := s.db.GetUserNotificationPrefs()
 	respondJSON(w, http.StatusOK, prefs)
+}
+
+// Google Calendar Settings API
+
+// handleGetGCalSettings returns the global Google Calendar settings
+func (s *Server) handleGetGCalSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := s.db.GetGCalSettings()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, settings)
+}
+
+// handleUpdateGCalSettings updates the global Google Calendar settings
+func (s *Server) handleUpdateGCalSettings(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		SyncEnabled          bool   `json:"sync_enabled"`
+		SelectedCalendarID   string `json:"selected_calendar_id"`
+		SelectedCalendarName string `json:"selected_calendar_name"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+
+	// Default to "primary" if no calendar selected
+	if req.SelectedCalendarID == "" {
+		req.SelectedCalendarID = "primary"
+	}
+	if req.SelectedCalendarName == "" {
+		req.SelectedCalendarName = "Primary"
+	}
+
+	if err := s.db.UpdateGCalSettings(req.SyncEnabled, req.SelectedCalendarID, req.SelectedCalendarName); err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	settings, _ := s.db.GetGCalSettings()
+	respondJSON(w, http.StatusOK, settings)
 }

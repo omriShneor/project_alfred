@@ -18,6 +18,8 @@ export {
   useGCalStatus,
   useGetOAuthURL,
   useExchangeOAuthCode,
+  useGCalSettings,
+  useUpdateGCalSettings,
 } from './useOnboardingStatus';
 export { usePushNotifications } from './usePushNotifications';
 export { useTodayEvents } from './useTodayEvents';

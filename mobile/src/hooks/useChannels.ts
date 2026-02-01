@@ -82,8 +82,7 @@ export function useAddWhatsAppCustomSource() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ phoneNumber, calendarId }: { phoneNumber: string; calendarId: string }) =>
-      addWhatsAppCustomSource(phoneNumber, calendarId),
+    mutationFn: (phoneNumber: string) => addWhatsAppCustomSource(phoneNumber),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
       queryClient.invalidateQueries({ queryKey: ['whatsappTopContacts'] });

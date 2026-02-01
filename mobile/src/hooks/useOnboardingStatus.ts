@@ -7,7 +7,10 @@ import {
   getGCalStatus,
   getOAuthURL,
   exchangeOAuthCode,
+  getGCalSettings,
+  updateGCalSettings,
 } from '../api';
+import type { GCalSettings, UpdateGCalSettingsRequest } from '../api/gcal';
 
 export function useOnboardingStatus() {
   return useQuery({
@@ -73,6 +76,26 @@ export function useExchangeOAuthCode() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });
       queryClient.invalidateQueries({ queryKey: ['onboardingStatus'] });
+    },
+  });
+}
+
+// Google Calendar Settings
+
+export function useGCalSettings() {
+  return useQuery<GCalSettings>({
+    queryKey: ['gcalSettings'],
+    queryFn: getGCalSettings,
+  });
+}
+
+export function useUpdateGCalSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (data: UpdateGCalSettingsRequest) => updateGCalSettings(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['gcalSettings'] });
     },
   });
 }

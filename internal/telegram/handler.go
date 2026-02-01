@@ -112,7 +112,6 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 	// Check if tracked
 	var sourceID int64
 	var tracked bool
-	var calendarID string
 
 	if h.debugAllMessages {
 		tracked = true
@@ -125,14 +124,6 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 			return
 		}
 		_ = channelType
-
-		// Get calendar ID from channel
-		if tracked {
-			channel, err := h.db.GetSourceChannelByID(sourceID)
-			if err == nil && channel != nil {
-				calendarID = channel.CalendarID
-			}
-		}
 	}
 
 	if !tracked {
@@ -152,7 +143,6 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 		SenderName: senderName,
 		Text:       text,
 		Timestamp:  time.Unix(int64(message.Date), 0),
-		CalendarID: calendarID,
 	}:
 	default:
 		fmt.Println("Telegram: message channel full, dropping message")
@@ -176,7 +166,6 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 	// Check if tracked
 	var sourceID int64
 	var tracked bool
-	var calendarID string
 
 	if h.debugAllMessages {
 		tracked = true
@@ -186,13 +175,6 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 		if err != nil {
 			fmt.Printf("Telegram: Error checking channel: %v\n", err)
 			return
-		}
-
-		if tracked {
-			channel, err := h.db.GetSourceChannelByID(sourceID)
-			if err == nil && channel != nil {
-				calendarID = channel.CalendarID
-			}
 		}
 	}
 
@@ -211,7 +193,6 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 		SenderName: senderName,
 		Text:       msg.Message,
 		Timestamp:  time.Unix(int64(msg.Date), 0),
-		CalendarID: calendarID,
 	}:
 	default:
 		fmt.Println("Telegram: message channel full, dropping message")

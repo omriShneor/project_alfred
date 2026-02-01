@@ -15,7 +15,6 @@ type SourceChannel struct {
 	Type              source.ChannelType `json:"type"`
 	Identifier        string             `json:"identifier"`
 	Name              string             `json:"name"`
-	CalendarID        string             `json:"calendar_id"`
 	Enabled           bool               `json:"enabled"`
 	TotalMessageCount int                `json:"total_message_count"` // Actual message count from HistorySync
 	LastMessageAt     *time.Time         `json:"last_message_at"`     // Timestamp of most recent message
@@ -30,21 +29,16 @@ func (sc *SourceChannel) ToSourceChannel() source.Channel {
 		Type:       sc.Type,
 		Identifier: sc.Identifier,
 		Name:       sc.Name,
-		CalendarID: sc.CalendarID,
 		Enabled:    sc.Enabled,
 		CreatedAt:  sc.CreatedAt,
 	}
 }
 
 // CreateSourceChannel creates a channel for any source type
-func (d *DB) CreateSourceChannel(sourceType source.SourceType, channelType source.ChannelType, identifier, name, calendarID string) (*SourceChannel, error) {
-	if calendarID == "" {
-		calendarID = "primary"
-	}
-
+func (d *DB) CreateSourceChannel(sourceType source.SourceType, channelType source.ChannelType, identifier, name string) (*SourceChannel, error) {
 	result, err := d.Exec(
-		`INSERT INTO channels (source_type, type, identifier, name, calendar_id) VALUES (?, ?, ?, ?, ?)`,
-		sourceType, channelType, identifier, name, calendarID,
+		`INSERT INTO channels (source_type, type, identifier, name) VALUES (?, ?, ?, ?)`,
+		sourceType, channelType, identifier, name,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create source channel: %w", err)
@@ -61,7 +55,7 @@ func (d *DB) CreateSourceChannel(sourceType source.SourceType, channelType sourc
 // GetSourceChannelByID retrieves a channel by ID
 func (d *DB) GetSourceChannelByID(id int64) (*SourceChannel, error) {
 	row := d.QueryRow(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE id = ?`,
 		id,
 	)
@@ -71,7 +65,7 @@ func (d *DB) GetSourceChannelByID(id int64) (*SourceChannel, error) {
 // GetSourceChannelByIdentifier retrieves a channel by source type and identifier
 func (d *DB) GetSourceChannelByIdentifier(sourceType source.SourceType, identifier string) (*SourceChannel, error) {
 	row := d.QueryRow(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE source_type = ? AND identifier = ?`,
 		sourceType, identifier,
 	)
@@ -81,7 +75,7 @@ func (d *DB) GetSourceChannelByIdentifier(sourceType source.SourceType, identifi
 // ListSourceChannels lists all channels for a given source type
 func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE source_type = ? ORDER BY created_at DESC`,
 		sourceType,
 	)
@@ -105,7 +99,7 @@ func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel,
 // ListEnabledSourceChannels lists all enabled channels for a source type
 func (d *DB) ListEnabledSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE source_type = ? AND enabled = 1 ORDER BY created_at DESC`,
 		sourceType,
 	)
@@ -127,10 +121,10 @@ func (d *DB) ListEnabledSourceChannels(sourceType source.SourceType) ([]*SourceC
 }
 
 // UpdateSourceChannel updates a channel's properties
-func (d *DB) UpdateSourceChannel(id int64, name, calendarID string, enabled bool) error {
+func (d *DB) UpdateSourceChannel(id int64, name string, enabled bool) error {
 	_, err := d.Exec(
-		`UPDATE channels SET name = ?, calendar_id = ?, enabled = ? WHERE id = ?`,
-		name, calendarID, enabled, id,
+		`UPDATE channels SET name = ?, enabled = ? WHERE id = ?`,
+		name, enabled, id,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update source channel: %w", err)
@@ -183,7 +177,7 @@ func (d *DB) UpdateChannelStats(id int64, totalMessageCount int, lastMessageAt *
 // This uses total_message_count which is populated during HistorySync with accurate counts
 func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit int) ([]*SourceChannel, error) {
 	rows, err := d.Query(`
-		SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, calendar_id, enabled,
+		SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled,
 		       total_message_count, last_message_at, created_at
 		FROM channels
 		WHERE source_type = ? AND total_message_count > 1
@@ -200,7 +194,7 @@ func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit in
 		var c SourceChannel
 		var lastMsgAt sql.NullTime
 		if err := rows.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name,
-			&c.CalendarID, &c.Enabled, &c.TotalMessageCount, &lastMsgAt, &c.CreatedAt); err != nil {
+			&c.Enabled, &c.TotalMessageCount, &lastMsgAt, &c.CreatedAt); err != nil {
 			continue
 		}
 		if lastMsgAt.Valid {
@@ -214,7 +208,7 @@ func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit in
 
 func scanSourceChannel(row *sql.Row) (*SourceChannel, error) {
 	var c SourceChannel
-	err := row.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.CalendarID, &c.Enabled, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -226,7 +220,7 @@ func scanSourceChannel(row *sql.Row) (*SourceChannel, error) {
 
 func scanSourceChannelRows(rows *sql.Rows) (*SourceChannel, error) {
 	var c SourceChannel
-	err := rows.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.CalendarID, &c.Enabled, &c.CreatedAt)
+	err := rows.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan source channel: %w", err)
 	}

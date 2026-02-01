@@ -7,7 +7,6 @@ export interface Channel {
   type: ChannelType;
   identifier: string;
   name: string;
-  calendar_id: string;
   enabled: boolean;
   created_at: string;
 }
@@ -24,12 +23,10 @@ export interface CreateChannelRequest {
   type: ChannelType;
   identifier: string;
   name: string;
-  calendar_id: string;
 }
 
 export interface UpdateChannelRequest {
   name?: string;
-  calendar_id?: string;
   enabled?: boolean;
 }
 
@@ -46,5 +43,4 @@ export interface SourceTopContact {
 // Request to add a custom source (phone number for WhatsApp, username for Telegram)
 export interface AddCustomSourceRequest {
   value: string; // phone_number for WhatsApp, username for Telegram
-  calendar_id: string;
 }

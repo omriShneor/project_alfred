@@ -15,7 +15,6 @@ export interface EmailSource {
   identifier: string;
   name: string;
   enabled: boolean;
-  calendar_id: string;
   created_at: string;
   updated_at: string;
 }
@@ -24,12 +23,10 @@ export interface CreateEmailSourceRequest {
   type: EmailSourceType;
   identifier: string;
   name: string;
-  calendar_id: string;
 }
 
 export interface UpdateEmailSourceRequest {
   enabled?: boolean;
-  calendar_id?: string;
 }
 
 export interface TopContact {
@@ -42,5 +39,4 @@ export interface TopContact {
 
 export interface AddCustomSourceRequest {
   value: string;
-  calendar_id: string;
 }

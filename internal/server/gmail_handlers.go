@@ -85,7 +85,6 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 		Type       string `json:"type"`       // "category", "sender", "domain"
 		Identifier string `json:"identifier"` // e.g., "CATEGORY_PRIMARY", "user@example.com", "example.com"
 		Name       string `json:"name"`       // Display name
-		CalendarID string `json:"calendar_id,omitempty"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -120,12 +119,6 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update calendar ID if provided
-	if req.CalendarID != "" {
-		s.db.UpdateEmailSource(source.ID, source.Name, req.CalendarID, source.Enabled)
-		source, _ = s.db.GetEmailSourceByID(source.ID)
-	}
-
 	respondJSON(w, http.StatusCreated, source)
 }
 
@@ -137,9 +130,8 @@ func (s *Server) handleUpdateEmailSource(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req struct {
-		Name       string `json:"name"`
-		CalendarID string `json:"calendar_id"`
-		Enabled    bool   `json:"enabled"`
+		Name    string `json:"name"`
+		Enabled bool   `json:"enabled"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -147,7 +139,7 @@ func (s *Server) handleUpdateEmailSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.db.UpdateEmailSource(id, req.Name, req.CalendarID, req.Enabled); err != nil {
+	if err := s.db.UpdateEmailSource(id, req.Name, req.Enabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -213,8 +205,7 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Value      string `json:"value"`       // Email address or domain
-		CalendarID string `json:"calendar_id"` // Target calendar
+		Value string `json:"value"` // Email address or domain
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -259,14 +250,6 @@ func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	// Update calendar ID if provided
-	calendarID := req.CalendarID
-	if calendarID == "" {
-		calendarID = "primary"
-	}
-	s.db.UpdateEmailSource(source.ID, source.Name, calendarID, source.Enabled)
-	source, _ = s.db.GetEmailSourceByID(source.ID)
 
 	respondJSON(w, http.StatusCreated, source)
 }

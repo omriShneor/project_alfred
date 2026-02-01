@@ -175,7 +175,6 @@ func (w *Worker) poll() {
 			Identifier: s.Identifier,
 			Name:       s.Name,
 			Enabled:    s.Enabled,
-			CalendarID: s.CalendarID,
 			CreatedAt:  s.CreatedAt,
 			UpdatedAt:  s.UpdatedAt,
 		}

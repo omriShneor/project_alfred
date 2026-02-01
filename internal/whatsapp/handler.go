@@ -115,7 +115,6 @@ func (h *Handler) handleMessage(msg *events.Message) {
 	var sourceID int64
 	var tracked bool
 	var err error
-	var calendarID string
 
 	if h.debugAllMessages {
 		tracked = true
@@ -128,14 +127,6 @@ func (h *Handler) handleMessage(msg *events.Message) {
 			return
 		}
 		_ = channelType // channelType used for logging if needed
-
-		// Get calendar ID from channel
-		if tracked {
-			channel, err := h.db.GetSourceChannelByID(sourceID)
-			if err == nil && channel != nil {
-				calendarID = channel.CalendarID
-			}
-		}
 	}
 
 	if !tracked {
@@ -155,7 +146,6 @@ func (h *Handler) handleMessage(msg *events.Message) {
 		SenderName: sender.User,
 		Text:       text,
 		Timestamp:  msg.Info.Timestamp,
-		CalendarID: calendarID,
 	}:
 	default:
 		fmt.Println("Warning: message channel full, dropping message")
@@ -377,14 +367,13 @@ func (h *Handler) getOrCreateHistoryChannel(identifier string, jid types.JID) (*
 		source.ChannelTypeSender,
 		identifier,
 		name,
-		"primary", // default calendar
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	// Disable the channel - it's just for discovery, not event tracking
-	if err := h.db.UpdateSourceChannel(channel.ID, channel.Name, channel.CalendarID, false); err != nil {
+	if err := h.db.UpdateSourceChannel(channel.ID, channel.Name, false); err != nil {
 		fmt.Printf("HistorySync: Warning - failed to disable new channel: %v\n", err)
 	}
 
@@ -433,7 +422,7 @@ func (h *Handler) refreshTopContactNames() {
 				name = contact.PushName
 			}
 			if name != "" && name != channel.Identifier {
-				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.CalendarID, channel.Enabled); err != nil {
+				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.Enabled); err != nil {
 					continue
 				}
 				updated++
@@ -486,7 +475,7 @@ func (h *Handler) refreshAllContactNames() {
 				name = contact.PushName
 			}
 			if name != "" && name != channel.Identifier {
-				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.CalendarID, channel.Enabled); err != nil {
+				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.Enabled); err != nil {
 					continue
 				}
 				updated++

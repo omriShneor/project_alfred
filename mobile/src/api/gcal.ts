@@ -38,4 +38,29 @@ export async function disconnectGCal(): Promise<void> {
   await apiClient.post('/api/gcal/disconnect');
 }
 
+// Global Google Calendar Settings
+
+export interface GCalSettings {
+  id: number;
+  sync_enabled: boolean;
+  selected_calendar_id: string;
+  selected_calendar_name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateGCalSettingsRequest {
+  sync_enabled: boolean;
+  selected_calendar_id: string;
+  selected_calendar_name: string;
+}
+
+export async function getGCalSettings(): Promise<GCalSettings> {
+  return apiClient.get<GCalSettings>('/api/gcal/settings');
+}
+
+export async function updateGCalSettings(data: UpdateGCalSettingsRequest): Promise<GCalSettings> {
+  return apiClient.put<GCalSettings>('/api/gcal/settings', data);
+}
+
 // Note: listCalendars is exported from events.ts to avoid duplication

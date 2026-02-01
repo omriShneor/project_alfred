@@ -21,21 +21,16 @@ import {
   useTelegramTopContacts,
   useAddTelegramCustomSource,
   useTelegramStatus,
-  useCalendars,
-  useGCalStatus,
 } from '../../hooks';
 import type { Channel, SourceTopContact, ChannelType } from '../../types/channel';
 
 export function TelegramPreferencesScreen() {
   const { data: telegramStatus } = useTelegramStatus();
-  const { data: gcalStatus } = useGCalStatus();
   const isConnected = telegramStatus?.connected ?? false;
-  const gcalConnected = gcalStatus?.connected ?? false;
 
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
 
   const { data: channels, isLoading: channelsLoading } = useTelegramChannels();
-  const { data: calendars } = useCalendars(gcalConnected);
   const { data: topContacts, isLoading: contactsLoading } = useTelegramTopContacts({
     enabled: isConnected && addSourceModalVisible,
   });
@@ -51,7 +46,6 @@ export function TelegramPreferencesScreen() {
         id: channel.id,
         data: {
           name: channel.name,
-          calendar_id: channel.calendar_id,
           enabled: !channel.enabled,
         },
       });
@@ -101,22 +95,18 @@ export function TelegramPreferencesScreen() {
     return 'Enter a valid Telegram username (e.g., @username)';
   };
 
-  const handleAddContacts = async (contacts: SourceTopContact[], calendarId: string) => {
+  const handleAddContacts = async (contacts: SourceTopContact[]) => {
     for (const contact of contacts) {
       await createChannel.mutateAsync({
         type: contact.type as 'contact' | 'group' | 'channel',
         identifier: contact.identifier,
         name: contact.name,
-        calendar_id: calendarId,
       });
     }
   };
 
-  const handleAddCustom = async (value: string, calendarId: string) => {
-    await addCustomSource.mutateAsync({
-      username: value.trim(),
-      calendarId,
-    });
+  const handleAddCustom = async (value: string) => {
+    await addCustomSource.mutateAsync(value.trim());
   };
 
   const getTypeLabel = (type: ChannelType) => {
@@ -193,7 +183,6 @@ export function TelegramPreferencesScreen() {
         title="Add Telegram Source"
         topContacts={topContacts}
         contactsLoading={contactsLoading}
-        calendars={calendars}
         customInputPlaceholder="e.g., @username"
         customInputKeyboardType="default"
         validateCustomInput={validateTelegramUsername}

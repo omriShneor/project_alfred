@@ -180,10 +180,9 @@ func (s *Server) handleListTelegramChannels(w http.ResponseWriter, r *http.Reque
 
 // TelegramCreateChannelRequest represents a request to create a Telegram channel
 type TelegramCreateChannelRequest struct {
-	Type       string `json:"type"`        // "contact", "group", "channel"
+	Type       string `json:"type"` // "contact", "group", "channel"
 	Identifier string `json:"identifier"`
 	Name       string `json:"name"`
-	CalendarID string `json:"calendar_id"`
 }
 
 // handleCreateTelegramChannel adds a Telegram channel to track
@@ -206,7 +205,7 @@ func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Requ
 	}
 	channelType := source.ChannelTypeSender
 
-	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, channelType, req.Identifier, req.Name, req.CalendarID)
+	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, channelType, req.Identifier, req.Name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
 		return
@@ -217,9 +216,8 @@ func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Requ
 
 // TelegramUpdateChannelRequest represents a request to update a Telegram channel
 type TelegramUpdateChannelRequest struct {
-	Name       string `json:"name"`
-	CalendarID string `json:"calendar_id"`
-	Enabled    bool   `json:"enabled"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
 }
 
 // handleUpdateTelegramChannel updates a tracked Telegram channel
@@ -236,7 +234,7 @@ func (s *Server) handleUpdateTelegramChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.db.UpdateSourceChannel(id, req.Name, req.CalendarID, req.Enabled); err != nil {
+	if err := s.db.UpdateSourceChannel(id, req.Name, req.Enabled); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update channel: %v", err))
 		return
 	}
@@ -345,8 +343,7 @@ func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Reques
 
 // TelegramCustomSourceRequest represents a request to add a custom Telegram source
 type TelegramCustomSourceRequest struct {
-	Username   string `json:"username"`
-	CalendarID string `json:"calendar_id"`
+	Username string `json:"username"`
 }
 
 // handleTelegramCustomSource creates a Telegram channel from a username
@@ -365,10 +362,6 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 	if req.Username == "" {
 		respondError(w, http.StatusBadRequest, "username is required")
 		return
-	}
-
-	if req.CalendarID == "" {
-		req.CalendarID = "primary"
 	}
 
 	// Normalize username - remove @ prefix if present
@@ -398,7 +391,7 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Create the channel as a contact type
-	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, identifier, "@"+username, req.CalendarID)
+	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, identifier, "@"+username)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
 		return

@@ -39,9 +39,8 @@ export async function getWhatsAppTopContacts(): Promise<SourceTopContact[]> {
   return response.contacts || [];
 }
 
-export async function addWhatsAppCustomSource(phoneNumber: string, calendarId: string): Promise<Channel> {
+export async function addWhatsAppCustomSource(phoneNumber: string): Promise<Channel> {
   return apiClient.post<Channel>('/api/whatsapp/sources/custom', {
     phone_number: phoneNumber,
-    calendar_id: calendarId,
   });
 }

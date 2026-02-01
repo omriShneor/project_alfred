@@ -33,7 +33,6 @@ type Message struct {
 	Text       string
 	Subject    string // For emails
 	Timestamp  time.Time
-	CalendarID string // Target calendar for events
 }
 
 // Channel represents a tracked source (contact, group, email sender)
@@ -43,7 +42,6 @@ type Channel struct {
 	Type       ChannelType
 	Identifier string
 	Name       string
-	CalendarID string
 	Enabled    bool
 	CreatedAt  time.Time
 }

@@ -21,7 +21,6 @@ import {
   useWhatsAppTopContacts,
   useAddWhatsAppCustomSource,
   useWhatsAppStatus,
-  useCalendars,
 } from '../../hooks';
 import type { Channel, SourceTopContact, ChannelType } from '../../types/channel';
 
@@ -32,7 +31,6 @@ export function WhatsAppPreferencesScreen() {
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
 
   const { data: channels, isLoading: channelsLoading } = useChannels();
-  const { data: calendars } = useCalendars(isConnected);
   const { data: topContacts, isLoading: contactsLoading } = useWhatsAppTopContacts({
     enabled: isConnected && addSourceModalVisible,
   });
@@ -94,22 +92,18 @@ export function WhatsAppPreferencesScreen() {
     return 'Enter a valid phone number (e.g., +1234567890)';
   };
 
-  const handleAddContacts = async (contacts: SourceTopContact[], calendarId: string) => {
+  const handleAddContacts = async (contacts: SourceTopContact[]) => {
     for (const contact of contacts) {
       await createChannel.mutateAsync({
         type: contact.type as ChannelType,
         identifier: contact.identifier,
         name: contact.name,
-        calendar_id: calendarId,
       });
     }
   };
 
-  const handleAddCustom = async (value: string, calendarId: string) => {
-    await addCustomSource.mutateAsync({
-      phoneNumber: value.trim(),
-      calendarId,
-    });
+  const handleAddCustom = async (value: string) => {
+    await addCustomSource.mutateAsync(value.trim());
   };
 
   const getTypeLabel = (type: ChannelType) => {
@@ -196,7 +190,6 @@ export function WhatsAppPreferencesScreen() {
         title="Add WhatsApp Source"
         topContacts={topContacts}
         contactsLoading={contactsLoading}
-        calendars={calendars}
         customInputPlaceholder="e.g., +1234567890"
         customInputKeyboardType="phone-pad"
         validateCustomInput={validatePhoneNumber}

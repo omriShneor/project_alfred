@@ -11,6 +11,7 @@ import { colors } from '../theme/colors';
 import {
   useWhatsAppStatus,
   useGCalStatus,
+  useGCalSettings,
   useDisconnectWhatsApp,
   useGetOAuthURL,
   useGeneratePairingCode,
@@ -59,6 +60,7 @@ export function PreferencesScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { data: waStatus, isLoading: waLoading, refetch: refetchWaStatus } = useWhatsAppStatus();
   const { data: gcalStatus, isLoading: gcalLoading, refetch: refetchGcalStatus } = useGCalStatus();
+  const { data: gcalSettings } = useGCalSettings();
   const disconnectWhatsApp = useDisconnectWhatsApp();
   const getOAuthURL = useGetOAuthURL();
   const generatePairingCode = useGeneratePairingCode();
@@ -355,6 +357,18 @@ export function PreferencesScreen() {
             icon="mail-outline"
             connected={gmailConnected}
             onPress={() => navigation.navigate('GmailPreferences')}
+          />
+        )}
+
+        {(whatsappConnected || telegramConnected || gmailConnected) && (
+          <PreferenceCard
+            title="Google Calendar"
+            description={gcalSettings?.sync_enabled
+              ? `Syncing to ${gcalSettings.selected_calendar_name}`
+              : "Events stored locally only"}
+            icon="calendar-outline"
+            connected={gcalSettings?.sync_enabled ?? false}
+            onPress={() => navigation.navigate('GoogleCalendarPreferences')}
           />
         )}
 

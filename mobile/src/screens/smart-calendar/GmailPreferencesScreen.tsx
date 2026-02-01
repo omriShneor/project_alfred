@@ -13,7 +13,7 @@ import {
   Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { LoadingSpinner, Card, Button, Modal, Select } from '../../components/common';
+import { LoadingSpinner, Card, Button, Modal } from '../../components/common';
 import { colors } from '../../theme/colors';
 import {
   useGmailStatus,
@@ -23,10 +23,8 @@ import {
   useDeleteEmailSource,
   useTopContacts,
   useAddCustomSource,
-  useCalendars,
 } from '../../hooks';
 import type { EmailSource, EmailSourceType, TopContact } from '../../types/gmail';
-import type { Calendar } from '../../types/event';
 
 interface CustomEntry {
   identifier: string;
@@ -41,7 +39,6 @@ export function GmailPreferencesScreen() {
   const [customEntries, setCustomEntries] = useState<CustomEntry[]>([]);
   const [customInput, setCustomInput] = useState('');
   const [customInputError, setCustomInputError] = useState<string | null>(null);
-  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [isCustomInputFocused, setIsCustomInputFocused] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isAdding, setIsAdding] = useState(false);
@@ -66,21 +63,12 @@ export function GmailPreferencesScreen() {
   }, []);
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
-  const googleConnected = gmailStatus?.connected ?? false;
-  const { data: calendars } = useCalendars(googleConnected);
   const { data: topContacts, isLoading: contactsLoading } = useTopContacts();
 
   const createSource = useCreateEmailSource();
   const updateSource = useUpdateEmailSource();
   const deleteSource = useDeleteEmailSource();
   const addCustomSource = useAddCustomSource();
-
-  useEffect(() => {
-    if (calendars && calendars.length > 0 && !selectedCalendarId) {
-      const primaryCalendar = calendars.find((c: Calendar) => c.primary);
-      setSelectedCalendarId(primaryCalendar?.id || calendars[0].id);
-    }
-  }, [calendars, selectedCalendarId]);
 
   const handleToggleSource = async (source: EmailSource) => {
     try {
@@ -192,11 +180,6 @@ export function GmailPreferencesScreen() {
   };
 
   const handleAddAllSelected = async () => {
-    if (!selectedCalendarId) {
-      Alert.alert('Error', 'Please select a calendar');
-      return;
-    }
-
     setIsAdding(true);
     try {
       // Add selected top contacts
@@ -207,7 +190,6 @@ export function GmailPreferencesScreen() {
             type: 'sender',
             identifier: email,
             name: contact.name || email,
-            calendar_id: selectedCalendarId,
           });
         }
       }
@@ -217,7 +199,6 @@ export function GmailPreferencesScreen() {
       for (const entry of customToAdd) {
         await addCustomSource.mutateAsync({
           value: entry.identifier,
-          calendar_id: selectedCalendarId,
         });
       }
 
@@ -349,11 +330,6 @@ export function GmailPreferencesScreen() {
     </View>
   );
 
-  const calendarOptions = calendars?.map((c: Calendar) => ({
-    label: c.summary + (c.primary ? ' (Primary)' : ''),
-    value: c.id,
-  })) || [];
-
   return (
     <View style={styles.screen}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -414,16 +390,6 @@ export function GmailPreferencesScreen() {
           ) : undefined
         }
       >
-        <View style={styles.calendarSection}>
-          <Text style={styles.calendarLabel}>Target Calendar</Text>
-          <Select
-            options={calendarOptions}
-            value={selectedCalendarId}
-            onChange={setSelectedCalendarId}
-            placeholder="Select calendar"
-          />
-        </View>
-
         {/* Custom Entries Section (shown at top if any) */}
         {customEntries.length > 0 && (
           <View style={styles.customEntriesSection}>
@@ -595,15 +561,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
-  },
-  calendarSection: {
-    marginBottom: 16,
-  },
-  calendarLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.text,
-    marginBottom: 8,
   },
   sectionLabel: {
     fontSize: 14,

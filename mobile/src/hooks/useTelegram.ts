@@ -146,8 +146,7 @@ export function useTelegramTopContacts(options?: { enabled?: boolean }) {
 export function useAddTelegramCustomSource() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ username, calendarId }: { username: string; calendarId: string }) =>
-      addTelegramCustomSource(username, calendarId),
+    mutationFn: (username: string) => addTelegramCustomSource(username),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TELEGRAM_CHANNELS_KEY });
       queryClient.invalidateQueries({ queryKey: TELEGRAM_TOP_CONTACTS_KEY });

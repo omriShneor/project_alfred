@@ -102,11 +102,8 @@ func (p *EmailProcessor) createPendingEventFromEmail(source *gmail.EmailSource, 
 		endTime = &et
 	}
 
-	// Determine calendar ID from source
-	calendarID := "primary"
-	if source != nil && source.CalendarID != "" {
-		calendarID = source.CalendarID
-	}
+	// Get global calendar ID setting
+	calendarID, _ := p.db.GetSelectedCalendarID()
 
 	// Get or create a placeholder channel for email sources
 	// We use a special channel for email-sourced events

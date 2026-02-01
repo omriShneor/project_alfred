@@ -16,11 +16,10 @@ const (
 // Channel represents a tracked communication channel (contacts only)
 type Channel struct {
 	ID         int64       `json:"id"`
-	Type       ChannelType `json:"type"`        // "sender" (contacts only)
-	Identifier string      `json:"identifier"`  // phone number for WhatsApp, user ID for Telegram
-	Name       string      `json:"name"`        // display name
-	CalendarID string      `json:"calendar_id"` // Google Calendar ID (defaults to "primary")
-	Enabled    bool        `json:"enabled"`     // whether to track this channel
+	Type       ChannelType `json:"type"`       // "sender" (contacts only)
+	Identifier string      `json:"identifier"` // phone number for WhatsApp, user ID for Telegram
+	Name       string      `json:"name"`       // display name
+	Enabled    bool        `json:"enabled"`    // whether to track this channel
 	CreatedAt  time.Time   `json:"created_at"`
 }
 
@@ -43,7 +42,7 @@ func (d *DB) CreateChannel(channelType ChannelType, identifier, name string) (*C
 
 func (d *DB) GetChannelByID(id int64) (*Channel, error) {
 	row := d.QueryRow(
-		`SELECT id, type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, type, identifier, name, enabled, created_at
 		 FROM channels WHERE id = ?`,
 		id,
 	)
@@ -52,7 +51,7 @@ func (d *DB) GetChannelByID(id int64) (*Channel, error) {
 
 func (d *DB) GetChannelByIdentifier(identifier string) (*Channel, error) {
 	row := d.QueryRow(
-		`SELECT id, type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, type, identifier, name, enabled, created_at
 		 FROM channels WHERE identifier = ?`,
 		identifier,
 	)
@@ -61,7 +60,7 @@ func (d *DB) GetChannelByIdentifier(identifier string) (*Channel, error) {
 
 func (d *DB) ListChannels() ([]*Channel, error) {
 	rows, err := d.Query(
-		`SELECT id, type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, type, identifier, name, enabled, created_at
 		 FROM channels ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -83,7 +82,7 @@ func (d *DB) ListChannels() ([]*Channel, error) {
 
 func (d *DB) ListEnabledChannels() ([]*Channel, error) {
 	rows, err := d.Query(
-		`SELECT id, type, identifier, name, calendar_id, enabled, created_at
+		`SELECT id, type, identifier, name, enabled, created_at
 		 FROM channels WHERE enabled = 1 ORDER BY created_at DESC`,
 	)
 	if err != nil {
@@ -103,10 +102,10 @@ func (d *DB) ListEnabledChannels() ([]*Channel, error) {
 	return channels, rows.Err()
 }
 
-func (d *DB) UpdateChannel(id int64, name, calendarID string, enabled bool) error {
+func (d *DB) UpdateChannel(id int64, name string, enabled bool) error {
 	_, err := d.Exec(
-		`UPDATE channels SET name = ?, calendar_id = ?, enabled = ? WHERE id = ?`,
-		name, calendarID, enabled, id,
+		`UPDATE channels SET name = ?, enabled = ? WHERE id = ?`,
+		name, enabled, id,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update channel: %w", err)
@@ -143,7 +142,7 @@ func (d *DB) IsChannelTracked(identifier string) (bool, int64, ChannelType, erro
 
 func scanChannel(row *sql.Row) (*Channel, error) {
 	var c Channel
-	err := row.Scan(&c.ID, &c.Type, &c.Identifier, &c.Name, &c.CalendarID, &c.Enabled, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -155,7 +154,7 @@ func scanChannel(row *sql.Row) (*Channel, error) {
 
 func scanChannelRows(rows *sql.Rows) (*Channel, error) {
 	var c Channel
-	err := rows.Scan(&c.ID, &c.Type, &c.Identifier, &c.Name, &c.CalendarID, &c.Enabled, &c.CreatedAt)
+	err := rows.Scan(&c.ID, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan channel: %w", err)
 	}

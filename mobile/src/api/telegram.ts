@@ -47,7 +47,6 @@ export interface CreateTelegramChannelRequest {
   type: 'contact' | 'group' | 'channel';
   identifier: string;
   name: string;
-  calendar_id: string;
 }
 
 export async function createTelegramChannel(data: CreateTelegramChannelRequest): Promise<Channel> {
@@ -57,7 +56,6 @@ export async function createTelegramChannel(data: CreateTelegramChannelRequest):
 // Update a tracked Telegram channel
 export interface UpdateTelegramChannelRequest {
   name: string;
-  calendar_id: string;
   enabled: boolean;
 }
 
@@ -77,9 +75,8 @@ export async function getTelegramTopContacts(): Promise<SourceTopContact[]> {
 }
 
 // Add a custom Telegram source by username
-export async function addTelegramCustomSource(username: string, calendarId: string): Promise<Channel> {
+export async function addTelegramCustomSource(username: string): Promise<Channel> {
   return apiClient.post<Channel>('/api/telegram/sources/custom', {
     username,
-    calendar_id: calendarId,
   });
 }

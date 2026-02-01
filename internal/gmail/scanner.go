@@ -22,7 +22,6 @@ type EmailSource struct {
 	Identifier string          `json:"identifier"` // e.g., "CATEGORY_PRIMARY", "john@example.com", "microsoft.com"
 	Name       string          `json:"name"`       // Display name
 	Enabled    bool            `json:"enabled"`
-	CalendarID string          `json:"calendar_id"` // Target calendar
 	CreatedAt  time.Time       `json:"created_at"`
 	UpdatedAt  time.Time       `json:"updated_at"`
 }

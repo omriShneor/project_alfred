@@ -8,7 +8,6 @@ import {
   KeyboardTypeOptions,
   Keyboard,
   Platform,
-  Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Modal, Button, LoadingSpinner } from '../common';
@@ -269,17 +268,6 @@ export function AddSourceModal({
         ) : undefined
       }
     >
-      {/* Calendar Selection */}
-      <View style={styles.calendarSection}>
-        <Text style={styles.sectionLabel}>Target Calendar</Text>
-        <Select
-          options={calendarOptions}
-          value={selectedCalendarId}
-          onChange={setSelectedCalendarId}
-          placeholder="Select calendar"
-        />
-      </View>
-
       {/* Custom Entries Section (shown at top if any) */}
       {customEntries.length > 0 && (
         <View style={styles.customEntriesSection}>
@@ -350,9 +338,6 @@ export function AddSourceModal({
 }
 
 const styles = StyleSheet.create({
-  calendarSection: {
-    marginBottom: 16,
-  },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '500',

@@ -290,10 +290,13 @@ func (p *Processor) createPendingEvent(
 		googleEventID = &analysis.Event.UpdateRef
 	}
 
+	// Get global calendar ID setting
+	calendarID, _ := p.db.GetSelectedCalendarID()
+
 	event := &database.CalendarEvent{
 		ChannelID:     channel.ID,
 		GoogleEventID: googleEventID,
-		CalendarID:    channel.CalendarID,
+		CalendarID:    calendarID,
 		Title:         analysis.Event.Title,
 		Description:   analysis.Event.Description,
 		StartTime:     startTime,

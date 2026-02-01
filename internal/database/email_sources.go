@@ -22,7 +22,6 @@ type EmailSource struct {
 	Identifier string          `json:"identifier"`
 	Name       string          `json:"name"`
 	Enabled    bool            `json:"enabled"`
-	CalendarID string          `json:"calendar_id"`
 	CreatedAt  time.Time       `json:"created_at"`
 	UpdatedAt  time.Time       `json:"updated_at"`
 }
@@ -49,10 +48,10 @@ func (d *DB) CreateEmailSource(sourceType EmailSourceType, identifier, name stri
 func (d *DB) GetEmailSourceByID(id int64) (*EmailSource, error) {
 	var source EmailSource
 	err := d.QueryRow(`
-		SELECT id, type, identifier, name, enabled, calendar_id, created_at, updated_at
+		SELECT id, type, identifier, name, enabled, created_at, updated_at
 		FROM email_sources WHERE id = ?
 	`, id).Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
-		&source.Enabled, &source.CalendarID, &source.CreatedAt, &source.UpdatedAt)
+		&source.Enabled, &source.CreatedAt, &source.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -68,10 +67,10 @@ func (d *DB) GetEmailSourceByID(id int64) (*EmailSource, error) {
 func (d *DB) GetEmailSourceByIdentifier(sourceType EmailSourceType, identifier string) (*EmailSource, error) {
 	var source EmailSource
 	err := d.QueryRow(`
-		SELECT id, type, identifier, name, enabled, calendar_id, created_at, updated_at
+		SELECT id, type, identifier, name, enabled, created_at, updated_at
 		FROM email_sources WHERE type = ? AND identifier = ?
 	`, sourceType, identifier).Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
-		&source.Enabled, &source.CalendarID, &source.CreatedAt, &source.UpdatedAt)
+		&source.Enabled, &source.CreatedAt, &source.UpdatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -86,7 +85,7 @@ func (d *DB) GetEmailSourceByIdentifier(sourceType EmailSourceType, identifier s
 // ListEmailSources retrieves all email sources
 func (d *DB) ListEmailSources() ([]*EmailSource, error) {
 	rows, err := d.Query(`
-		SELECT id, type, identifier, name, enabled, calendar_id, created_at, updated_at
+		SELECT id, type, identifier, name, enabled, created_at, updated_at
 		FROM email_sources ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -98,7 +97,7 @@ func (d *DB) ListEmailSources() ([]*EmailSource, error) {
 	for rows.Next() {
 		var source EmailSource
 		if err := rows.Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
-			&source.Enabled, &source.CalendarID, &source.CreatedAt, &source.UpdatedAt); err != nil {
+			&source.Enabled, &source.CreatedAt, &source.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email source: %w", err)
 		}
 		sources = append(sources, &source)
@@ -110,7 +109,7 @@ func (d *DB) ListEmailSources() ([]*EmailSource, error) {
 // ListEmailSourcesByType retrieves email sources filtered by type
 func (d *DB) ListEmailSourcesByType(sourceType EmailSourceType) ([]*EmailSource, error) {
 	rows, err := d.Query(`
-		SELECT id, type, identifier, name, enabled, calendar_id, created_at, updated_at
+		SELECT id, type, identifier, name, enabled, created_at, updated_at
 		FROM email_sources WHERE type = ? ORDER BY created_at DESC
 	`, sourceType)
 	if err != nil {
@@ -122,7 +121,7 @@ func (d *DB) ListEmailSourcesByType(sourceType EmailSourceType) ([]*EmailSource,
 	for rows.Next() {
 		var source EmailSource
 		if err := rows.Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
-			&source.Enabled, &source.CalendarID, &source.CreatedAt, &source.UpdatedAt); err != nil {
+			&source.Enabled, &source.CreatedAt, &source.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email source: %w", err)
 		}
 		sources = append(sources, &source)
@@ -134,7 +133,7 @@ func (d *DB) ListEmailSourcesByType(sourceType EmailSourceType) ([]*EmailSource,
 // ListEnabledEmailSources retrieves all enabled email sources
 func (d *DB) ListEnabledEmailSources() ([]*EmailSource, error) {
 	rows, err := d.Query(`
-		SELECT id, type, identifier, name, enabled, calendar_id, created_at, updated_at
+		SELECT id, type, identifier, name, enabled, created_at, updated_at
 		FROM email_sources WHERE enabled = 1 ORDER BY created_at DESC
 	`)
 	if err != nil {
@@ -146,7 +145,7 @@ func (d *DB) ListEnabledEmailSources() ([]*EmailSource, error) {
 	for rows.Next() {
 		var source EmailSource
 		if err := rows.Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
-			&source.Enabled, &source.CalendarID, &source.CreatedAt, &source.UpdatedAt); err != nil {
+			&source.Enabled, &source.CreatedAt, &source.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email source: %w", err)
 		}
 		sources = append(sources, &source)
@@ -156,12 +155,12 @@ func (d *DB) ListEnabledEmailSources() ([]*EmailSource, error) {
 }
 
 // UpdateEmailSource updates an email source
-func (d *DB) UpdateEmailSource(id int64, name, calendarID string, enabled bool) error {
+func (d *DB) UpdateEmailSource(id int64, name string, enabled bool) error {
 	_, err := d.Exec(`
 		UPDATE email_sources
-		SET name = ?, calendar_id = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+		SET name = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
-	`, name, calendarID, enabled, id)
+	`, name, enabled, id)
 	if err != nil {
 		return fmt.Errorf("failed to update email source: %w", err)
 	}

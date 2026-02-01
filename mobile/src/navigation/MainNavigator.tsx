@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen } from '../screens/HomeScreen';
 import { PreferencesScreen } from '../screens/PreferencesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { WhatsAppPreferencesScreen, TelegramPreferencesScreen, GmailPreferencesScreen } from '../screens/smart-calendar';
+import { WhatsAppPreferencesScreen, TelegramPreferencesScreen, GmailPreferencesScreen, GoogleCalendarPreferencesScreen } from '../screens/smart-calendar';
 import { colors } from '../theme/colors';
 
 export type TabParamList = {
@@ -20,6 +20,7 @@ export type MainStackParamList = {
   WhatsAppPreferences: undefined;
   TelegramPreferences: undefined;
   GmailPreferences: undefined;
+  GoogleCalendarPreferences: undefined;
 };
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
@@ -126,6 +127,25 @@ export function MainNavigator() {
         options={({ navigation }) => ({
           headerShown: true,
           title: 'Gmail Sources',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        })}
+      />
+      <Stack.Screen
+        name="GoogleCalendarPreferences"
+        component={GoogleCalendarPreferencesScreen}
+        options={({ navigation }) => ({
+          headerShown: true,
+          title: 'Google Calendar',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,

@@ -1,13 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Card } from '../common/Card';
 import { Badge } from '../common/Badge';
 import { Button } from '../common/Button';
-import { CalendarPicker } from './CalendarPicker';
 import { useCreateChannel, useDeleteChannel, useChannels } from '../../hooks/useChannels';
 import { useCreateTelegramChannel, useDeleteTelegramChannel, useTelegramChannels } from '../../hooks/useTelegram';
-import { useCalendars } from '../../hooks/useEvents';
-import { useGCalStatus } from '../../hooks';
 import { colors } from '../../theme/colors';
 import type { DiscoverableChannel, SourceType } from '../../types/channel';
 
@@ -31,34 +28,18 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
   // Select the appropriate data based on sourceType
   const trackedChannels = sourceType === 'telegram' ? tgTrackedChannels : waTrackedChannels;
 
-  const { data: gcalStatus } = useGCalStatus();
-  const googleConnected = gcalStatus?.connected ?? false;
-  const { data: calendars } = useCalendars(googleConnected);
-
   // Find the tracked channel data if this channel is tracked
   const trackedChannel = trackedChannels?.find(
     (tc) => tc.identifier === channel.identifier
   );
 
-  const [selectedCalendar, setSelectedCalendar] = useState(
-    trackedChannel?.calendar_id || ''
-  );
-
   const handleTrack = () => {
-    // Find primary calendar as default if not selected
-    const calendarId = selectedCalendar || calendars?.find((c) => c.primary)?.id || calendars?.[0]?.id || '';
-
-    if (!calendarId) {
-      return; // No calendar available
-    }
-
     if (sourceType === 'telegram') {
       // Telegram uses 'contact' type for contacts
       createTgChannel.mutate({
         type: 'contact',
         identifier: channel.identifier,
         name: channel.name,
-        calendar_id: calendarId,
       }, { onSuccess: () => onTrack?.() });
     } else {
       // WhatsApp uses 'sender' type for contacts
@@ -66,7 +47,6 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
         type: 'sender',
         identifier: channel.identifier,
         name: channel.name,
-        calendar_id: calendarId,
       }, { onSuccess: () => onTrack?.() });
     }
   };
@@ -104,15 +84,8 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
         />
       </View>
 
-      {channel.is_tracked ? (
-        <View style={styles.actions}>
-          <View style={styles.calendarRow}>
-            <CalendarPicker
-              value={trackedChannel?.calendar_id || selectedCalendar}
-              onChange={setSelectedCalendar}
-              enabled={googleConnected}
-            />
-          </View>
+      <View style={styles.actions}>
+        {channel.is_tracked ? (
           <Button
             title="Untrack"
             onPress={handleUntrack}
@@ -121,16 +94,7 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
             loading={isLoading}
             style={styles.button}
           />
-        </View>
-      ) : (
-        <View style={styles.actions}>
-          <View style={styles.calendarRow}>
-            <CalendarPicker
-              value={selectedCalendar}
-              onChange={setSelectedCalendar}
-              enabled={googleConnected}
-            />
-          </View>
+        ) : (
           <Button
             title="Track"
             onPress={handleTrack}
@@ -139,8 +103,8 @@ export function ChannelItem({ channel, onTrack, sourceType = 'whatsapp' }: Chann
             loading={isLoading}
             style={styles.button}
           />
-        </View>
-      )}
+        )}
+      </View>
     </Card>
   );
 }
@@ -167,11 +131,7 @@ const styles = StyleSheet.create({
   },
   actions: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  calendarRow: {
-    flex: 1,
+    justifyContent: 'flex-end',
   },
   button: {
     minWidth: 80,

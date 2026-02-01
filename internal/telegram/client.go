@@ -135,11 +135,23 @@ func (c *Client) IsConnected() bool {
 
 // SendCode requests a verification code for the given phone number
 func (c *Client) SendCode(ctx context.Context, phoneNumber string) error {
+	// Check if we need to connect first (without holding lock)
+	c.mu.RLock()
+	needsConnect := c.api == nil
+	c.mu.RUnlock()
+
+	if needsConnect {
+		fmt.Println("Telegram: Auto-connecting before sending code...")
+		if err := c.Connect(); err != nil {
+			return fmt.Errorf("failed to connect: %w", err)
+		}
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	if c.api == nil {
-		return fmt.Errorf("client not connected")
+		return fmt.Errorf("client not connected - connection may have failed")
 	}
 
 	// Send code request

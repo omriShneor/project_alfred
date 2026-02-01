@@ -816,14 +816,4 @@ const styles = StyleSheet.create({
   settingsButton: {
     minWidth: 150,
   },
-  floatingFooter: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    backgroundColor: colors.card,
-    padding: 16,
-    paddingBottom: 32,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-  },
 });

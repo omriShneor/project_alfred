@@ -59,10 +59,25 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 
 // Connect initializes and connects the Telegram client
 func (c *Client) Connect() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
+	// Check if already connected (with read lock)
+	c.mu.RLock()
 	if c.connected {
+		c.mu.RUnlock()
+		return nil
+	}
+	// Also check if api is already set (connection in progress or done)
+	if c.api != nil {
+		c.mu.RUnlock()
+		return nil
+	}
+	c.mu.RUnlock()
+
+	// Acquire write lock to set up the client
+	c.mu.Lock()
+
+	// Double-check after acquiring write lock
+	if c.connected || c.api != nil {
+		c.mu.Unlock()
 		return nil
 	}
 
@@ -76,6 +91,7 @@ func (c *Client) Connect() error {
 	})
 
 	c.client = client
+	c.mu.Unlock() // Release lock before starting goroutine
 
 	// Start the client in a goroutine
 	go func() {
@@ -109,10 +125,25 @@ func (c *Client) Connect() error {
 		}
 	}()
 
-	// Wait a bit for client to initialize
-	time.Sleep(500 * time.Millisecond)
+	// Wait for client to initialize with timeout
+	timeout := time.After(10 * time.Second)
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 
-	return nil
+	for {
+		select {
+		case <-timeout:
+			return fmt.Errorf("timeout waiting for Telegram client to connect")
+		case <-ticker.C:
+			c.mu.RLock()
+			apiReady := c.api != nil
+			c.mu.RUnlock()
+			if apiReady {
+				fmt.Println("Telegram: Client connected and ready")
+				return nil
+			}
+		}
+	}
 }
 
 // Disconnect closes the Telegram connection

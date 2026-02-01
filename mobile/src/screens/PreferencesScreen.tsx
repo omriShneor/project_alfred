@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Text, StyleSheet, ScrollView, TouchableOpacity, View, TextInput, Alert } from 'react-native';
+import { Text, StyleSheet, ScrollView, TouchableOpacity, View, TextInput, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -78,6 +78,29 @@ export function PreferencesScreen() {
   const [telegramPhoneNumber, setTelegramPhoneNumber] = useState('');
   const [telegramCode, setTelegramCode] = useState('');
   const [telegramCodeSent, setTelegramCodeSent] = useState(false);
+
+  // Keyboard tracking for floating button
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isPhoneInputFocused, setIsPhoneInputFocused] = useState(false);
+
+  // Track keyboard visibility
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSubscription = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hideSubscription = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+      setIsPhoneInputFocused(false);
+    });
+
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
+  }, []);
 
   // Check if any query is doing its initial load (no cached data yet)
   const isInitialLoading = (waLoading && !waStatus) || (gcalLoading && !gcalStatus) || (telegramLoading && !telegramStatus);
@@ -290,7 +313,15 @@ export function PreferencesScreen() {
         <Text style={styles.headerTitle}>Alfred</Text>
       </TouchableOpacity>
 
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
         {/* Sources Section */}
         <Text style={styles.sectionLabel}>Sources</Text>
         <Text style={styles.sectionDescription}>
@@ -405,13 +436,16 @@ export function PreferencesScreen() {
                               keyboardType="phone-pad"
                               autoCapitalize="none"
                               autoCorrect={false}
+                              onFocus={() => setIsPhoneInputFocused(true)}
                             />
-                            <Button
-                              title="Generate Pairing Code"
-                              onPress={handleConnectWhatsApp}
-                              loading={generatePairingCode.isPending}
-                              style={styles.generateButton}
-                            />
+                            {!isPhoneInputFocused && (
+                              <Button
+                                title="Generate Pairing Code"
+                                onPress={handleConnectWhatsApp}
+                                loading={generatePairingCode.isPending}
+                                style={styles.generateButton}
+                              />
+                            )}
                           </>
                         ) : (
                           <>
@@ -495,13 +529,16 @@ export function PreferencesScreen() {
                               keyboardType="phone-pad"
                               autoCapitalize="none"
                               autoCorrect={false}
+                              onFocus={() => setIsPhoneInputFocused(true)}
                             />
-                            <Button
-                              title="Send Verification Code"
-                              onPress={handleSendTelegramCode}
-                              loading={sendTelegramCode.isPending}
-                              style={styles.generateButton}
-                            />
+                            {!isPhoneInputFocused && (
+                              <Button
+                                title="Send Verification Code"
+                                onPress={handleSendTelegramCode}
+                                loading={sendTelegramCode.isPending}
+                                style={styles.generateButton}
+                              />
+                            )}
                           </>
                         ) : (
                           <>
@@ -517,20 +554,25 @@ export function PreferencesScreen() {
                               keyboardType="number-pad"
                               autoCapitalize="none"
                               autoCorrect={false}
+                              onFocus={() => setIsPhoneInputFocused(true)}
                             />
-                            <Button
-                              title="Verify Code"
-                              onPress={handleVerifyTelegramCode}
-                              loading={verifyTelegramCode.isPending}
-                              style={styles.generateButton}
-                            />
-                            <Button
-                              title="Resend Code"
-                              variant="outline"
-                              onPress={handleSendTelegramCode}
-                              loading={sendTelegramCode.isPending}
-                              style={styles.generateButton}
-                            />
+                            {!isPhoneInputFocused && (
+                              <>
+                                <Button
+                                  title="Verify Code"
+                                  onPress={handleVerifyTelegramCode}
+                                  loading={verifyTelegramCode.isPending}
+                                  style={styles.generateButton}
+                                />
+                                <Button
+                                  title="Resend Code"
+                                  variant="outline"
+                                  onPress={handleSendTelegramCode}
+                                  loading={sendTelegramCode.isPending}
+                                  style={styles.generateButton}
+                                />
+                              </>
+                            )}
                           </>
                         )}
                       </View>
@@ -578,7 +620,44 @@ export function PreferencesScreen() {
           })()}
         </Card>
 
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      {/* Floating footer when keyboard is visible */}
+      {isPhoneInputFocused && keyboardHeight > 0 && (
+        <View style={[styles.floatingFooter, { bottom: keyboardHeight }]}>
+          {showWhatsAppConnect && !pairingCode && phoneNumber.trim() && (
+            <Button
+              title="Generate Pairing Code"
+              onPress={() => {
+                Keyboard.dismiss();
+                handleConnectWhatsApp();
+              }}
+              loading={generatePairingCode.isPending}
+            />
+          )}
+          {showTelegramConnect && !telegramCodeSent && telegramPhoneNumber.trim() && (
+            <Button
+              title="Send Verification Code"
+              onPress={() => {
+                Keyboard.dismiss();
+                handleSendTelegramCode();
+              }}
+              loading={sendTelegramCode.isPending}
+            />
+          )}
+          {showTelegramConnect && telegramCodeSent && telegramCode.trim() && (
+            <Button
+              title="Verify Code"
+              onPress={() => {
+                Keyboard.dismiss();
+                handleVerifyTelegramCode();
+              }}
+              loading={verifyTelegramCode.isPending}
+            />
+          )}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -587,6 +666,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  keyboardAvoid: {
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
@@ -788,5 +870,15 @@ const styles = StyleSheet.create({
   },
   settingsButton: {
     minWidth: 150,
+  },
+  floatingFooter: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    backgroundColor: colors.card,
+    padding: 16,
+    paddingBottom: 32,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
   },
 });

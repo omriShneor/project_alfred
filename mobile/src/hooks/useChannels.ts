@@ -73,6 +73,7 @@ export function useWhatsAppTopContacts(options?: { enabled?: boolean }) {
     queryKey: ['whatsappTopContacts'],
     queryFn: getWhatsAppTopContacts,
     enabled: options?.enabled ?? true,
+    staleTime: 0, // Always fetch fresh data when modal opens
   });
 }
 

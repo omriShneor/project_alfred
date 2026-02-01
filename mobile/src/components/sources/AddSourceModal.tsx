@@ -8,12 +8,12 @@ import {
   KeyboardTypeOptions,
   Keyboard,
   Platform,
+  Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { Modal, Select, Button, LoadingSpinner } from '../common';
+import { Modal, Button, LoadingSpinner } from '../common';
 import { colors } from '../../theme/colors';
 import type { SourceTopContact } from '../../types/channel';
-import type { Calendar } from '../../types/event';
 
 interface CustomEntry {
   identifier: string;
@@ -27,15 +27,13 @@ export interface AddSourceModalProps {
   // Top contacts
   topContacts: SourceTopContact[] | undefined;
   contactsLoading: boolean;
-  // Calendars
-  calendars: Calendar[] | undefined;
   // Custom input
   customInputPlaceholder: string;
   customInputKeyboardType: KeyboardTypeOptions;
   validateCustomInput: (value: string) => string | null;
-  // Actions
-  onAddContacts: (contacts: SourceTopContact[], calendarId: string) => Promise<void>;
-  onAddCustom: (value: string, calendarId: string) => Promise<void>;
+  // Actions - always uses 'primary' (Alfred Calendar) as the target
+  onAddContacts: (contacts: SourceTopContact[]) => Promise<void>;
+  onAddCustom: (value: string) => Promise<void>;
   // Loading states
   addContactsLoading: boolean;
   addCustomLoading: boolean;
@@ -47,7 +45,6 @@ export function AddSourceModal({
   title,
   topContacts,
   contactsLoading,
-  calendars,
   customInputPlaceholder,
   customInputKeyboardType,
   validateCustomInput,
@@ -60,7 +57,6 @@ export function AddSourceModal({
   const [customEntries, setCustomEntries] = useState<CustomEntry[]>([]);
   const [customInput, setCustomInput] = useState('');
   const [customInputError, setCustomInputError] = useState<string | null>(null);
-  const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
   const [isCustomInputFocused, setIsCustomInputFocused] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isAdding, setIsAdding] = useState(false);
@@ -83,14 +79,6 @@ export function AddSourceModal({
       hideSubscription.remove();
     };
   }, []);
-
-  // Set default calendar when calendars load
-  React.useEffect(() => {
-    if (calendars && calendars.length > 0 && !selectedCalendarId) {
-      const primaryCalendar = calendars.find((c) => c.primary);
-      setSelectedCalendarId(primaryCalendar?.id || calendars[0].id);
-    }
-  }, [calendars, selectedCalendarId]);
 
   // Reset state when modal opens
   React.useEffect(() => {
@@ -153,22 +141,20 @@ export function AddSourceModal({
   };
 
   const handleAddAllSelected = async () => {
-    if (!selectedCalendarId) return;
-
     setIsAdding(true);
     try {
-      // Add selected top contacts
+      // Add selected top contacts (always uses Alfred Calendar / 'primary')
       const contactsToAdd = (topContacts || []).filter(
         (c) => selectedContacts.has(c.identifier) && !c.is_tracked
       );
       if (contactsToAdd.length > 0) {
-        await onAddContacts(contactsToAdd, selectedCalendarId);
+        await onAddContacts(contactsToAdd);
       }
 
       // Add custom entries
       const customToAdd = customEntries.filter((e) => selectedContacts.has(e.identifier));
       for (const entry of customToAdd) {
-        await onAddCustom(entry.identifier, selectedCalendarId);
+        await onAddCustom(entry.identifier);
       }
 
       setSelectedContacts(new Set());
@@ -180,11 +166,6 @@ export function AddSourceModal({
       setIsAdding(false);
     }
   };
-
-  const calendarOptions = calendars?.map((c) => ({
-    label: c.summary + (c.primary ? ' (Primary)' : ''),
-    value: c.id,
-  })) || [];
 
   // Total selected count (from top contacts + custom entries)
   const totalSelected = selectedContacts.size;
@@ -238,7 +219,7 @@ export function AddSourceModal({
           <View style={styles.contactInfo}>
             <View style={styles.customEntryHeader}>
               <Text style={styles.contactName} numberOfLines={1}>
-                +{entry.identifier}
+                 {entry.identifier}
               </Text>
               <View style={styles.customBadge}>
                 <Text style={styles.customBadgeText}>Custom</Text>
@@ -499,6 +480,7 @@ const styles = StyleSheet.create({
   floatingFooter: {
     backgroundColor: colors.card,
     padding: 16,
+    paddingBottom: 32,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },

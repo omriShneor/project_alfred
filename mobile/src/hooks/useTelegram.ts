@@ -138,6 +138,7 @@ export function useTelegramTopContacts(options?: { enabled?: boolean }) {
     queryKey: TELEGRAM_TOP_CONTACTS_KEY,
     queryFn: getTelegramTopContacts,
     enabled: options?.enabled ?? true,
+    staleTime: 0, // Always fetch fresh data when modal opens
   });
 }
 

@@ -19,6 +19,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/processor"
 	"github.com/omriShneor/project_alfred/internal/server"
 	"github.com/omriShneor/project_alfred/internal/sse"
+	"github.com/omriShneor/project_alfred/internal/telegram"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
@@ -34,7 +35,6 @@ func main() {
 
 	state := sse.NewState()
 
-	// Initialize notify service early so it can be used during WhatsApp pairing
 	notifyService := initNotifyService(db, cfg)
 
 	srv := server.New(server.ServerConfig{
@@ -57,9 +57,11 @@ func main() {
 
 	claudeClient := initClaudeClient(cfg)
 	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, claudeClient, notifyService, cfg)
+	tgClient := initTelegram(db, cfg, state)
 
 	srv.InitializeClients(server.ClientsConfig{
 		WAClient:          clients.WAClient,
+		TGClient:          tgClient,
 		GCalClient:        clients.GCalClient,
 		GmailClient:       gmailClient,
 		GmailWorker:       gmailWorker,
@@ -146,6 +148,29 @@ func initGmail(gcalClient *gcal.Client, db *database.DB, claudeClient *claude.Cl
 	}
 
 	return gmailClient, gmailWorker
+}
+
+func initTelegram(db *database.DB, cfg *config.Config, state *sse.State) *telegram.Client {
+	if cfg.TelegramAPIID == 0 || cfg.TelegramAPIHash == "" {
+		fmt.Println("Telegram: Not configured (ALFRED_TELEGRAM_API_ID and ALFRED_TELEGRAM_API_HASH required)")
+		return nil
+	}
+
+	handler := telegram.NewHandler(db, cfg.DebugAllMessages, state)
+
+	tgClient, err := telegram.NewClient(telegram.ClientConfig{
+		APIID:       cfg.TelegramAPIID,
+		APIHash:     cfg.TelegramAPIHash,
+		SessionPath: cfg.TelegramDBPath,
+		Handler:     handler,
+	})
+	if err != nil {
+		fmt.Printf("Warning: Failed to create Telegram client: %v\n", err)
+		return nil
+	}
+
+	fmt.Println("Telegram client initialized")
+	return tgClient
 }
 
 func fatal(context string, err error) {

@@ -14,7 +14,9 @@ type DB struct {
 }
 
 func New(dbPath string) (*DB, error) {
-	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on")
+	// Enable WAL mode for better concurrency, busy timeout to wait instead of failing,
+	// and foreign keys for referential integrity
+	db, err := sql.Open("sqlite3", dbPath+"?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=5000")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}

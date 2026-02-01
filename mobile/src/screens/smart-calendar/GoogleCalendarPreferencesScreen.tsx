@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   Switch,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { LoadingSpinner, Card, Button, Select } from '../../components/common';
+import { LoadingSpinner, Card, Select } from '../../components/common';
 import { colors } from '../../theme/colors';
 import {
   useGCalStatus,
@@ -26,47 +26,54 @@ export function GoogleCalendarPreferencesScreen() {
 
   const [syncEnabled, setSyncEnabled] = useState<boolean>(false);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
-  const [hasChanges, setHasChanges] = useState(false);
+  const initializedRef = useRef(false);
 
-  // Initialize from settings
+  // Initialize from settings (only once)
   useEffect(() => {
-    if (settings) {
+    if (settings && !initializedRef.current) {
+      initializedRef.current = true;
       setSyncEnabled(settings.sync_enabled);
-      if (!selectedCalendarId) {
-        setSelectedCalendarId(settings.selected_calendar_id || 'primary');
+      if (settings.sync_enabled && settings.selected_calendar_id) {
+        setSelectedCalendarId(settings.selected_calendar_id);
       }
     }
-  }, [settings, selectedCalendarId]);
+  }, [settings]);
 
-  // Track changes
-  useEffect(() => {
-    if (settings) {
-      const calendarChanged = selectedCalendarId !== settings.selected_calendar_id;
-      const syncChanged = syncEnabled !== settings.sync_enabled;
-      setHasChanges(calendarChanged || syncChanged);
+  // Handle sync toggle change - auto save
+  const handleSyncToggle = async (enabled: boolean) => {
+    setSyncEnabled(enabled);
+
+    // If disabling sync, save immediately
+    if (!enabled) {
+      try {
+        await updateSettings.mutateAsync({
+          sync_enabled: false,
+          selected_calendar_id: selectedCalendarId,
+          selected_calendar_name: settings?.selected_calendar_name || '',
+        });
+      } catch (error: any) {
+        Alert.alert('Error', error.message || 'Failed to update settings');
+        setSyncEnabled(!enabled); // Revert on error
+      }
     }
-  }, [selectedCalendarId, syncEnabled, settings]);
+    // If enabling sync, wait for calendar selection
+  };
 
-  const handleSave = async () => {
-    // Only require calendar selection if sync is enabled
-    if (syncEnabled && !selectedCalendarId) {
-      Alert.alert('Error', 'Please select a calendar');
-      return;
-    }
+  // Handle calendar selection change - auto save
+  const handleCalendarChange = async (calendarId: string) => {
+    setSelectedCalendarId(calendarId);
 
-    const selectedCalendar = calendars?.find((c: Calendar) => c.id === selectedCalendarId);
-    const calendarName = selectedCalendar?.summary || 'Primary';
+    const selectedCalendar = calendars?.find((c: Calendar) => c.id === calendarId);
+    const calendarName = selectedCalendar?.summary || '';
 
     try {
       await updateSettings.mutateAsync({
         sync_enabled: syncEnabled,
-        selected_calendar_id: selectedCalendarId || 'primary',
+        selected_calendar_id: calendarId,
         selected_calendar_name: calendarName,
       });
-      setHasChanges(false);
-      Alert.alert('Success', 'Settings saved');
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to save settings');
+      Alert.alert('Error', error.message || 'Failed to update settings');
     }
   };
 
@@ -116,14 +123,16 @@ export function GoogleCalendarPreferencesScreen() {
           <View style={styles.statusItem}>
             <View style={styles.statusLeft}>
               <Feather
-                name={syncEnabled ? 'check-circle' : 'x-circle'}
+                name={syncEnabled && selectedCalendarId ? 'check-circle' : syncEnabled ? 'alert-circle' : 'calendar'}
                 size={20}
-                color={syncEnabled ? colors.success : colors.textSecondary}
+                color={syncEnabled && selectedCalendarId ? colors.success : syncEnabled ? colors.warning : colors.primary}
               />
               <Text style={styles.statusLabel}>
                 {syncEnabled
-                  ? `Syncing to: ${settings?.selected_calendar_name || 'Primary'}`
-                  : 'Events stored locally only'}
+                  ? selectedCalendarId
+                    ? `Syncing to: ${settings?.selected_calendar_name || 'Selected calendar'}`
+                    : 'Select a calendar from the list below'
+                  : "Events stored in Alfred's calendar only"}
               </Text>
             </View>
           </View>
@@ -141,7 +150,7 @@ export function GoogleCalendarPreferencesScreen() {
             </View>
             <Switch
               value={syncEnabled}
-              onValueChange={setSyncEnabled}
+              onValueChange={handleSyncToggle}
               trackColor={{ false: colors.border, true: colors.primary }}
               thumbColor="#ffffff"
             />
@@ -160,23 +169,12 @@ export function GoogleCalendarPreferencesScreen() {
                 <Select
                   options={calendarOptions}
                   value={selectedCalendarId}
-                  onChange={(value) => setSelectedCalendarId(value)}
+                  onChange={handleCalendarChange}
                   placeholder="Select a calendar"
                 />
               </View>
             </Card>
           </>
-        )}
-
-        {/* Save Button */}
-        {hasChanges && (
-          <View style={styles.saveContainer}>
-            <Button
-              title="Save Changes"
-              onPress={handleSave}
-              loading={updateSettings.isPending}
-            />
-          </View>
         )}
       </ScrollView>
     </View>
@@ -241,11 +239,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginLeft: 12,
   },
-  statusValue: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: colors.primary,
-  },
   helpText: {
     fontSize: 13,
     color: colors.textSecondary,
@@ -254,9 +247,6 @@ const styles = StyleSheet.create({
   },
   selectContainer: {
     marginTop: 4,
-  },
-  saveContainer: {
-    marginTop: 24,
   },
   toggleRow: {
     flexDirection: 'row',

@@ -79,7 +79,7 @@ func main() {
 	// Create message processor
 	var messageProcessor *processor.Processor
 	if analyzer != nil {
-		messageProcessor = processor.New(db, nil, analyzer, msgChan, cfg.MessageHistorySize, notifyService)
+		messageProcessor = processor.New(db, nil, analyzer, nil, msgChan, cfg.MessageHistorySize, notifyService)
 		if err := messageProcessor.Start(); err != nil {
 			fmt.Printf("Warning: processor failed to start: %v\n", err)
 		} else {

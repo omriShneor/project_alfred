@@ -1,6 +1,6 @@
 # Project Alfred
 
-Multi-source calendar assistant using Claude AI to detect events from WhatsApp/Gmail, create pending events for review, and sync to Google Calendar.
+Multi-source calendar assistant using Claude AI to detect events from WhatsApp/Telegram/Gmail, create pending events for review, and sync to Google Calendar.
 
 ## Quick Start
 
@@ -29,7 +29,7 @@ export ANTHROPIC_API_KEY="sk-..."           # Required
 
 ### Data Flow
 ```
-WhatsApp Message / Gmail Email
+WhatsApp Message / Telegram Message / Gmail Email
     ↓
 Handler filters by tracked channels/sources
     ↓
@@ -47,10 +47,12 @@ Confirm → Sync to Google Calendar
 ### Components
 | Component | Port | Purpose |
 |-----------|------|---------|
-| Go Backend | 8080 | API, WhatsApp connection, Claude analysis, Google Calendar sync |
+| Go Backend | 8080 | API, WhatsApp/Telegram connection, Claude analysis, Google Calendar sync |
 | Mobile App | 8081 | All UI: onboarding, event review, settings |
 
 **WhatsApp:** Uses pairing codes (not QR) - enter phone number, get 8-digit code for WhatsApp Linked Devices.
+
+**Telegram:** Uses phone verification - enter phone number, receive code via Telegram, verify to link.
 
 **Google OAuth:** Uses deep link (`alfred://oauth/callback`) - app opens browser, captures redirect.
 
@@ -64,7 +66,7 @@ Confirm → Sync to Google Calendar
 3. Database: Add function in `internal/database/` if needed
 
 ### Add Database Table
-1. Migration: `internal/database/database.go` → `migrate()`
+1. Migration: Create `internal/database/migrations/NNN_name.go` with `Register()` call
 2. CRUD: Create `internal/database/newtable.go` with types and functions
 
 ### Modify Event Detection
@@ -83,6 +85,15 @@ Confirm → Sync to Google Calendar
 ### Add Configuration
 1. Field: `internal/config/env.go` → `Config` struct
 2. Load: `LoadFromEnv()` with helper functions
+
+### Add Message Source
+The project uses unified source types in `internal/source/source.go`.
+1. Source constant: `internal/source/source.go` → add `SourceType`
+2. Client: Create `internal/newsource/client.go`, `handler.go`
+3. Handlers: Add `internal/server/newsource_handlers.go`
+4. Routes: `internal/server/server.go` → `registerRoutes()`
+5. Mobile API: `mobile/src/api/newsource.ts`
+6. Mobile Hook: `mobile/src/hooks/useNewSource.ts`
 
 ---
 
@@ -118,6 +129,24 @@ Confirm → Sync to Google Calendar
 | PUT | `/api/channel/{id}` | Update channel |
 | DELETE | `/api/channel/{id}` | Delete channel |
 | GET | `/api/discovery/channels` | List available (untracked) channels |
+| GET | `/api/whatsapp/top-contacts` | Get top contacts from history |
+| POST | `/api/whatsapp/sources/custom` | Add custom source by phone |
+
+### Telegram
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/telegram/status` | Connection status |
+| POST | `/api/telegram/send-code` | Send verification code (body: `{phone_number}`) |
+| POST | `/api/telegram/verify-code` | Verify code (body: `{phone_number, code}`) |
+| POST | `/api/telegram/disconnect` | Disconnect Telegram |
+| POST | `/api/telegram/reconnect` | Reconnect Telegram |
+| GET | `/api/telegram/discovery/channels` | List available Telegram chats |
+| GET | `/api/telegram/channel` | List tracked Telegram channels |
+| POST | `/api/telegram/channel` | Create channel (body: `{type, identifier, name}`) |
+| PUT | `/api/telegram/channel/{id}` | Update channel |
+| DELETE | `/api/telegram/channel/{id}` | Delete channel |
+| GET | `/api/telegram/top-contacts` | Get top contacts from history |
+| POST | `/api/telegram/sources/custom` | Add custom source by username |
 
 ### Google Calendar
 | Method | Path | Description |
@@ -128,6 +157,8 @@ Confirm → Sync to Google Calendar
 | POST | `/api/gcal/connect` | Get OAuth URL (`?redirect_uri=`) |
 | POST | `/api/gcal/callback` | Exchange OAuth code for token |
 | POST | `/api/gcal/disconnect` | Disconnect Google account |
+| GET | `/api/gcal/settings` | Get sync settings |
+| PUT | `/api/gcal/settings` | Update sync settings |
 | GET | `/oauth/callback` | OAuth callback (browser redirect) |
 
 ### Events
@@ -186,15 +217,18 @@ Confirm → Sync to Google Calendar
 ### Tables
 | Table | Purpose |
 |-------|---------|
-| `channels` | Tracked WhatsApp contacts/groups |
-| `message_history` | Last N messages per channel (Claude context) |
+| `channels` | Tracked WhatsApp/Telegram contacts (unified with source_type) |
+| `message_history` | Last N messages per channel (Claude context, includes source_type) |
 | `calendar_events` | Detected events with status lifecycle |
 | `event_attendees` | Event participants |
 | `user_notification_preferences` | Email/push settings (single row, id=1) |
 | `gmail_settings` | Gmail integration settings (single row, id=1) |
+| `gcal_settings` | Google Calendar sync settings (single row, id=1) |
 | `email_sources` | Tracked email sources (categories, senders, domains) |
 | `processed_emails` | Processed email IDs to avoid duplicates |
 | `feature_settings` | App/feature settings, onboarding state (single row, id=1) |
+| `gmail_top_contacts` | Cached top email contacts for discovery |
+| `schema_migrations` | Database migration version tracking |
 
 ### Event Status Lifecycle
 ```
@@ -206,6 +240,21 @@ rejected
 ### Key Types
 
 ```go
+// Unified Source Types (source/source.go)
+type SourceType string  // "whatsapp" | "telegram" | "gmail"
+type ChannelType string // "sender" | "domain" | "category"
+
+type Message struct {
+    SourceType SourceType
+    SourceID   int64
+    Identifier string
+    SenderID   string
+    SenderName string
+    Text       string
+    Subject    string // For emails
+    Timestamp  time.Time
+}
+
 // CalendarEvent (database/events.go)
 type CalendarEvent struct {
     ID, ChannelID     int64
@@ -231,7 +280,7 @@ type FeatureSettings struct {
 // AppStatus (database/features.go)
 type AppStatus struct {
     OnboardingComplete bool
-    WhatsAppEnabled, GmailEnabled, GoogleCalEnabled bool
+    WhatsAppEnabled, TelegramEnabled, GmailEnabled, GoogleCalEnabled bool
 }
 
 // EventAnalysis (claude/client.go)
@@ -262,10 +311,13 @@ type FilteredMessage struct {
 |-----------|-----------|---------|
 | `internal/config/` | `env.go` | Environment configuration loading |
 | `internal/database/` | `database.go`, `channels.go`, `events.go`, `features.go`, `messages.go`, `notifications.go`, `gmail.go`, `email_sources.go`, `attendees.go` | SQLite data layer |
-| `internal/server/` | `server.go`, `handlers.go`, `gmail_handlers.go`, `features_handlers.go` | HTTP API |
+| `internal/database/migrations/` | `migrations.go`, `001_*.go`, `002_*.go`, `003_*.go` | Database migrations |
+| `internal/server/` | `server.go`, `handlers.go`, `gmail_handlers.go`, `features_handlers.go`, `telegram_handlers.go` | HTTP API |
+| `internal/source/` | `source.go` | Unified source types (WhatsApp, Telegram, Gmail) |
 | `internal/claude/` | `client.go`, `prompt.go` | Claude AI event detection |
 | `internal/processor/` | `processor.go`, `email_processor.go`, `history.go` | Message processing pipeline |
 | `internal/whatsapp/` | `client.go`, `handler.go`, `groups.go`, `qr.go` | WhatsApp connection |
+| `internal/telegram/` | `client.go`, `handler.go`, `groups.go`, `session.go` | Telegram connection |
 | `internal/gcal/` | `client.go`, `auth.go`, `events.go`, `calendars.go` | Google Calendar integration |
 | `internal/gmail/` | `client.go`, `worker.go`, `scanner.go`, `discovery.go`, `parser.go` | Gmail integration |
 | `internal/notify/` | `service.go`, `notifier.go`, `resend.go`, `expo_push.go` | Notifications (email, push) |
@@ -275,11 +327,12 @@ type FilteredMessage struct {
 ### Mobile (React Native/Expo)
 | Directory | Key Files | Purpose |
 |-----------|-----------|---------|
-| `mobile/src/api/` | `client.ts`, `whatsapp.ts`, `gcal.ts`, `events.ts`, `channels.ts`, `gmail.ts`, `notifications.ts`, `app.ts` | API clients |
-| `mobile/src/hooks/` | `useAppStatus.ts`, `useEvents.ts`, `useChannels.ts`, `usePushNotifications.ts`, `useOnboardingStatus.ts` | React Query hooks |
-| `mobile/src/screens/` | `HomeScreen.tsx`, `SettingsScreen.tsx`, `PreferencesScreen.tsx`, `WhatsAppPreferencesScreen.tsx`, `GmailPreferencesScreen.tsx` | Main screens |
+| `mobile/src/api/` | `client.ts`, `whatsapp.ts`, `telegram.ts`, `gcal.ts`, `events.ts`, `channels.ts`, `gmail.ts`, `notifications.ts`, `app.ts` | API clients |
+| `mobile/src/hooks/` | `useAppStatus.ts`, `useEvents.ts`, `useChannels.ts`, `useTelegram.ts`, `usePushNotifications.ts`, `useOnboardingStatus.ts` | React Query hooks |
+| `mobile/src/screens/` | `HomeScreen.tsx`, `SettingsScreen.tsx`, `PreferencesScreen.tsx` | Main screens |
+| `mobile/src/screens/smart-calendar/` | `WhatsAppPreferencesScreen.tsx`, `TelegramPreferencesScreen.tsx`, `GmailPreferencesScreen.tsx`, `GoogleCalendarPreferencesScreen.tsx` | Source preferences |
 | `mobile/src/screens/onboarding/` | `WelcomeScreen.tsx`, `InputSelectionScreen.tsx`, `ConnectionScreen.tsx` | Onboarding flow |
-| `mobile/src/components/` | `events/`, `channels/`, `common/`, `home/` | UI components |
+| `mobile/src/components/` | `events/`, `channels/`, `common/`, `home/`, `sources/` | UI components |
 | `mobile/src/navigation/` | `RootNavigator.tsx`, `MainNavigator.tsx`, `OnboardingNavigator.tsx` | Navigation |
 | `mobile/src/theme/` | `colors.ts`, `typography.ts` | Styling |
 | `mobile/src/types/` | `event.ts`, `channel.ts`, `app.ts`, `features.ts` | TypeScript types |
@@ -302,14 +355,19 @@ type FilteredMessage struct {
 | `GOOGLE_TOKEN_FILE` | `./token.json` | OAuth token storage |
 | `ALFRED_DB_PATH` | `./alfred.db` | SQLite database path |
 | `ALFRED_WHATSAPP_DB_PATH` | `./whatsapp.db` | WhatsApp session DB |
+| `ALFRED_TELEGRAM_API_ID` | - | Telegram API ID (from my.telegram.org) |
+| `ALFRED_TELEGRAM_API_HASH` | - | Telegram API Hash (from my.telegram.org) |
+| `ALFRED_TELEGRAM_DB_PATH` | `./telegram.db` | Telegram session database |
 | `ALFRED_CLAUDE_MODEL` | `claude-sonnet-4-20250514` | Claude model |
 | `ALFRED_CLAUDE_TEMPERATURE` | `0.1` | Model temperature (0-1) |
 | `ALFRED_MESSAGE_HISTORY_SIZE` | `25` | Messages per channel for context |
 | `ALFRED_RESEND_API_KEY` | - | Resend API for email notifications |
 | `ALFRED_EMAIL_FROM` | `Alfred <onboarding@resend.dev>` | Email sender |
-| `ALFRED_GMAIL_POLL_INTERVAL` | `5` | Minutes between email checks |
 | `ALFRED_GMAIL_MAX_EMAILS` | `10` | Max emails per poll |
 | `ALFRED_DEBUG_ALL_MESSAGES` | `false` | Log all WhatsApp messages |
+| `ALFRED_DEV_MODE` | `false` | Enable development mode |
+
+**Note:** Gmail poll interval is hardcoded to 1 minute for near-real-time scanning.
 
 ---
 
@@ -424,12 +482,14 @@ Find IP: `ipconfig getifaddr en0`
 | Event detection | `internal/claude/prompt.go`, `internal/claude/client.go` |
 | Mobile screens | `mobile/src/screens/**`, `mobile/src/components/**` |
 | Navigation | `mobile/src/navigation/RootNavigator.tsx` |
+| Telegram processing | `internal/telegram/handler.go`, `internal/server/telegram_handlers.go` |
 
 ### Medium (Feature changes)
 | Task | Files |
 |------|-------|
-| Database schema | `internal/database/database.go` |
+| Database schema | `internal/database/migrations/` |
 | WhatsApp processing | `internal/processor/processor.go`, `internal/whatsapp/handler.go` |
+| Telegram processing | `internal/processor/processor.go`, `internal/telegram/handler.go` |
 | Gmail processing | `internal/processor/email_processor.go`, `internal/gmail/worker.go` |
 | Google Calendar | `internal/gcal/events.go` |
 | Notifications | `internal/notify/service.go` |
@@ -441,5 +501,11 @@ Find IP: `ipconfig getifaddr en0`
 | Configuration | `internal/config/env.go` |
 | Deployment | `Dockerfile`, `railway.toml` |
 
+---
 
-When I report a bug, don't start by trying to fix it. Instead, start by writing a test that reproduces the bug. Then, have subagents try to fix the bug and prove it with a passing test.
+## Testing Philosophy
+
+When fixing bugs, follow test-driven development:
+1. Write a test that reproduces the bug first
+2. Have the fix prove itself with a passing test
+3. Never start by trying to fix without a reproducing test

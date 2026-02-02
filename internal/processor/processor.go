@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/omriShneor/project_alfred/internal/claude"
+	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/notify"
@@ -20,7 +20,7 @@ const (
 type Processor struct {
 	db            *database.DB
 	gcalClient    *gcal.Client
-	claudeClient  *claude.Client
+	analyzer      agent.Analyzer
 	msgChan       <-chan source.Message
 	historySize   int
 	notifyService *notify.Service
@@ -35,7 +35,7 @@ type Processor struct {
 func New(
 	db *database.DB,
 	gcalClient *gcal.Client,
-	claudeClient *claude.Client,
+	analyzer agent.Analyzer,
 	msgChan <-chan source.Message,
 	historySize int,
 	notifyService *notify.Service,
@@ -49,7 +49,7 @@ func New(
 	return &Processor{
 		db:            db,
 		gcalClient:    gcalClient,
-		claudeClient:  claudeClient,
+		analyzer:      analyzer,
 		msgChan:       msgChan,
 		historySize:   historySize,
 		notifyService: notifyService,
@@ -61,8 +61,8 @@ func New(
 
 // Start begins processing messages from the channel
 func (p *Processor) Start() error {
-	if p.claudeClient == nil || !p.claudeClient.IsConfigured() {
-		fmt.Println("Event processor: Claude API not configured, processor disabled")
+	if p.analyzer == nil || !p.analyzer.IsConfigured() {
+		fmt.Println("Event processor: Analyzer not configured, processor disabled")
 		return nil
 	}
 
@@ -148,13 +148,13 @@ func (p *Processor) processMessage(msg source.Message) error {
 	historyRecords := convertToMessageRecords(history)
 	newMessageRecord := convertSourceMessageToRecord(storedMsg)
 
-	// Send to Claude for analysis
-	analysis, err := p.claudeClient.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
+	// Send to analyzer for event detection
+	analysis, err := p.analyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
 	if err != nil {
-		return fmt.Errorf("Claude analysis failed: %w", err)
+		return fmt.Errorf("analysis failed: %w", err)
 	}
 
-	fmt.Printf("Claude analysis: action=%s, has_event=%v, confidence=%.2f\n",
+	fmt.Printf("Event analysis: action=%s, has_event=%v, confidence=%.2f\n",
 		analysis.Action, analysis.HasEvent, analysis.Confidence)
 
 	// If no event detected or action is "none", skip
@@ -200,11 +200,11 @@ func convertSourceMessageToRecord(m *database.SourceMessage) database.MessageRec
 	}
 }
 
-// createPendingEvent creates or updates a pending event from Claude's analysis
+// createPendingEvent creates or updates a pending event from the analysis
 func (p *Processor) createPendingEvent(
 	channel *database.SourceChannel,
 	messageID int64,
-	analysis *claude.EventAnalysis,
+	analysis *agent.EventAnalysis,
 	sourceType source.SourceType,
 ) error {
 	params := EventCreationParams{

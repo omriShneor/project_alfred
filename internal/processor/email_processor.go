@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/omriShneor/project_alfred/internal/claude"
+	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
@@ -14,16 +14,16 @@ import (
 // EmailProcessor processes emails for calendar event detection
 type EmailProcessor struct {
 	db            *database.DB
-	claudeClient  *claude.Client
+	analyzer      agent.Analyzer
 	notifyService *notify.Service
 	eventCreator  *EventCreator
 }
 
 // NewEmailProcessor creates a new email processor
-func NewEmailProcessor(db *database.DB, claudeClient *claude.Client, notifyService *notify.Service) *EmailProcessor {
+func NewEmailProcessor(db *database.DB, analyzer agent.Analyzer, notifyService *notify.Service) *EmailProcessor {
 	return &EmailProcessor{
 		db:            db,
-		claudeClient:  claudeClient,
+		analyzer:      analyzer,
 		notifyService: notifyService,
 		eventCreator:  NewEventCreator(db, notifyService),
 	}
@@ -31,8 +31,8 @@ func NewEmailProcessor(db *database.DB, claudeClient *claude.Client, notifyServi
 
 // ProcessEmail processes a single email for event detection
 func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, source *gmail.EmailSource, thread *gmail.Thread) error {
-	if p.claudeClient == nil || !p.claudeClient.IsConfigured() {
-		return fmt.Errorf("Claude API not configured")
+	if p.analyzer == nil || !p.analyzer.IsConfigured() {
+		return fmt.Errorf("analyzer not configured")
 	}
 
 	threadLen := 0
@@ -45,7 +45,7 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, s
 	body := gmail.CleanEmailBody(email.Body)
 
 	// Build email content with thread context
-	emailContent := claude.EmailContent{
+	emailContent := agent.EmailContent{
 		Subject: email.Subject,
 		From:    email.From,
 		To:      email.To,
@@ -56,7 +56,7 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, s
 	// Add thread history (excluding the latest message which is the email being analyzed)
 	if thread != nil && len(thread.Messages) > 1 {
 		for _, msg := range thread.Messages[:len(thread.Messages)-1] {
-			emailContent.ThreadHistory = append(emailContent.ThreadHistory, claude.EmailThreadMessage{
+			emailContent.ThreadHistory = append(emailContent.ThreadHistory, agent.EmailThreadMessage{
 				From:    msg.From,
 				Date:    msg.Date,
 				Subject: msg.Subject,
@@ -65,13 +65,13 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, s
 		}
 	}
 
-	// Send to Claude for analysis
-	analysis, err := p.claudeClient.AnalyzeEmail(ctx, emailContent)
+	// Send to analyzer for event detection
+	analysis, err := p.analyzer.AnalyzeEmail(ctx, emailContent)
 	if err != nil {
-		return fmt.Errorf("Claude analysis failed: %w", err)
+		return fmt.Errorf("email analysis failed: %w", err)
 	}
 
-	fmt.Printf("Claude email analysis: action=%s, has_event=%v, confidence=%.2f\n",
+	fmt.Printf("Email analysis: action=%s, has_event=%v, confidence=%.2f\n",
 		analysis.Action, analysis.HasEvent, analysis.Confidence)
 
 	// If no event detected or action is "none", skip
@@ -87,8 +87,8 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, s
 	return nil
 }
 
-// createPendingEventFromEmail creates a pending event from Claude's email analysis
-func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSource, analysis *claude.EventAnalysis) error {
+// createPendingEventFromEmail creates a pending event from email analysis
+func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSource, analysis *agent.EventAnalysis) error {
 	// Get or create a placeholder channel for email sources
 	emailChannel, err := p.getOrCreateEmailChannel(emailSource)
 	if err != nil {

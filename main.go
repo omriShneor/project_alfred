@@ -9,7 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/omriShneor/project_alfred/internal/claude"
+	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/agent/event"
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
@@ -55,8 +56,8 @@ func main() {
 		fatal("initialization", err)
 	}
 
-	claudeClient := initClaudeClient(cfg)
-	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, claudeClient, notifyService, cfg)
+	analyzer := initAnalyzer(cfg)
+	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, analyzer, notifyService, cfg)
 	tgClient := initTelegram(db, cfg, state)
 
 	srv.InitializeClients(server.ClientsConfig{
@@ -66,12 +67,12 @@ func main() {
 		GmailClient:       gmailClient,
 		GmailWorker:       gmailWorker,
 		NotifyService:     notifyService,
-		ClaudeClient:      claudeClient,
+		Analyzer:          analyzer,
 		GmailPollInterval: cfg.GmailPollInterval,
 		GmailMaxEmails:    cfg.GmailMaxEmails,
 	})
 
-	proc := processor.New(db, clients.GCalClient, claudeClient, clients.MsgChan, cfg.MessageHistorySize, notifyService)
+	proc := processor.New(db, clients.GCalClient, analyzer, clients.MsgChan, cfg.MessageHistorySize, notifyService)
 	if err := proc.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
 	}
@@ -83,14 +84,18 @@ func initDatabase(cfg *config.Config) (*database.DB, error) {
 	return database.New(cfg.DBPath)
 }
 
-func initClaudeClient(cfg *config.Config) *claude.Client {
+func initAnalyzer(cfg *config.Config) agent.Analyzer {
 	if cfg.AnthropicAPIKey == "" {
 		fmt.Println("Warning: ANTHROPIC_API_KEY not set, event detection disabled")
 		return nil
 	}
-	client := claude.NewClient(cfg.AnthropicAPIKey, cfg.ClaudeModel, cfg.ClaudeTemperature)
-	fmt.Println("Claude API configured for event detection")
-	return client
+	eventAgent := event.NewAgent(event.Config{
+		APIKey:      cfg.AnthropicAPIKey,
+		Model:       cfg.ClaudeModel,
+		Temperature: cfg.ClaudeTemperature,
+	})
+	fmt.Println("Event agent configured (tool-calling mode)")
+	return eventAgent
 }
 
 func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
@@ -112,7 +117,7 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
-func initGmail(gcalClient *gcal.Client, db *database.DB, claudeClient *claude.Client, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
+func initGmail(gcalClient *gcal.Client, db *database.DB, analyzer agent.Analyzer, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
 	if gcalClient == nil || !gcalClient.IsAuthenticated() {
 		return nil, nil
 	}
@@ -136,7 +141,7 @@ func initGmail(gcalClient *gcal.Client, db *database.DB, claudeClient *claude.Cl
 
 	fmt.Println("Gmail client initialized")
 
-	emailProc := processor.NewEmailProcessor(db, claudeClient, notifyService)
+	emailProc := processor.NewEmailProcessor(db, analyzer, notifyService)
 	gmailWorker := gmail.NewWorker(gmailClient, db, emailProc, gmail.WorkerConfig{
 		PollIntervalMinutes: cfg.GmailPollInterval,
 		MaxEmailsPerPoll:    cfg.GmailMaxEmails,

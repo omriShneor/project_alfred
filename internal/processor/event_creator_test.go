@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/omriShneor/project_alfred/internal/claude"
+	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/stretchr/testify/assert"
@@ -15,7 +15,7 @@ import (
 func TestParseEventTimes(t *testing.T) {
 	tests := []struct {
 		name          string
-		event         *claude.EventData
+		event         *agent.EventData
 		wantStartStr  string
 		wantEndStr    string
 		wantErr       bool
@@ -23,7 +23,7 @@ func TestParseEventTimes(t *testing.T) {
 	}{
 		{
 			name: "RFC3339 format with timezone",
-			event: &claude.EventData{
+			event: &agent.EventData{
 				StartTime: "2024-01-15T14:00:00Z",
 				EndTime:   "2024-01-15T15:00:00Z",
 			},
@@ -33,7 +33,7 @@ func TestParseEventTimes(t *testing.T) {
 		},
 		{
 			name: "ISO8601 format without timezone",
-			event: &claude.EventData{
+			event: &agent.EventData{
 				StartTime: "2024-01-15T14:00:00",
 				EndTime:   "2024-01-15T16:30:00",
 			},
@@ -43,7 +43,7 @@ func TestParseEventTimes(t *testing.T) {
 		},
 		{
 			name: "missing end time defaults to 1 hour",
-			event: &claude.EventData{
+			event: &agent.EventData{
 				StartTime: "2024-01-15T14:00:00Z",
 				EndTime:   "",
 			},
@@ -53,7 +53,7 @@ func TestParseEventTimes(t *testing.T) {
 		},
 		{
 			name: "invalid start time format",
-			event: &claude.EventData{
+			event: &agent.EventData{
 				StartTime: "not-a-date",
 				EndTime:   "2024-01-15T15:00:00Z",
 			},
@@ -61,7 +61,7 @@ func TestParseEventTimes(t *testing.T) {
 		},
 		{
 			name: "invalid end time is ignored (defaults to 1hr)",
-			event: &claude.EventData{
+			event: &agent.EventData{
 				StartTime: "2024-01-15T14:00:00Z",
 				EndTime:   "invalid-end-time",
 			},
@@ -71,7 +71,7 @@ func TestParseEventTimes(t *testing.T) {
 		},
 		{
 			name: "RFC3339 with positive timezone offset",
-			event: &claude.EventData{
+			event: &agent.EventData{
 				StartTime: "2024-01-15T14:00:00+02:00",
 				EndTime:   "2024-01-15T15:00:00+02:00",
 			},
@@ -200,7 +200,7 @@ func TestCreateEventFromAnalysis_NilEventData(t *testing.T) {
 	params := EventCreationParams{
 		ChannelID:  1,
 		SourceType: source.SourceTypeWhatsApp,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "create",
 			Event:    nil, // No event data
@@ -219,10 +219,10 @@ func TestCreateEventFromAnalysis_InvalidStartTime(t *testing.T) {
 	params := EventCreationParams{
 		ChannelID:  1,
 		SourceType: source.SourceTypeWhatsApp,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "create",
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:     "Test Event",
 				StartTime: "invalid-time",
 			},
@@ -241,10 +241,10 @@ func TestCreateEventFromAnalysis_UnknownAction(t *testing.T) {
 	params := EventCreationParams{
 		ChannelID:  1,
 		SourceType: source.SourceTypeWhatsApp,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "unknown_action",
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:     "Test Event",
 				StartTime: "2024-01-15T14:00:00Z",
 			},
@@ -273,12 +273,12 @@ func TestCreateEventFromAnalysis_Success(t *testing.T) {
 	params := EventCreationParams{
 		ChannelID:  channel.ID,
 		SourceType: source.SourceTypeWhatsApp,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent:   true,
 			Action:     "create",
 			Reasoning:  "User mentioned a meeting",
 			Confidence: 0.95,
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:       "Team Meeting",
 				Description: "Weekly sync meeting",
 				StartTime:   "2024-01-15T14:00:00Z",
@@ -317,10 +317,10 @@ func TestCreateEventFromAnalysis_WithGoogleEventRef(t *testing.T) {
 	params := EventCreationParams{
 		ChannelID:  channel.ID,
 		SourceType: source.SourceTypeWhatsApp,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "update",
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:     "Updated Meeting",
 				StartTime: "2024-01-15T14:00:00Z",
 				UpdateRef: "google-event-id-123", // Reference to existing Google event
@@ -366,10 +366,10 @@ func TestHandleExistingPendingEvent_Update(t *testing.T) {
 		ChannelID:     channel.ID,
 		SourceType:    source.SourceTypeWhatsApp,
 		ExistingEvent: created,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "update",
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:       "Updated Title",
 				Description: "New description",
 				StartTime:   "2024-01-20T10:00:00Z",
@@ -421,10 +421,10 @@ func TestHandleExistingPendingEvent_Delete(t *testing.T) {
 		ChannelID:     channel.ID,
 		SourceType:    source.SourceTypeWhatsApp,
 		ExistingEvent: created,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "delete",
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:     "Event to Cancel",
 				StartTime: "2024-01-20T10:00:00Z",
 			},
@@ -471,10 +471,10 @@ func TestCreateEventFromAnalysis_WithMessageID(t *testing.T) {
 		ChannelID:  channel.ID,
 		SourceType: source.SourceTypeWhatsApp,
 		MessageID:  &msg.ID,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 			Action:   "create",
-			Event: &claude.EventData{
+			Event: &agent.EventData{
 				Title:     "Meeting",
 				StartTime: "2024-01-15T14:00:00Z",
 			},
@@ -500,7 +500,7 @@ func TestEventCreationParams(t *testing.T) {
 		SourceType:    source.SourceTypeGmail,
 		EmailSourceID: &emailSourceID,
 		MessageID:     &msgID,
-		Analysis: &claude.EventAnalysis{
+		Analysis: &agent.EventAnalysis{
 			HasEvent: true,
 		},
 		ExistingEvent: &database.CalendarEvent{

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/omriShneor/project_alfred/internal/claude"
+	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/gmail"
@@ -27,7 +27,7 @@ type Server struct {
 	onboardingState *sse.State
 	state           *sse.State // Alias for onboardingState (for consistency)
 	notifyService   *notify.Service
-	claudeClient    *claude.Client
+	analyzer        agent.Analyzer
 	httpSrv         *http.Server
 	port            int
 	resendAPIKey    string      // For checking email availability
@@ -53,7 +53,7 @@ type ClientsConfig struct {
 	GmailClient   *gmail.Client
 	GmailWorker   *gmail.Worker
 	NotifyService *notify.Service
-	ClaudeClient  *claude.Client
+	Analyzer      agent.Analyzer
 	// Gmail worker config
 	GmailPollInterval int
 	GmailMaxEmails    int
@@ -90,7 +90,7 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.gmailClient = cfg.GmailClient
 	s.gmailWorker = cfg.GmailWorker
 	s.notifyService = cfg.NotifyService
-	s.claudeClient = cfg.ClaudeClient
+	s.analyzer = cfg.Analyzer
 	s.gmailPollInterval = cfg.GmailPollInterval
 	s.gmailMaxEmails = cfg.GmailMaxEmails
 }
@@ -250,8 +250,8 @@ func (s *Server) initializeGmailClient() error {
 	fmt.Println("Gmail client initialized after OAuth")
 
 	// Create and start Gmail worker if we have the required dependencies
-	if s.db != nil && s.claudeClient != nil && s.notifyService != nil {
-		emailProc := processor.NewEmailProcessor(s.db, s.claudeClient, s.notifyService)
+	if s.db != nil && s.analyzer != nil && s.notifyService != nil {
+		emailProc := processor.NewEmailProcessor(s.db, s.analyzer, s.notifyService)
 		pollInterval := s.gmailPollInterval
 		if pollInterval <= 0 {
 			pollInterval = 1 // Default to 1 minute

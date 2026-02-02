@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/omriShneor/project_alfred/internal/claude"
+	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/source"
@@ -22,8 +22,8 @@ type EventCreationParams struct {
 	EmailSourceID *int64 // Only for gmail sources
 	MessageID     *int64 // Reference to triggering message
 
-	// From Claude analysis
-	Analysis *claude.EventAnalysis
+	// From event analysis
+	Analysis *agent.EventAnalysis
 
 	// For update/delete of pending events (chat-specific)
 	ExistingEvent *database.CalendarEvent
@@ -120,7 +120,7 @@ func (ec *EventCreator) CreateEventFromAnalysis(ctx context.Context, params Even
 // handleExistingPendingEvent handles update/delete of an existing pending event
 func (ec *EventCreator) handleExistingPendingEvent(
 	existing *database.CalendarEvent,
-	analysis *claude.EventAnalysis,
+	analysis *agent.EventAnalysis,
 	startTime time.Time,
 	endTime *time.Time,
 ) (*database.CalendarEvent, error) {
@@ -156,8 +156,8 @@ func (ec *EventCreator) handleExistingPendingEvent(
 	return existing, nil
 }
 
-// parseEventTimes parses start and end times from Claude's analysis
-func parseEventTimes(event *claude.EventData) (startTime time.Time, endTime *time.Time, err error) {
+// parseEventTimes parses start and end times from the analysis
+func parseEventTimes(event *agent.EventData) (startTime time.Time, endTime *time.Time, err error) {
 	// Parse start time with RFC3339 + fallback
 	startTime, err = time.Parse(time.RFC3339, event.StartTime)
 	if err != nil {

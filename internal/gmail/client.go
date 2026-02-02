@@ -250,6 +250,65 @@ func decodeBase64(data string) string {
 	return string(decoded)
 }
 
+// ThreadMessage represents a message within an email thread
+type ThreadMessage struct {
+	ID       string
+	From     string
+	To       string
+	Date     string
+	Subject  string
+	Body     string
+	Snippet  string
+	IsLatest bool // True for the most recent message in the thread
+}
+
+// Thread represents an email thread with all its messages
+type Thread struct {
+	ID       string
+	Messages []ThreadMessage
+}
+
+// GetThread retrieves a thread by ID with up to maxMessages
+func (c *Client) GetThread(threadID string, maxMessages int) (*Thread, error) {
+	if c.service == nil {
+		return nil, fmt.Errorf("Gmail service not initialized")
+	}
+
+	thread, err := c.service.Users.Threads.Get("me", threadID).Format("full").Do()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get thread: %w", err)
+	}
+
+	result := &Thread{
+		ID:       thread.Id,
+		Messages: make([]ThreadMessage, 0, len(thread.Messages)),
+	}
+
+	// Process messages (oldest first from API, limit to last N)
+	startIdx := 0
+	if len(thread.Messages) > maxMessages {
+		startIdx = len(thread.Messages) - maxMessages
+	}
+
+	for i := startIdx; i < len(thread.Messages); i++ {
+		msg := thread.Messages[i]
+		parsed := c.parseMessage(msg)
+
+		result.Messages = append(result.Messages, ThreadMessage{
+			ID:       parsed.ID,
+			From:     parsed.From,
+			To:       parsed.To,
+			Date:     parsed.Date,
+			Subject:  parsed.Subject,
+			Body:     CleanEmailBody(parsed.Body),
+			Snippet:  parsed.Snippet,
+			IsLatest: i == len(thread.Messages)-1,
+		})
+	}
+
+	return result, nil
+}
+
 // GetLabels returns all labels in the user's mailbox
 func (c *Client) GetLabels() ([]*gmail.Label, error) {
 	if c.service == nil {

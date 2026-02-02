@@ -304,6 +304,14 @@ func (c *Client) IsConfigured() bool {
 	return c.apiKey != ""
 }
 
+// EmailThreadMessage represents a message in thread history
+type EmailThreadMessage struct {
+	From    string
+	Date    string
+	Subject string
+	Body    string
+}
+
 // EmailContent represents an email for analysis
 type EmailContent struct {
 	Subject string
@@ -311,6 +319,9 @@ type EmailContent struct {
 	To      string
 	Date    string
 	Body    string
+
+	// Thread context (optional) - previous messages in the conversation
+	ThreadHistory []EmailThreadMessage
 }
 
 // AnalyzeEmail sends email content to Claude for event detection
@@ -389,7 +400,17 @@ func (c *Client) AnalyzeEmail(ctx context.Context, email EmailContent) (*EventAn
 func (c *Client) buildEmailPrompt(email EmailContent) string {
 	var prompt bytes.Buffer
 
-	prompt.WriteString("## Email to Analyze\n\n")
+	// Add thread history if present (for context)
+	if len(email.ThreadHistory) > 0 {
+		prompt.WriteString("## Email Thread History (chronological order)\n\n")
+		for _, msg := range email.ThreadHistory {
+			prompt.WriteString(fmt.Sprintf("[%s] From: %s\n", msg.Date, msg.From))
+			prompt.WriteString(fmt.Sprintf("Subject: %s\n", msg.Subject))
+			prompt.WriteString(fmt.Sprintf("Body:\n%s\n\n---\n\n", truncateEmailBody(msg.Body, 2000)))
+		}
+	}
+
+	prompt.WriteString("## Email to Analyze (latest in thread)\n\n")
 	prompt.WriteString(fmt.Sprintf("**From:** %s\n", email.From))
 	prompt.WriteString(fmt.Sprintf("**To:** %s\n", email.To))
 	prompt.WriteString(fmt.Sprintf("**Date:** %s\n", email.Date))
@@ -410,4 +431,12 @@ func (c *Client) buildEmailPrompt(email EmailContent) string {
 	prompt.WriteString("\nAnalyze this email and respond with your JSON analysis.")
 
 	return prompt.String()
+}
+
+// truncateEmailBody truncates an email body to maxLen characters
+func truncateEmailBody(body string, maxLen int) string {
+	if len(body) <= maxLen {
+		return body
+	}
+	return body[:maxLen] + "..."
 }

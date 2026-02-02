@@ -25,7 +25,7 @@ type DBInterface interface {
 
 // EmailProcessor interface for processing emails
 type EmailProcessor interface {
-	ProcessEmail(ctx context.Context, email *Email, source *EmailSource) error
+	ProcessEmail(ctx context.Context, email *Email, source *EmailSource, thread *Thread) error
 }
 
 // Worker handles background email scanning and processing
@@ -221,9 +221,19 @@ func (w *Worker) poll() {
 			continue
 		}
 
-		// Process the email
+		// Fetch thread context if available
+		var thread *Thread
+		if result.Email.ThreadID != "" {
+			thread, err = client.GetThread(result.Email.ThreadID, 10)
+			if err != nil {
+				fmt.Printf("Gmail worker: warning - failed to get thread %s: %v\n", result.Email.ThreadID, err)
+				// Continue without thread context (graceful degradation)
+			}
+		}
+
+		// Process the email with thread context
 		if w.processor != nil && result.Source != nil {
-			if err := w.processor.ProcessEmail(w.ctx, result.Email, result.Source); err != nil {
+			if err := w.processor.ProcessEmail(w.ctx, result.Email, result.Source, thread); err != nil {
 				fmt.Printf("Gmail worker: failed to process email %s: %v\n", result.Email.ID, err)
 				// Continue with other emails
 			}

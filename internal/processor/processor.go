@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/omriShneor/project_alfred/internal/claude"
 	"github.com/omriShneor/project_alfred/internal/database"
@@ -25,6 +24,7 @@ type Processor struct {
 	msgChan       <-chan source.Message
 	historySize   int
 	notifyService *notify.Service
+	eventCreator  *EventCreator
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -53,6 +53,7 @@ func New(
 		msgChan:       msgChan,
 		historySize:   historySize,
 		notifyService: notifyService,
+		eventCreator:  NewEventCreator(db, notifyService),
 		ctx:           ctx,
 		cancel:        cancel,
 	}
@@ -206,124 +207,23 @@ func (p *Processor) createPendingEvent(
 	analysis *claude.EventAnalysis,
 	sourceType source.SourceType,
 ) error {
-	if analysis.Event == nil {
-		return fmt.Errorf("analysis has no event data")
-	}
-
-	// Parse start time
-	startTime, err := time.Parse(time.RFC3339, analysis.Event.StartTime)
-	if err != nil {
-		// Try alternative format
-		startTime, err = time.Parse("2006-01-02T15:04:05", analysis.Event.StartTime)
-		if err != nil {
-			return fmt.Errorf("failed to parse start time: %w", err)
-		}
-	}
-
-	// Parse end time if provided
-	var endTime *time.Time
-	if analysis.Event.EndTime != "" {
-		et, err := time.Parse(time.RFC3339, analysis.Event.EndTime)
-		if err != nil {
-			et, err = time.Parse("2006-01-02T15:04:05", analysis.Event.EndTime)
-			if err == nil {
-				endTime = &et
-			}
-		} else {
-			endTime = &et
-		}
-	}
-
-	// If no end time, default to 1 hour after start
-	if endTime == nil {
-		et := startTime.Add(time.Hour)
-		endTime = &et
+	params := EventCreationParams{
+		ChannelID:  channel.ID,
+		SourceType: sourceType,
+		MessageID:  &messageID,
+		Analysis:   analysis,
 	}
 
 	// Check if we should update an existing pending event
-	if analysis.Event.AlfredEventRef != 0 {
+	if analysis.Event != nil && analysis.Event.AlfredEventRef != 0 {
 		existing, err := p.db.GetEventByID(analysis.Event.AlfredEventRef)
 		if err == nil && existing.Status == database.EventStatusPending {
-			// Handle delete action on pending event
-			if analysis.Action == "delete" {
-				if err := p.db.UpdateEventStatus(existing.ID, database.EventStatusRejected); err != nil {
-					return fmt.Errorf("failed to reject pending event: %w", err)
-				}
-				fmt.Printf("Rejected pending event: %s (ID: %d) - user cancelled\n",
-					existing.Title, existing.ID)
-				return nil
-			}
-
-			// Update the existing pending event
-			if err := p.db.UpdatePendingEvent(
-				existing.ID,
-				analysis.Event.Title,
-				analysis.Event.Description,
-				startTime,
-				endTime,
-				analysis.Event.Location,
-			); err != nil {
-				return fmt.Errorf("failed to update pending event: %w", err)
-			}
-			fmt.Printf("Updated pending event: %s (ID: %d)\n",
-				analysis.Event.Title, existing.ID)
-			return nil
+			params.ExistingEvent = existing
 		}
 	}
 
-	// Determine action type
-	var actionType database.EventActionType
-	switch analysis.Action {
-	case "create":
-		actionType = database.EventActionCreate
-	case "update":
-		actionType = database.EventActionUpdate
-	case "delete":
-		actionType = database.EventActionDelete
-	default:
-		return fmt.Errorf("unknown action type: %s", analysis.Action)
-	}
-
-	// For updates/deletes of synced events, store the Google event ID reference
-	var googleEventID *string
-	if analysis.Event.UpdateRef != "" {
-		googleEventID = &analysis.Event.UpdateRef
-	}
-
-	// Get global calendar ID setting
-	calendarID, _ := p.db.GetSelectedCalendarID()
-
-	event := &database.CalendarEvent{
-		ChannelID:     channel.ID,
-		GoogleEventID: googleEventID,
-		CalendarID:    calendarID,
-		Title:         analysis.Event.Title,
-		Description:   analysis.Event.Description,
-		StartTime:     startTime,
-		EndTime:       endTime,
-		Location:      analysis.Event.Location,
-		ActionType:    actionType,
-		OriginalMsgID: &messageID,
-		LLMReasoning:  analysis.Reasoning,
-	}
-
-	created, err := p.db.CreatePendingEvent(event)
-	if err != nil {
-		return fmt.Errorf("failed to save event: %w", err)
-	}
-
-	// Update source type on the event
-	_, _ = p.db.Exec(`UPDATE calendar_events SET source = ? WHERE id = ?`, sourceType, created.ID)
-
-	fmt.Printf("Created pending event: %s (ID: %d, Action: %s, Source: %s)\n",
-		created.Title, created.ID, created.ActionType, sourceType)
-
-	// Send notification (non-blocking, don't fail event creation)
-	if p.notifyService != nil {
-		go p.notifyService.NotifyPendingEvent(context.Background(), created)
-	}
-
-	return nil
+	_, err := p.eventCreator.CreateEventFromAnalysis(p.ctx, params)
+	return err
 }
 
 // truncate shortens a string to maxLen characters

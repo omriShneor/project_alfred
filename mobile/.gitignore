@@ -31,6 +31,7 @@ yarn-error.*
 
 # Testing
 coverage/
+coverage.*
 
 # macOS
 .DS_Store

@@ -56,6 +56,8 @@ Confirm → Sync to Google Calendar
 
 **Google OAuth:** Uses deep link (`alfred://oauth/callback`) - app opens browser, captures redirect.
 
+**Gmail:** Fetches full email threads (up to 10 messages) for context when analyzing emails. Thread history is passed to Claude for better event detection.
+
 ---
 
 ## Common Tasks
@@ -300,6 +302,22 @@ type FilteredMessage struct {
     IsGroup    bool
     Timestamp  time.Time
 }
+
+// EventCreator (processor/event_creator.go) - shared event creation logic
+type EventCreationParams struct {
+    ChannelID     int64
+    SourceType    SourceType
+    EmailSourceID *int64  // For gmail sources
+    MessageID     *int64  // For chat messages
+    Analysis      *EventAnalysis
+    ExistingEvent *CalendarEvent  // For pending event updates
+}
+
+// Thread (gmail/client.go) - email thread with history
+type Thread struct {
+    ID       string
+    Messages []ThreadMessage  // Up to 10 most recent messages
+}
 ```
 
 ---
@@ -315,7 +333,7 @@ type FilteredMessage struct {
 | `internal/server/` | `server.go`, `handlers.go`, `gmail_handlers.go`, `features_handlers.go`, `telegram_handlers.go` | HTTP API |
 | `internal/source/` | `source.go` | Unified source types (WhatsApp, Telegram, Gmail) |
 | `internal/claude/` | `client.go`, `prompt.go` | Claude AI event detection |
-| `internal/processor/` | `processor.go`, `email_processor.go`, `history.go` | Message processing pipeline |
+| `internal/processor/` | `processor.go`, `email_processor.go`, `event_creator.go`, `history.go` | Message processing pipeline |
 | `internal/whatsapp/` | `client.go`, `handler.go`, `groups.go`, `qr.go` | WhatsApp connection |
 | `internal/telegram/` | `client.go`, `handler.go`, `groups.go`, `session.go` | Telegram connection |
 | `internal/gcal/` | `client.go`, `auth.go`, `events.go`, `calendars.go` | Google Calendar integration |
@@ -491,6 +509,7 @@ Find IP: `ipconfig getifaddr en0`
 | WhatsApp processing | `internal/processor/processor.go`, `internal/whatsapp/handler.go` |
 | Telegram processing | `internal/processor/processor.go`, `internal/telegram/handler.go` |
 | Gmail processing | `internal/processor/email_processor.go`, `internal/gmail/worker.go` |
+| Event creation logic | `internal/processor/event_creator.go` |
 | Google Calendar | `internal/gcal/events.go` |
 | Notifications | `internal/notify/service.go` |
 | Mobile API hooks | `mobile/src/hooks/**` |

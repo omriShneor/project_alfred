@@ -1,0 +1,438 @@
+package database
+
+import (
+	"testing"
+
+	"github.com/omriShneor/project_alfred/internal/source"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestCreateSourceChannel(t *testing.T) {
+	tests := []struct {
+		name        string
+		sourceType  source.SourceType
+		channelType source.ChannelType
+		identifier  string
+		channelName string
+	}{
+		{
+			name:        "create whatsapp sender channel",
+			sourceType:  source.SourceTypeWhatsApp,
+			channelType: source.ChannelTypeSender,
+			identifier:  "1234567890@s.whatsapp.net",
+			channelName: "WhatsApp Contact",
+		},
+		{
+			name:        "create telegram sender channel",
+			sourceType:  source.SourceTypeTelegram,
+			channelType: source.ChannelTypeSender,
+			identifier:  "telegram_user_123",
+			channelName: "Telegram Contact",
+		},
+		{
+			name:        "create gmail sender channel",
+			sourceType:  source.SourceTypeGmail,
+			channelType: source.ChannelTypeSender,
+			identifier:  "test@example.com",
+			channelName: "Email Contact",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := NewTestDB(t)
+
+			channel, err := db.CreateSourceChannel(
+				tt.sourceType,
+				tt.channelType,
+				tt.identifier,
+				tt.channelName,
+			)
+
+			require.NoError(t, err)
+			require.NotNil(t, channel)
+			assert.NotZero(t, channel.ID)
+			assert.Equal(t, tt.sourceType, channel.SourceType)
+			assert.Equal(t, tt.channelType, channel.Type)
+			assert.Equal(t, tt.identifier, channel.Identifier)
+			assert.Equal(t, tt.channelName, channel.Name)
+			assert.True(t, channel.Enabled, "new channels should be enabled by default")
+		})
+	}
+}
+
+func TestCreateSourceChannel_DuplicateIdentifier(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create first channel
+	_, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"duplicate@s.whatsapp.net",
+		"First Channel",
+	)
+	require.NoError(t, err)
+
+	// Try to create channel with same identifier and source type
+	_, err = db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"duplicate@s.whatsapp.net",
+		"Duplicate Channel",
+	)
+	assert.Error(t, err, "should fail on duplicate identifier for same source type")
+}
+
+func TestCreateSourceChannel_DifferentSourceTypes(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create WhatsApp channel
+	ch1, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"wa_user@s.whatsapp.net",
+		"WhatsApp Channel",
+	)
+	require.NoError(t, err)
+
+	// Different identifier for different source type
+	ch2, err := db.CreateSourceChannel(
+		source.SourceTypeGmail,
+		source.ChannelTypeSender,
+		"email_user@example.com",
+		"Gmail Channel",
+	)
+	require.NoError(t, err)
+
+	assert.NotEqual(t, ch1.ID, ch2.ID)
+	assert.Equal(t, source.SourceTypeWhatsApp, ch1.SourceType)
+	assert.Equal(t, source.SourceTypeGmail, ch2.SourceType)
+}
+
+func TestGetSourceChannelByID(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create a channel
+	created, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"test@s.whatsapp.net",
+		"Test Channel",
+	)
+	require.NoError(t, err)
+
+	t.Run("get existing channel", func(t *testing.T) {
+		channel, err := db.GetSourceChannelByID(created.ID)
+		require.NoError(t, err)
+		require.NotNil(t, channel)
+		assert.Equal(t, created.ID, channel.ID)
+		assert.Equal(t, "Test Channel", channel.Name)
+		assert.Equal(t, source.SourceTypeWhatsApp, channel.SourceType)
+	})
+
+	t.Run("get non-existent channel returns nil", func(t *testing.T) {
+		channel, err := db.GetSourceChannelByID(999999)
+		require.NoError(t, err)
+		assert.Nil(t, channel)
+	})
+}
+
+func TestGetSourceChannelByIdentifier(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create channels
+	waChannel, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"1234567890@s.whatsapp.net",
+		"WA Contact",
+	)
+	require.NoError(t, err)
+
+	gmailChannel, err := db.CreateSourceChannel(
+		source.SourceTypeGmail,
+		source.ChannelTypeSender,
+		"test@example.com",
+		"Email Contact",
+	)
+	require.NoError(t, err)
+
+	t.Run("find whatsapp channel", func(t *testing.T) {
+		channel, err := db.GetSourceChannelByIdentifier(
+			source.SourceTypeWhatsApp,
+			"1234567890@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		require.NotNil(t, channel)
+		assert.Equal(t, waChannel.ID, channel.ID)
+	})
+
+	t.Run("find gmail channel", func(t *testing.T) {
+		channel, err := db.GetSourceChannelByIdentifier(
+			source.SourceTypeGmail,
+			"test@example.com",
+		)
+		require.NoError(t, err)
+		require.NotNil(t, channel)
+		assert.Equal(t, gmailChannel.ID, channel.ID)
+	})
+
+	t.Run("not found returns nil", func(t *testing.T) {
+		channel, err := db.GetSourceChannelByIdentifier(
+			source.SourceTypeWhatsApp,
+			"nonexistent@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		assert.Nil(t, channel)
+	})
+
+	t.Run("wrong source type returns nil", func(t *testing.T) {
+		// The identifier exists but for a different source type
+		channel, err := db.GetSourceChannelByIdentifier(
+			source.SourceTypeTelegram,
+			"1234567890@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		assert.Nil(t, channel)
+	})
+}
+
+func TestListSourceChannels(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create multiple channels for different sources
+	_, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa1@s.whatsapp.net", "WA 1")
+	require.NoError(t, err)
+	_, err = db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa2@s.whatsapp.net", "WA 2")
+	require.NoError(t, err)
+	_, err = db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, "tg1", "TG 1")
+	require.NoError(t, err)
+	_, err = db.CreateSourceChannel(source.SourceTypeGmail, source.ChannelTypeSender, "email@test.com", "Gmail 1")
+	require.NoError(t, err)
+
+	t.Run("list whatsapp channels", func(t *testing.T) {
+		channels, err := db.ListSourceChannels(source.SourceTypeWhatsApp)
+		require.NoError(t, err)
+		assert.Len(t, channels, 2)
+
+		for _, ch := range channels {
+			assert.Equal(t, source.SourceTypeWhatsApp, ch.SourceType)
+		}
+	})
+
+	t.Run("list telegram channels", func(t *testing.T) {
+		channels, err := db.ListSourceChannels(source.SourceTypeTelegram)
+		require.NoError(t, err)
+		assert.Len(t, channels, 1)
+		assert.Equal(t, "TG 1", channels[0].Name)
+	})
+
+	t.Run("list gmail channels", func(t *testing.T) {
+		channels, err := db.ListSourceChannels(source.SourceTypeGmail)
+		require.NoError(t, err)
+		assert.Len(t, channels, 1)
+	})
+
+	t.Run("empty list for source with no channels", func(t *testing.T) {
+		db2 := NewTestDB(t)
+		channels, err := db2.ListSourceChannels(source.SourceTypeWhatsApp)
+		require.NoError(t, err)
+		assert.Len(t, channels, 0)
+	})
+}
+
+func TestListEnabledSourceChannels(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create channels
+	ch1, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled1@s.whatsapp.net", "Enabled 1")
+	require.NoError(t, err)
+	ch2, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "disabled@s.whatsapp.net", "Disabled")
+	require.NoError(t, err)
+	_, err = db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled2@s.whatsapp.net", "Enabled 2")
+	require.NoError(t, err)
+
+	// Disable one channel
+	err = db.UpdateSourceChannel(ch2.ID, ch2.Name, false)
+	require.NoError(t, err)
+
+	t.Run("returns only enabled channels", func(t *testing.T) {
+		channels, err := db.ListEnabledSourceChannels(source.SourceTypeWhatsApp)
+		require.NoError(t, err)
+		assert.Len(t, channels, 2)
+
+		for _, ch := range channels {
+			assert.True(t, ch.Enabled)
+			assert.NotEqual(t, "Disabled", ch.Name)
+		}
+	})
+
+	// Enable the disabled channel
+	err = db.UpdateSourceChannel(ch2.ID, ch2.Name, true)
+	require.NoError(t, err)
+
+	t.Run("includes re-enabled channels", func(t *testing.T) {
+		channels, err := db.ListEnabledSourceChannels(source.SourceTypeWhatsApp)
+		require.NoError(t, err)
+		assert.Len(t, channels, 3)
+	})
+
+	// Verify ch1 is still present
+	_ = ch1
+}
+
+func TestUpdateSourceChannel(t *testing.T) {
+	db := NewTestDB(t)
+
+	channel, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"update@s.whatsapp.net",
+		"Original Name",
+	)
+	require.NoError(t, err)
+	assert.True(t, channel.Enabled)
+
+	t.Run("update name", func(t *testing.T) {
+		err := db.UpdateSourceChannel(channel.ID, "Updated Name", true)
+		require.NoError(t, err)
+
+		updated, err := db.GetSourceChannelByID(channel.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "Updated Name", updated.Name)
+		assert.True(t, updated.Enabled)
+	})
+
+	t.Run("disable channel", func(t *testing.T) {
+		err := db.UpdateSourceChannel(channel.ID, "Updated Name", false)
+		require.NoError(t, err)
+
+		updated, err := db.GetSourceChannelByID(channel.ID)
+		require.NoError(t, err)
+		assert.False(t, updated.Enabled)
+	})
+
+	t.Run("re-enable channel", func(t *testing.T) {
+		err := db.UpdateSourceChannel(channel.ID, "Re-enabled", true)
+		require.NoError(t, err)
+
+		updated, err := db.GetSourceChannelByID(channel.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "Re-enabled", updated.Name)
+		assert.True(t, updated.Enabled)
+	})
+}
+
+func TestDeleteSourceChannel(t *testing.T) {
+	db := NewTestDB(t)
+
+	channel, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"delete@s.whatsapp.net",
+		"To Delete",
+	)
+	require.NoError(t, err)
+
+	t.Run("delete existing channel", func(t *testing.T) {
+		err := db.DeleteSourceChannel(channel.ID)
+		require.NoError(t, err)
+
+		deleted, err := db.GetSourceChannelByID(channel.ID)
+		require.NoError(t, err)
+		assert.Nil(t, deleted)
+	})
+
+	t.Run("delete non-existent channel (no error)", func(t *testing.T) {
+		err := db.DeleteSourceChannel(999999)
+		require.NoError(t, err) // SQLite DELETE doesn't error on missing rows
+	})
+}
+
+func TestIsSourceChannelTracked(t *testing.T) {
+	db := NewTestDB(t)
+
+	// Create an enabled channel
+	enabledCh, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"enabled@s.whatsapp.net",
+		"Enabled Channel",
+	)
+	require.NoError(t, err)
+
+	// Create a disabled channel
+	disabledCh, err := db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"disabled@s.whatsapp.net",
+		"Disabled Channel",
+	)
+	require.NoError(t, err)
+	err = db.UpdateSourceChannel(disabledCh.ID, disabledCh.Name, false)
+	require.NoError(t, err)
+
+	t.Run("tracked and enabled", func(t *testing.T) {
+		isTracked, channelID, channelType, err := db.IsSourceChannelTracked(
+			source.SourceTypeWhatsApp,
+			"enabled@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		assert.True(t, isTracked)
+		assert.Equal(t, enabledCh.ID, channelID)
+		assert.Equal(t, source.ChannelTypeSender, channelType)
+	})
+
+	t.Run("tracked but disabled returns not tracked", func(t *testing.T) {
+		isTracked, channelID, channelType, err := db.IsSourceChannelTracked(
+			source.SourceTypeWhatsApp,
+			"disabled@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		assert.False(t, isTracked)
+		assert.Zero(t, channelID)
+		assert.Empty(t, channelType)
+	})
+
+	t.Run("not tracked at all", func(t *testing.T) {
+		isTracked, channelID, channelType, err := db.IsSourceChannelTracked(
+			source.SourceTypeWhatsApp,
+			"nonexistent@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		assert.False(t, isTracked)
+		assert.Zero(t, channelID)
+		assert.Empty(t, channelType)
+	})
+
+	t.Run("wrong source type", func(t *testing.T) {
+		isTracked, _, _, err := db.IsSourceChannelTracked(
+			source.SourceTypeTelegram, // Wrong source
+			"enabled@s.whatsapp.net",
+		)
+		require.NoError(t, err)
+		assert.False(t, isTracked)
+	})
+}
+
+func TestSourceChannelToSourceChannel(t *testing.T) {
+	// Test the ToSourceChannel conversion method
+	sc := &SourceChannel{
+		ID:         42,
+		SourceType: source.SourceTypeWhatsApp,
+		Type:       source.ChannelTypeSender,
+		Identifier: "test@s.whatsapp.net",
+		Name:       "Test",
+		Enabled:    true,
+	}
+
+	converted := sc.ToSourceChannel()
+
+	assert.Equal(t, int64(42), converted.ID)
+	assert.Equal(t, source.SourceTypeWhatsApp, converted.SourceType)
+	assert.Equal(t, source.ChannelTypeSender, converted.Type)
+	assert.Equal(t, "test@s.whatsapp.net", converted.Identifier)
+	assert.Equal(t, "Test", converted.Name)
+	assert.True(t, converted.Enabled)
+}

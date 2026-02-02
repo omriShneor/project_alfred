@@ -1,0 +1,526 @@
+package server
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"testing"
+	"time"
+
+	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/source"
+	"github.com/omriShneor/project_alfred/internal/sse"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// createTestServer creates a minimal server for testing with just the database
+func createTestServer(t *testing.T) *Server {
+	t.Helper()
+	db := database.NewTestDB(t)
+	state := sse.NewState()
+
+	return &Server{
+		db:              db,
+		onboardingState: state,
+		state:           state,
+	}
+}
+
+func TestHandleHealthCheck(t *testing.T) {
+	t.Run("healthy with database only", func(t *testing.T) {
+		s := createTestServer(t)
+
+		req := httptest.NewRequest("GET", "/health", nil)
+		w := httptest.NewRecorder()
+
+		s.handleHealthCheck(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+
+		assert.Equal(t, "healthy", response["status"])
+		assert.Equal(t, "disconnected", response["whatsapp"])
+		assert.Equal(t, "disconnected", response["telegram"])
+		assert.Equal(t, "disconnected", response["gcal"])
+	})
+}
+
+func TestHandleListChannels(t *testing.T) {
+	s := createTestServer(t)
+
+	// Create some channels
+	_, err := s.db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"channel1@s.whatsapp.net",
+		"Channel 1",
+	)
+	require.NoError(t, err)
+
+	_, err = s.db.CreateSourceChannel(
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"channel2@s.whatsapp.net",
+		"Channel 2",
+	)
+	require.NoError(t, err)
+
+	t.Run("list all channels", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/channel", nil)
+		w := httptest.NewRecorder()
+
+		s.handleListChannels(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var channels []database.Channel
+		err := json.Unmarshal(w.Body.Bytes(), &channels)
+		require.NoError(t, err)
+		assert.Len(t, channels, 2)
+	})
+
+	t.Run("filter by type", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/channel?type=sender", nil)
+		w := httptest.NewRecorder()
+
+		s.handleListChannels(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var channels []database.Channel
+		err := json.Unmarshal(w.Body.Bytes(), &channels)
+		require.NoError(t, err)
+		assert.Len(t, channels, 2)
+	})
+}
+
+func TestHandleListChannels_Empty(t *testing.T) {
+	s := createTestServer(t)
+
+	req := httptest.NewRequest("GET", "/api/channel", nil)
+	w := httptest.NewRecorder()
+
+	s.handleListChannels(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var channels []database.Channel
+	err := json.Unmarshal(w.Body.Bytes(), &channels)
+	require.NoError(t, err)
+	assert.Len(t, channels, 0)
+}
+
+func TestHandleCreateChannel(t *testing.T) {
+	t.Run("create valid channel", func(t *testing.T) {
+		s := createTestServer(t)
+
+		body := map[string]string{
+			"type":       "sender",
+			"identifier": "newchannel@s.whatsapp.net",
+			"name":       "New Channel",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/channel", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		s.handleCreateChannel(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		var channel database.Channel
+		err := json.Unmarshal(w.Body.Bytes(), &channel)
+		require.NoError(t, err)
+		assert.Equal(t, "New Channel", channel.Name)
+		assert.Equal(t, "newchannel@s.whatsapp.net", channel.Identifier)
+	})
+
+	t.Run("invalid type", func(t *testing.T) {
+		s := createTestServer(t)
+
+		body := map[string]string{
+			"type":       "invalid_type",
+			"identifier": "test@s.whatsapp.net",
+			"name":       "Test",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/channel", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		s.handleCreateChannel(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("missing identifier", func(t *testing.T) {
+		s := createTestServer(t)
+
+		body := map[string]string{
+			"type": "sender",
+			"name": "Test",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/channel", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		s.handleCreateChannel(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("missing name", func(t *testing.T) {
+		s := createTestServer(t)
+
+		body := map[string]string{
+			"type":       "sender",
+			"identifier": "test@s.whatsapp.net",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/channel", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+
+		s.handleCreateChannel(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestHandleUpdateChannel(t *testing.T) {
+	s := createTestServer(t)
+
+	// Create a channel first
+	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "update@s.whatsapp.net", "Original Name")
+	require.NoError(t, err)
+
+	t.Run("update channel successfully", func(t *testing.T) {
+		body := map[string]interface{}{
+			"name":    "Updated Name",
+			"enabled": false,
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("PUT", "/api/channel/"+strconv.FormatInt(channel.ID, 10), bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", strconv.FormatInt(channel.ID, 10))
+		w := httptest.NewRecorder()
+
+		s.handleUpdateChannel(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var updated database.Channel
+		err := json.Unmarshal(w.Body.Bytes(), &updated)
+		require.NoError(t, err)
+		assert.Equal(t, "Updated Name", updated.Name)
+		assert.False(t, updated.Enabled)
+	})
+
+	t.Run("update non-existent channel returns OK (no-op)", func(t *testing.T) {
+		body := map[string]interface{}{
+			"name":    "Name",
+			"enabled": true,
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("PUT", "/api/channel/999999", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", "999999")
+		w := httptest.NewRecorder()
+
+		s.handleUpdateChannel(w, req)
+
+		// UPDATE in SQL doesn't fail if no rows match, handler returns OK
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("invalid channel id", func(t *testing.T) {
+		body := map[string]interface{}{
+			"name":    "Name",
+			"enabled": true,
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("PUT", "/api/channel/invalid", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.SetPathValue("id", "invalid")
+		w := httptest.NewRecorder()
+
+		s.handleUpdateChannel(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestHandleDeleteChannel(t *testing.T) {
+	s := createTestServer(t)
+
+	// Create a channel first
+	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "delete@s.whatsapp.net", "To Delete")
+	require.NoError(t, err)
+
+	t.Run("delete channel successfully", func(t *testing.T) {
+		req := httptest.NewRequest("DELETE", "/api/channel/"+strconv.FormatInt(channel.ID, 10), nil)
+		req.SetPathValue("id", strconv.FormatInt(channel.ID, 10))
+		w := httptest.NewRecorder()
+
+		s.handleDeleteChannel(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		// Verify deleted
+		deleted, _ := s.db.GetChannelByID(channel.ID)
+		assert.Nil(t, deleted)
+	})
+
+	t.Run("delete non-existent channel returns OK (idempotent)", func(t *testing.T) {
+		req := httptest.NewRequest("DELETE", "/api/channel/999999", nil)
+		req.SetPathValue("id", "999999")
+		w := httptest.NewRecorder()
+
+		s.handleDeleteChannel(w, req)
+
+		// DELETE in SQL doesn't fail if no rows match, handler returns OK
+		assert.Equal(t, http.StatusOK, w.Code)
+	})
+
+	t.Run("invalid channel id", func(t *testing.T) {
+		req := httptest.NewRequest("DELETE", "/api/channel/invalid", nil)
+		req.SetPathValue("id", "invalid")
+		w := httptest.NewRecorder()
+
+		s.handleDeleteChannel(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestHandleListEvents(t *testing.T) {
+	s := createTestServer(t)
+
+	// Create a channel for events
+	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "events@s.whatsapp.net", "Events Channel")
+	require.NoError(t, err)
+
+	// Create some events
+	event1 := &database.CalendarEvent{
+		ChannelID:  channel.ID,
+		CalendarID: "primary",
+		Title:      "Event 1",
+		StartTime:  time.Now(),
+		ActionType: database.EventActionCreate,
+	}
+	_, err = s.db.CreatePendingEvent(event1)
+	require.NoError(t, err)
+
+	event2 := &database.CalendarEvent{
+		ChannelID:  channel.ID,
+		CalendarID: "primary",
+		Title:      "Event 2",
+		StartTime:  time.Now().Add(time.Hour),
+		ActionType: database.EventActionCreate,
+	}
+	created2, err := s.db.CreatePendingEvent(event2)
+	require.NoError(t, err)
+	err = s.db.UpdateEventStatus(created2.ID, database.EventStatusSynced)
+	require.NoError(t, err)
+
+	t.Run("list all events", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events", nil)
+		w := httptest.NewRecorder()
+
+		s.handleListEvents(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var events []database.CalendarEvent
+		err := json.Unmarshal(w.Body.Bytes(), &events)
+		require.NoError(t, err)
+		assert.Len(t, events, 2)
+	})
+
+	t.Run("filter by pending status", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events?status=pending", nil)
+		w := httptest.NewRecorder()
+
+		s.handleListEvents(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var events []database.CalendarEvent
+		err := json.Unmarshal(w.Body.Bytes(), &events)
+		require.NoError(t, err)
+		assert.Len(t, events, 1)
+		assert.Equal(t, "Event 1", events[0].Title)
+	})
+
+	t.Run("filter by synced status", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events?status=synced", nil)
+		w := httptest.NewRecorder()
+
+		s.handleListEvents(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var events []database.CalendarEvent
+		err := json.Unmarshal(w.Body.Bytes(), &events)
+		require.NoError(t, err)
+		assert.Len(t, events, 1)
+		assert.Equal(t, "Event 2", events[0].Title)
+	})
+
+	t.Run("filter by channel", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events?channel_id="+strconv.FormatInt(channel.ID, 10), nil)
+		w := httptest.NewRecorder()
+
+		s.handleListEvents(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var events []database.CalendarEvent
+		err := json.Unmarshal(w.Body.Bytes(), &events)
+		require.NoError(t, err)
+		assert.Len(t, events, 2)
+	})
+}
+
+func TestHandleGetEvent(t *testing.T) {
+	s := createTestServer(t)
+
+	// Create a channel and event
+	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "getevent@s.whatsapp.net", "Get Event Channel")
+	require.NoError(t, err)
+
+	event := &database.CalendarEvent{
+		ChannelID:    channel.ID,
+		CalendarID:   "primary",
+		Title:        "Test Event",
+		Description:  "Test Description",
+		StartTime:    time.Now(),
+		Location:     "Test Location",
+		ActionType:   database.EventActionCreate,
+		LLMReasoning: "Test reasoning",
+	}
+	created, err := s.db.CreatePendingEvent(event)
+	require.NoError(t, err)
+
+	t.Run("get existing event", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events/"+strconv.FormatInt(created.ID, 10), nil)
+		req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+		w := httptest.NewRecorder()
+
+		s.handleGetEvent(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var response map[string]interface{}
+		err := json.Unmarshal(w.Body.Bytes(), &response)
+		require.NoError(t, err)
+		assert.NotNil(t, response["event"])
+	})
+
+	t.Run("get non-existent event", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events/999999", nil)
+		req.SetPathValue("id", "999999")
+		w := httptest.NewRecorder()
+
+		s.handleGetEvent(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("invalid event id", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events/invalid", nil)
+		req.SetPathValue("id", "invalid")
+		w := httptest.NewRecorder()
+
+		s.handleGetEvent(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+}
+
+func TestHandleRejectEvent(t *testing.T) {
+	s := createTestServer(t)
+
+	// Create a channel and pending event
+	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "reject@s.whatsapp.net", "Reject Channel")
+	require.NoError(t, err)
+
+	event := &database.CalendarEvent{
+		ChannelID:  channel.ID,
+		CalendarID: "primary",
+		Title:      "Event to Reject",
+		StartTime:  time.Now(),
+		ActionType: database.EventActionCreate,
+	}
+	created, err := s.db.CreatePendingEvent(event)
+	require.NoError(t, err)
+
+	t.Run("reject pending event", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/events/"+strconv.FormatInt(created.ID, 10)+"/reject", nil)
+		req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+		w := httptest.NewRecorder()
+
+		s.handleRejectEvent(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		// Verify status changed
+		rejected, err := s.db.GetEventByID(created.ID)
+		require.NoError(t, err)
+		assert.Equal(t, database.EventStatusRejected, rejected.Status)
+	})
+
+	t.Run("reject non-existent event", func(t *testing.T) {
+		req := httptest.NewRequest("POST", "/api/events/999999/reject", nil)
+		req.SetPathValue("id", "999999")
+		w := httptest.NewRecorder()
+
+		s.handleRejectEvent(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+}
+
+func TestRespondJSON(t *testing.T) {
+	w := httptest.NewRecorder()
+
+	data := map[string]string{"key": "value"}
+	respondJSON(w, http.StatusOK, data)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var response map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "value", response["key"])
+}
+
+func TestRespondError(t *testing.T) {
+	w := httptest.NewRecorder()
+
+	respondError(w, http.StatusBadRequest, "test error message")
+
+	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
+
+	var response map[string]string
+	err := json.Unmarshal(w.Body.Bytes(), &response)
+	require.NoError(t, err)
+	assert.Equal(t, "test error message", response["error"])
+}
+

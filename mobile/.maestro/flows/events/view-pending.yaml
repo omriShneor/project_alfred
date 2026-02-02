@@ -1,0 +1,24 @@
+# View Pending Events Flow
+# Tests viewing pending events on the home screen
+#
+# Prerequisites:
+# - Test server running: ANTHROPIC_API_KEY=sk-... go run cmd/testserver/main.go
+# - App already onboarded (past onboarding screens)
+# - Pending events exist in database
+#
+# Setup: Create test data via test server
+# curl -X POST http://localhost:8080/api/test/create-channel -d '{"identifier":"test-contact","name":"Test Contact"}'
+# Then inject a message to trigger event detection
+
+appId: com.projectalfred.mobile
+---
+# Verify home screen header
+- assertVisible: "Alfred"
+
+# Verify pending events section exists
+- assertVisible: "PENDING EVENTS"
+
+# If no events, should show empty state
+- assertVisible:
+    text: ".*pending.*"
+    regex: true

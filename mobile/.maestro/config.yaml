@@ -1,0 +1,21 @@
+# Maestro E2E Test Configuration for Project Alfred Mobile App
+# Requires the test backend server to be running:
+#   ANTHROPIC_API_KEY=sk-... go run cmd/testserver/main.go
+
+# App ID for the Expo web version (default)
+appId: com.projectalfred.mobile
+
+# Default flow options
+flows:
+  - flows/**/*.yaml
+
+# Environment variables used in tests
+env:
+  API_BASE_URL: http://localhost:8080
+
+# Test execution settings
+maestro:
+  # Timeout for assertions (ms)
+  timeout: 10000
+  # Retry failed tests
+  retries: 1

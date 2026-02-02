@@ -1,0 +1,29 @@
+# Tab Navigation Flow
+# Tests navigation between tabs in the main app
+#
+# Prerequisites:
+# - Test server running
+# - App already onboarded and on home screen
+
+appId: com.projectalfred.mobile
+---
+# Start on home screen
+- assertVisible: "Alfred"
+
+# Navigate to Sources tab
+- tapOn: "Sources"
+
+# Verify preferences screen content
+- assertVisible: "Sources"
+- assertVisible: "Configure where Alfred looks for events"
+
+# Navigate to Settings tab
+- tapOn: "Settings"
+
+# Verify settings screen content
+- assertVisible: "Notifications"
+- assertVisible: "Email Notifications"
+
+# Navigate back to Sources
+- tapOn: "Sources"
+- assertVisible: "Configure where Alfred looks for events"

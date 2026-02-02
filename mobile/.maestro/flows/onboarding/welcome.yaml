@@ -1,0 +1,23 @@
+# Welcome Screen Flow
+# Tests the initial welcome screen of the app
+#
+# Prerequisites:
+# - Test server running: ANTHROPIC_API_KEY=sk-... go run cmd/testserver/main.go
+# - Reset test data: curl -X POST http://localhost:8080/api/test/reset
+# - App started: EXPO_PUBLIC_API_BASE_URL=http://localhost:8080 npm run web
+
+appId: com.projectalfred.mobile
+---
+# Verify app name is displayed
+- assertVisible: "Alfred"
+
+# Verify title is displayed
+- assertVisible: "Your Personal Assistant"
+
+# Verify feature descriptions
+- assertVisible: "Scan WhatsApp messages for events"
+- assertVisible: "Scan emails for appointments"
+- assertVisible: "Review before adding to calendar"
+
+# Verify Get Started button exists
+- assertVisible: "Get Started"

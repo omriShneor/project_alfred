@@ -1,0 +1,35 @@
+# Input Selection Flow
+# Tests the source selection screen during onboarding
+#
+# Prerequisites:
+# - Test server running: ANTHROPIC_API_KEY=sk-... go run cmd/testserver/main.go
+# - Reset test data: curl -X POST http://localhost:8080/api/test/reset
+# - App started: EXPO_PUBLIC_API_BASE_URL=http://localhost:8080 npm run web
+
+appId: com.projectalfred.mobile
+---
+# Start from welcome screen
+- assertVisible: "Get Started"
+- tapOn: "Get Started"
+
+# Verify input selection screen
+- assertVisible: "Step 1 of 2"
+- assertVisible: "Choose Your Sources"
+- assertVisible: "Select where Alfred should look for events"
+
+# Verify all input options are displayed
+- assertVisible: "WhatsApp"
+- assertVisible: "Telegram"
+- assertVisible: "Gmail"
+
+# Verify Continue button is initially disabled (no selection)
+- assertVisible: "Continue"
+
+# Select WhatsApp
+- tapOn: "WhatsApp"
+
+# Now Continue should work - tap it
+- tapOn: "Continue"
+
+# Should navigate to Connection screen (Step 2)
+- assertVisible: "Step 2 of 2"

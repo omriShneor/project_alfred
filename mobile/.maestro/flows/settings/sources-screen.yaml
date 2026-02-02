@@ -1,0 +1,21 @@
+# Sources Screen Flow
+# Tests the sources/preferences screen
+#
+# Prerequisites:
+# - Test server running
+# - App already onboarded and on home screen
+
+appId: com.projectalfred.mobile
+---
+# Navigate to Sources tab
+- tapOn: "Sources"
+
+# Verify sources screen header
+- assertVisible: "Sources"
+- assertVisible: "Configure where Alfred looks for events"
+
+# Verify source options are visible
+- assertVisible: "WhatsApp"
+- assertVisible: "Telegram"
+- assertVisible: "Gmail"
+- assertVisible: "Google Calendar"

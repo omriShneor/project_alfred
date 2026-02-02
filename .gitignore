@@ -28,3 +28,9 @@ Thumbs.db
 credentials.json
 client_secret_*.json
 token.json
+
+# Maestro E2E test artifacts
+.maestro/
+!mobile/.maestro/
+mobile/.maestro/test-results/
+*.mp4

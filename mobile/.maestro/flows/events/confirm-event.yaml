@@ -1,0 +1,30 @@
+# Confirm Event Flow
+# Tests confirming a pending event from the event card
+#
+# Prerequisites:
+# - Test server running with a pending event in the database
+# - App already onboarded and on home screen
+#
+# Setup via test server:
+# 1. Reset: curl -X POST http://localhost:8080/api/test/reset
+# 2. Complete onboarding via app
+# 3. Create channel: curl -X POST http://localhost:8080/api/test/create-channel -d '{"identifier":"test","name":"Test Contact"}'
+# 4. Create event via API or inject message
+
+appId: com.projectalfred.mobile
+---
+# Verify we're on home screen with pending events
+- assertVisible: "Alfred"
+- assertVisible: "PENDING EVENTS"
+
+# Find and tap on an event card (assuming one exists)
+# Look for Confirm button on a pending event
+- assertVisible: "Confirm"
+- tapOn: "Confirm"
+
+# Confirmation dialog should appear
+- assertVisible: "Confirm Event"
+- assertVisible: "Sync this event to Google Calendar?"
+
+# Tap Cancel to dismiss
+- tapOn: "Cancel"

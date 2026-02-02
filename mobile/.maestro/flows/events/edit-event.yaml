@@ -1,0 +1,26 @@
+# Edit Event Flow
+# Tests editing a pending event
+#
+# Prerequisites:
+# - Test server running with a pending event in the database
+# - App already onboarded and on home screen
+
+appId: com.projectalfred.mobile
+---
+# Verify we're on home screen with pending events
+- assertVisible: "Alfred"
+- assertVisible: "PENDING EVENTS"
+
+# Find and tap on Edit button on a pending event
+- assertVisible: "Edit"
+- tapOn: "Edit"
+
+# Edit modal should appear with event fields
+- assertVisible: "Edit Event"
+
+# Verify form fields are visible
+- assertVisible: "Title"
+- assertVisible: "Start Time"
+
+# Close the modal
+- tapOn: "Cancel"

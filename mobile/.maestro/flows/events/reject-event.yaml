@@ -1,0 +1,23 @@
+# Reject Event Flow
+# Tests rejecting a pending event from the event card
+#
+# Prerequisites:
+# - Test server running with a pending event in the database
+# - App already onboarded and on home screen
+
+appId: com.projectalfred.mobile
+---
+# Verify we're on home screen with pending events
+- assertVisible: "Alfred"
+- assertVisible: "PENDING EVENTS"
+
+# Find and tap on Reject button on a pending event
+- assertVisible: "Reject"
+- tapOn: "Reject"
+
+# Rejection dialog should appear
+- assertVisible: "Reject Event"
+- assertVisible: "Are you sure you want to reject this event?"
+
+# Tap Cancel to dismiss
+- tapOn: "Cancel"

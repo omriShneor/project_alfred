@@ -1,0 +1,23 @@
+# Notification Preferences Flow
+# Tests the notification settings on the Settings screen
+#
+# Prerequisites:
+# - Test server running
+# - App already onboarded and on home screen
+
+appId: com.projectalfred.mobile
+---
+# Navigate to Settings tab
+- tapOn: "Settings"
+
+# Verify settings screen
+- assertVisible: "Notifications"
+
+# Verify email notifications section
+- assertVisible: "Email Notifications"
+- assertVisible: "Get notified when events are detected"
+
+# Verify About section
+- assertVisible: "About"
+- assertVisible: "Version"
+- assertVisible: "1.0.0"

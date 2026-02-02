@@ -10,7 +10,12 @@
     "lint": "eslint .",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "e2e": "maestro test .maestro/flows",
+    "e2e:onboarding": "maestro test .maestro/flows/onboarding",
+    "e2e:events": "maestro test .maestro/flows/events",
+    "e2e:settings": "maestro test .maestro/flows/settings",
+    "e2e:navigation": "maestro test .maestro/flows/navigation"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

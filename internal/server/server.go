@@ -18,20 +18,21 @@ import (
 )
 
 type Server struct {
-	db              *database.DB
-	waClient        *whatsapp.Client
-	tgClient        *telegram.Client
-	gcalClient      *gcal.Client
-	gmailClient     *gmail.Client
-	gmailWorker     *gmail.Worker
-	onboardingState *sse.State
-	state           *sse.State // Alias for onboardingState (for consistency)
-	notifyService   *notify.Service
-	analyzer        agent.Analyzer
-	httpSrv         *http.Server
-	port            int
-	resendAPIKey    string      // For checking email availability
-	oauthCodeChan   chan string // Channel to receive OAuth code from callback
+	db               *database.DB
+	waClient         *whatsapp.Client
+	tgClient         *telegram.Client
+	gcalClient       *gcal.Client
+	gmailClient      *gmail.Client
+	gmailWorker      *gmail.Worker
+	onboardingState  *sse.State
+	state            *sse.State // Alias for onboardingState (for consistency)
+	notifyService    *notify.Service
+	analyzer         agent.Analyzer
+	reminderAnalyzer agent.ReminderAnalyzer
+	httpSrv          *http.Server
+	port             int
+	resendAPIKey     string      // For checking email availability
+	oauthCodeChan    chan string // Channel to receive OAuth code from callback
 	// Gmail worker config
 	gmailPollInterval int
 	gmailMaxEmails    int
@@ -47,13 +48,14 @@ type ServerConfig struct {
 
 // ClientsConfig holds configuration for completing initialization after onboarding
 type ClientsConfig struct {
-	WAClient      *whatsapp.Client
-	TGClient      *telegram.Client
-	GCalClient    *gcal.Client
-	GmailClient   *gmail.Client
-	GmailWorker   *gmail.Worker
-	NotifyService *notify.Service
-	Analyzer      agent.Analyzer
+	WAClient         *whatsapp.Client
+	TGClient         *telegram.Client
+	GCalClient       *gcal.Client
+	GmailClient      *gmail.Client
+	GmailWorker      *gmail.Worker
+	NotifyService    *notify.Service
+	Analyzer         agent.Analyzer
+	ReminderAnalyzer agent.ReminderAnalyzer
 	// Gmail worker config
 	GmailPollInterval int
 	GmailMaxEmails    int
@@ -91,6 +93,7 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.gmailWorker = cfg.GmailWorker
 	s.notifyService = cfg.NotifyService
 	s.analyzer = cfg.Analyzer
+	s.reminderAnalyzer = cfg.ReminderAnalyzer
 	s.gmailPollInterval = cfg.GmailPollInterval
 	s.gmailMaxEmails = cfg.GmailMaxEmails
 }
@@ -168,6 +171,15 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/events/{id}/confirm", s.handleConfirmEvent)
 	mux.HandleFunc("POST /api/events/{id}/reject", s.handleRejectEvent)
 	mux.HandleFunc("GET /api/events/channel/{channelId}/history", s.handleGetChannelHistory)
+
+	// Reminders API
+	mux.HandleFunc("GET /api/reminders", s.handleListReminders)
+	mux.HandleFunc("GET /api/reminders/{id}", s.handleGetReminder)
+	mux.HandleFunc("PUT /api/reminders/{id}", s.handleUpdateReminder)
+	mux.HandleFunc("POST /api/reminders/{id}/confirm", s.handleConfirmReminder)
+	mux.HandleFunc("POST /api/reminders/{id}/reject", s.handleRejectReminder)
+	mux.HandleFunc("POST /api/reminders/{id}/complete", s.handleCompleteReminder)
+	mux.HandleFunc("POST /api/reminders/{id}/dismiss", s.handleDismissReminder)
 
 	// Notification Preferences API
 	mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
@@ -256,7 +268,7 @@ func (s *Server) initializeGmailClient() error {
 
 	// Create and start Gmail worker if we have the required dependencies
 	if s.db != nil && s.analyzer != nil && s.notifyService != nil {
-		emailProc := processor.NewEmailProcessor(s.db, s.analyzer, s.notifyService)
+		emailProc := processor.NewEmailProcessor(s.db, s.analyzer, s.reminderAnalyzer, s.notifyService)
 		pollInterval := s.gmailPollInterval
 		if pollInterval <= 0 {
 			pollInterval = 1 // Default to 1 minute

@@ -86,6 +86,41 @@ func (s *Service) IsPushAvailable() bool {
 	return s.pushNotifier != nil && s.pushNotifier.IsConfigured()
 }
 
+// NotifyPendingReminder sends notifications for a new pending reminder
+// based on user preferences. Errors are logged but don't fail the operation.
+func (s *Service) NotifyPendingReminder(ctx context.Context, reminder *database.Reminder) {
+	fmt.Printf("Notification: Processing reminder %d (%s)\n", reminder.ID, reminder.Title)
+
+	prefs, err := s.db.GetUserNotificationPrefs()
+	if err != nil {
+		fmt.Printf("Notification: Failed to get prefs: %v\n", err)
+		return
+	}
+
+	// Push notification
+	if prefs.PushEnabled && prefs.PushToken != "" {
+		expoPush, ok := s.pushNotifier.(*ExpoPushNotifier)
+		if ok && expoPush.IsConfigured() {
+			body := fmt.Sprintf("Due: %s", reminder.DueDate.Format("Jan 2 at 3:04 PM"))
+			if reminder.Description != "" {
+				body = reminder.Description + "\n" + body
+			}
+			err = expoPush.SendSimple(
+				ctx,
+				prefs.PushToken,
+				"📌 New Reminder: "+reminder.Title,
+				body,
+				"Reminders",
+			)
+			if err != nil {
+				fmt.Printf("Notification: Push failed: %v\n", err)
+			} else {
+				fmt.Printf("Notification: Push sent successfully for reminder\n")
+			}
+		}
+	}
+}
+
 func (s *Service) NotifyWhatsAppConnected(ctx context.Context) {
 	fmt.Println("Notification: WhatsApp connected, checking push preferences")
 

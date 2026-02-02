@@ -14,19 +14,19 @@ func TestNew(t *testing.T) {
 	msgChan := make(chan source.Message)
 
 	t.Run("with valid history size", func(t *testing.T) {
-		p := New(db, nil, nil, msgChan, 50, nil)
+		p := New(db, nil, nil, nil, msgChan, 50, nil)
 		assert.NotNil(t, p)
 		assert.Equal(t, 50, p.historySize)
 	})
 
 	t.Run("with zero history size uses default", func(t *testing.T) {
-		p := New(db, nil, nil, msgChan, 0, nil)
+		p := New(db, nil, nil, nil, msgChan, 0, nil)
 		assert.NotNil(t, p)
 		assert.Equal(t, defaultHistorySize, p.historySize)
 	})
 
 	t.Run("with negative history size uses default", func(t *testing.T) {
-		p := New(db, nil, nil, msgChan, -10, nil)
+		p := New(db, nil, nil, nil, msgChan, -10, nil)
 		assert.NotNil(t, p)
 		assert.Equal(t, defaultHistorySize, p.historySize)
 	})
@@ -36,7 +36,7 @@ func TestStart_WithoutClaudeClient(t *testing.T) {
 	db := database.NewTestDB(t)
 	msgChan := make(chan source.Message)
 
-	p := New(db, nil, nil, msgChan, 25, nil) // nil claude client
+	p := New(db, nil, nil, nil, msgChan, 25, nil) // nil claude client
 
 	err := p.Start()
 	assert.NoError(t, err) // Should not error, just disable processor
@@ -46,7 +46,7 @@ func TestStop(t *testing.T) {
 	db := database.NewTestDB(t)
 	msgChan := make(chan source.Message)
 
-	p := New(db, nil, nil, msgChan, 25, nil)
+	p := New(db, nil, nil, nil, msgChan, 25, nil)
 
 	// Just test that Stop doesn't panic
 	p.Stop()

@@ -11,30 +11,30 @@ import (
 	"github.com/omriShneor/project_alfred/internal/source"
 )
 
-// EmailProcessor processes emails for calendar event detection
+// EmailProcessor processes emails for calendar event and reminder detection
 type EmailProcessor struct {
-	db            *database.DB
-	analyzer      agent.Analyzer
-	notifyService *notify.Service
-	eventCreator  *EventCreator
+	db               *database.DB
+	analyzer         agent.Analyzer
+	reminderAnalyzer agent.ReminderAnalyzer
+	notifyService    *notify.Service
+	eventCreator     *EventCreator
+	reminderCreator  *ReminderCreator
 }
 
 // NewEmailProcessor creates a new email processor
-func NewEmailProcessor(db *database.DB, analyzer agent.Analyzer, notifyService *notify.Service) *EmailProcessor {
+func NewEmailProcessor(db *database.DB, analyzer agent.Analyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service) *EmailProcessor {
 	return &EmailProcessor{
-		db:            db,
-		analyzer:      analyzer,
-		notifyService: notifyService,
-		eventCreator:  NewEventCreator(db, notifyService),
+		db:               db,
+		analyzer:         analyzer,
+		reminderAnalyzer: reminderAnalyzer,
+		notifyService:    notifyService,
+		eventCreator:     NewEventCreator(db, notifyService),
+		reminderCreator:  NewReminderCreator(db, notifyService),
 	}
 }
 
-// ProcessEmail processes a single email for event detection
-func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, source *gmail.EmailSource, thread *gmail.Thread) error {
-	if p.analyzer == nil || !p.analyzer.IsConfigured() {
-		return fmt.Errorf("analyzer not configured")
-	}
-
+// ProcessEmail processes a single email for event and reminder detection
+func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, emailSource *gmail.EmailSource, thread *gmail.Thread) error {
 	threadLen := 0
 	if thread != nil {
 		threadLen = len(thread.Messages)
@@ -44,7 +44,7 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, s
 	// Clean the email body
 	body := gmail.CleanEmailBody(email.Body)
 
-	// Build email content with thread context
+	// Build email content with thread context (shared between analyzers)
 	emailContent := agent.EmailContent{
 		Subject: email.Subject,
 		From:    email.From,
@@ -65,23 +65,44 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, s
 		}
 	}
 
-	// Send to analyzer for event detection
-	analysis, err := p.analyzer.AnalyzeEmail(ctx, emailContent)
-	if err != nil {
-		return fmt.Errorf("email analysis failed: %w", err)
+	// Run event analyzer (independent goroutine - fire and forget)
+	if p.analyzer != nil && p.analyzer.IsConfigured() {
+		go func() {
+			analysis, err := p.analyzer.AnalyzeEmail(ctx, emailContent)
+			if err != nil {
+				fmt.Printf("Email event analysis error: %v\n", err)
+				return
+			}
+
+			fmt.Printf("Email event analysis: action=%s, has_event=%v, confidence=%.2f\n",
+				analysis.Action, analysis.HasEvent, analysis.Confidence)
+
+			if analysis.HasEvent && analysis.Action != "none" {
+				if err := p.createPendingEventFromEmail(emailSource, analysis); err != nil {
+					fmt.Printf("Failed to create pending event from email: %v\n", err)
+				}
+			}
+		}()
 	}
 
-	fmt.Printf("Email analysis: action=%s, has_event=%v, confidence=%.2f\n",
-		analysis.Action, analysis.HasEvent, analysis.Confidence)
+	// Run reminder analyzer (independent goroutine - fire and forget)
+	if p.reminderAnalyzer != nil && p.reminderAnalyzer.IsConfigured() {
+		go func() {
+			analysis, err := p.reminderAnalyzer.AnalyzeEmail(ctx, emailContent)
+			if err != nil {
+				fmt.Printf("Email reminder analysis error: %v\n", err)
+				return
+			}
 
-	// If no event detected or action is "none", skip
-	if !analysis.HasEvent || analysis.Action == "none" {
-		return nil
-	}
+			fmt.Printf("Email reminder analysis: action=%s, has_reminder=%v, confidence=%.2f\n",
+				analysis.Action, analysis.HasReminder, analysis.Confidence)
 
-	// Create pending event in database
-	if err := p.createPendingEventFromEmail(source, analysis); err != nil {
-		return fmt.Errorf("failed to create pending event: %w", err)
+			if analysis.HasReminder && analysis.Action != "none" {
+				if err := p.createPendingReminderFromEmail(emailSource, analysis); err != nil {
+					fmt.Printf("Failed to create pending reminder from email: %v\n", err)
+				}
+			}
+		}()
 	}
 
 	return nil
@@ -104,6 +125,26 @@ func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSou
 	}
 
 	_, err = p.eventCreator.CreateEventFromAnalysis(context.Background(), params)
+	return err
+}
+
+// createPendingReminderFromEmail creates a pending reminder from email analysis
+func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.EmailSource, analysis *agent.ReminderAnalysis) error {
+	// Get or create a placeholder channel for email sources
+	emailChannel, err := p.getOrCreateEmailChannel(emailSource)
+	if err != nil {
+		return fmt.Errorf("failed to get email channel: %w", err)
+	}
+
+	emailSourceID := emailSource.ID
+	params := ReminderCreationParams{
+		ChannelID:     emailChannel.ID,
+		SourceType:    source.SourceTypeGmail,
+		EmailSourceID: &emailSourceID,
+		Analysis:      analysis,
+	}
+
+	_, err = p.reminderCreator.CreateReminderFromAnalysis(context.Background(), params)
 	return err
 }
 

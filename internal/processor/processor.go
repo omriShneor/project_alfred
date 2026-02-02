@@ -16,15 +16,17 @@ const (
 	defaultHistorySize = 25
 )
 
-// Processor handles incoming messages from any source and detects calendar events
+// Processor handles incoming messages from any source and detects calendar events and reminders
 type Processor struct {
-	db            *database.DB
-	gcalClient    *gcal.Client
-	analyzer      agent.Analyzer
-	msgChan       <-chan source.Message
-	historySize   int
-	notifyService *notify.Service
-	eventCreator  *EventCreator
+	db               *database.DB
+	gcalClient       *gcal.Client
+	analyzer         agent.Analyzer         // Event analyzer
+	reminderAnalyzer agent.ReminderAnalyzer // Reminder analyzer
+	msgChan          <-chan source.Message
+	historySize      int
+	notifyService    *notify.Service
+	eventCreator     *EventCreator
+	reminderCreator  *ReminderCreator
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -36,6 +38,7 @@ func New(
 	db *database.DB,
 	gcalClient *gcal.Client,
 	analyzer agent.Analyzer,
+	reminderAnalyzer agent.ReminderAnalyzer,
 	msgChan <-chan source.Message,
 	historySize int,
 	notifyService *notify.Service,
@@ -47,15 +50,17 @@ func New(
 	ctx, cancel := context.WithCancel(context.Background())
 
 	return &Processor{
-		db:            db,
-		gcalClient:    gcalClient,
-		analyzer:      analyzer,
-		msgChan:       msgChan,
-		historySize:   historySize,
-		notifyService: notifyService,
-		eventCreator:  NewEventCreator(db, notifyService),
-		ctx:           ctx,
-		cancel:        cancel,
+		db:               db,
+		gcalClient:       gcalClient,
+		analyzer:         analyzer,
+		reminderAnalyzer: reminderAnalyzer,
+		msgChan:          msgChan,
+		historySize:      historySize,
+		notifyService:    notifyService,
+		eventCreator:     NewEventCreator(db, notifyService),
+		reminderCreator:  NewReminderCreator(db, notifyService),
+		ctx:              ctx,
+		cancel:           cancel,
 	}
 }
 
@@ -131,7 +136,7 @@ func (p *Processor) processMessage(msg source.Message) error {
 		fmt.Printf("Warning: failed to prune messages: %v\n", err)
 	}
 
-	// Get message history for context
+	// Get message history for context (shared between analyzers)
 	history, err := p.db.GetSourceMessageHistory(msg.SourceType, msg.SourceID, p.historySize)
 	if err != nil {
 		return fmt.Errorf("failed to get message history: %w", err)
@@ -144,27 +149,55 @@ func (p *Processor) processMessage(msg source.Message) error {
 		existingEvents = []database.CalendarEvent{}
 	}
 
-	// Convert to database types for Claude analysis
+	// Get existing active reminders for this channel
+	existingReminders, err := p.db.GetActiveRemindersForChannel(msg.SourceID)
+	if err != nil {
+		fmt.Printf("Warning: failed to get existing reminders: %v\n", err)
+		existingReminders = []database.Reminder{}
+	}
+
+	// Convert to database types for analysis (shared context)
 	historyRecords := convertToMessageRecords(history)
 	newMessageRecord := convertSourceMessageToRecord(storedMsg)
 
-	// Send to analyzer for event detection
-	analysis, err := p.analyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
-	if err != nil {
-		return fmt.Errorf("analysis failed: %w", err)
+	// Run event analyzer (independent goroutine - fire and forget)
+	if p.analyzer != nil && p.analyzer.IsConfigured() {
+		go func() {
+			analysis, err := p.analyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
+			if err != nil {
+				fmt.Printf("Event analysis error: %v\n", err)
+				return
+			}
+
+			fmt.Printf("Event analysis: action=%s, has_event=%v, confidence=%.2f\n",
+				analysis.Action, analysis.HasEvent, analysis.Confidence)
+
+			if analysis.HasEvent && analysis.Action != "none" {
+				if err := p.createPendingEvent(channel, storedMsg.ID, analysis, msg.SourceType); err != nil {
+					fmt.Printf("Failed to create pending event: %v\n", err)
+				}
+			}
+		}()
 	}
 
-	fmt.Printf("Event analysis: action=%s, has_event=%v, confidence=%.2f\n",
-		analysis.Action, analysis.HasEvent, analysis.Confidence)
+	// Run reminder analyzer (independent goroutine - fire and forget)
+	if p.reminderAnalyzer != nil && p.reminderAnalyzer.IsConfigured() {
+		go func() {
+			analysis, err := p.reminderAnalyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingReminders)
+			if err != nil {
+				fmt.Printf("Reminder analysis error: %v\n", err)
+				return
+			}
 
-	// If no event detected or action is "none", skip
-	if !analysis.HasEvent || analysis.Action == "none" {
-		return nil
-	}
+			fmt.Printf("Reminder analysis: action=%s, has_reminder=%v, confidence=%.2f\n",
+				analysis.Action, analysis.HasReminder, analysis.Confidence)
 
-	// Create pending event in database
-	if err := p.createPendingEvent(channel, storedMsg.ID, analysis, msg.SourceType); err != nil {
-		return fmt.Errorf("failed to create pending event: %w", err)
+			if analysis.HasReminder && analysis.Action != "none" {
+				if err := p.createPendingReminder(channel, storedMsg.ID, analysis, msg.SourceType); err != nil {
+					fmt.Printf("Failed to create pending reminder: %v\n", err)
+				}
+			}
+		}()
 	}
 
 	return nil
@@ -223,6 +256,28 @@ func (p *Processor) createPendingEvent(
 	}
 
 	_, err := p.eventCreator.CreateEventFromAnalysis(p.ctx, params)
+	return err
+}
+
+// createPendingReminder creates or updates a pending reminder from the analysis
+func (p *Processor) createPendingReminder(
+	channel *database.SourceChannel,
+	messageID int64,
+	analysis *agent.ReminderAnalysis,
+	sourceType source.SourceType,
+) error {
+	// Get existing reminders for potential update/delete
+	existingReminders, _ := p.db.GetActiveRemindersForChannel(channel.ID)
+
+	params := ReminderCreationParams{
+		ChannelID:         channel.ID,
+		SourceType:        sourceType,
+		MessageID:         &messageID,
+		Analysis:          analysis,
+		ExistingReminders: existingReminders,
+	}
+
+	_, err := p.reminderCreator.CreateReminderFromAnalysis(p.ctx, params)
 	return err
 }
 

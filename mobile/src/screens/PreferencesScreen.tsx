@@ -311,7 +311,7 @@ export function PreferencesScreen() {
         {whatsappConnected && (
           <PreferenceCard
             title="WhatsApp"
-            description="Manage tracked contacts and groups"
+            description="Manage tracked contacts"
             icon="chatbubble-outline"
             connected={whatsappConnected}
             onPress={() => navigation.navigate('WhatsAppPreferences')}
@@ -321,7 +321,7 @@ export function PreferencesScreen() {
         {telegramConnected && (
           <PreferenceCard
             title="Telegram"
-            description="Manage tracked contacts and groups"
+            description="Manage tracked contacts"
             icon="paper-plane-outline"
             connected={telegramConnected}
             onPress={() => navigation.navigate('TelegramPreferences')}
@@ -338,14 +338,14 @@ export function PreferencesScreen() {
           />
         )}
 
-        {(whatsappConnected || telegramConnected || gmailConnected) && (
+        {gmailConnected && (
           <PreferenceCard
             title="Google Calendar"
             description={gcalSettings?.sync_enabled
               ? `Syncing to ${gcalSettings.selected_calendar_name}`
               : "Events stored locally only"}
             icon="calendar-outline"
-            connected={gcalSettings?.sync_enabled ?? false}
+            connected={gmailConnected}
             onPress={() => navigation.navigate('GoogleCalendarPreferences')}
           />
         )}

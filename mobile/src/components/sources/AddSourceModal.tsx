@@ -185,11 +185,11 @@ export function AddSourceModal({
         >
           <View style={styles.contactInfo}>
             <Text style={styles.contactName} numberOfLines={1}>
-              {item.name || `+${item.identifier}`}
+              {item.name || item.secondary_label || item.identifier}
             </Text>
-            {item.name && item.name !== item.identifier && (
+            {item.name && item.secondary_label && (
               <Text style={styles.contactIdentifier} numberOfLines={1}>
-                +{item.identifier}
+                {item.secondary_label}
               </Text>
             )}
             <Text style={styles.contactCount}>{item.message_count} messages</Text>
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: 16,
-    paddingBottom: 16,
+    paddingBottom: 40,
   },
   customInputRow: {
     flexDirection: 'row',

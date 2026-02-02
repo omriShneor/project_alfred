@@ -8,6 +8,7 @@ import (
 	"os"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
@@ -92,12 +93,13 @@ func (s *Server) handleDiscoverChannels(w http.ResponseWriter, r *http.Request) 
 
 // TopContactResponse represents a top contact for the Add Source modal
 type TopContactResponse struct {
-	Identifier   string `json:"identifier"`
-	Name         string `json:"name"`
-	MessageCount int    `json:"message_count"`
-	IsTracked    bool   `json:"is_tracked"`
-	ChannelID    *int64 `json:"channel_id,omitempty"`
-	Type         string `json:"type"`
+	Identifier     string `json:"identifier"`
+	Name           string `json:"name"`
+	SecondaryLabel string `json:"secondary_label"` // Pre-formatted: "+1234567890"
+	MessageCount   int    `json:"message_count"`
+	IsTracked      bool   `json:"is_tracked"`
+	ChannelID      *int64 `json:"channel_id,omitempty"`
+	Type           string `json:"type"`
 }
 
 func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Request) {
@@ -135,12 +137,15 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 			for i, ch := range contactChannels {
 				// Check if already tracked
 				existingChannel, _ := s.db.GetChannelByIdentifier(ch.Identifier)
+				// Format phone number as secondary label
+				phone := strings.TrimSuffix(ch.Identifier, "@s.whatsapp.net")
 				response[i] = TopContactResponse{
-					Identifier:   ch.Identifier,
-					Name:         ch.Name,
-					MessageCount: 0, // No message count from discovery
-					IsTracked:    existingChannel != nil,
-					Type:         ch.Type,
+					Identifier:     ch.Identifier,
+					Name:           ch.Name,
+					SecondaryLabel: "+" + phone,
+					MessageCount:   0, // No message count from discovery
+					IsTracked:      existingChannel != nil,
+					Type:           ch.Type,
 				}
 				if existingChannel != nil {
 					response[i].ChannelID = &existingChannel.ID
@@ -156,12 +161,15 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 	// Convert to response format using accurate message counts
 	response := make([]TopContactResponse, len(channels))
 	for i, c := range channels {
+		// Format phone number as secondary label
+		phone := strings.TrimSuffix(c.Identifier, "@s.whatsapp.net")
 		response[i] = TopContactResponse{
-			Identifier:   c.Identifier,
-			Name:         c.Name,
-			MessageCount: c.TotalMessageCount, // Accurate count from HistorySync
-			IsTracked:    c.Enabled,
-			Type:         string(c.Type),
+			Identifier:     c.Identifier,
+			Name:           c.Name,
+			SecondaryLabel: "+" + phone,
+			MessageCount:   c.TotalMessageCount, // Accurate count from HistorySync
+			IsTracked:      c.Enabled,
+			Type:           string(c.Type),
 		}
 		if c.Enabled {
 			response[i].ChannelID = &c.ID
@@ -1196,14 +1204,17 @@ func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleWhatsAppDisconnect disconnects WhatsApp and clears session
+// handleWhatsAppDisconnect logs out from WhatsApp and clears the session
 func (s *Server) handleWhatsAppDisconnect(w http.ResponseWriter, r *http.Request) {
 	if s.waClient == nil {
 		respondError(w, http.StatusServiceUnavailable, "WhatsApp client not initialized")
 		return
 	}
 
-	s.waClient.Disconnect()
+	if err := s.waClient.Logout(); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to logout: %v", err))
+		return
+	}
 
 	if s.onboardingState != nil {
 		s.onboardingState.SetWhatsAppStatus("disconnected")
@@ -1211,7 +1222,7 @@ func (s *Server) handleWhatsAppDisconnect(w http.ResponseWriter, r *http.Request
 
 	respondJSON(w, http.StatusOK, map[string]string{
 		"status":  "disconnected",
-		"message": "WhatsApp disconnected",
+		"message": "WhatsApp logged out and session cleared",
 	})
 }
 

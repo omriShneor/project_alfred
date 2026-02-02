@@ -4,6 +4,8 @@ alfred
 
 # Databases
 *.db
+*.db-shm
+*.db-wal
 
 # QR code images
 whatsapp_qr.png

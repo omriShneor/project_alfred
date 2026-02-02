@@ -11,11 +11,12 @@ import (
 
 // DiscoverableChannel represents a Telegram contact that can be tracked
 type DiscoverableChannel struct {
-	Type       string `json:"type"`       // "contact" (contacts only)
-	Identifier string `json:"identifier"` // Telegram user ID
-	Name       string `json:"name"`       // Display name
-	IsTracked  bool   `json:"is_tracked"` // Whether currently tracked
-	ChannelID  *int64 `json:"channel_id"` // DB ID if tracked
+	Type           string `json:"type"`            // "contact" (contacts only)
+	Identifier     string `json:"identifier"`      // Telegram user ID
+	Name           string `json:"name"`            // Display name
+	SecondaryLabel string `json:"secondary_label"` // Pre-formatted: "@username" or ""
+	IsTracked      bool   `json:"is_tracked"`      // Whether currently tracked
+	ChannelID      *int64 `json:"channel_id"`      // DB ID if tracked
 }
 
 // GetDiscoverableChannels returns all contacts that can be tracked (no groups/channels)
@@ -46,14 +47,21 @@ func (c *Client) GetDiscoverableChannels(ctx context.Context, db *database.DB) (
 				identifier := fmt.Sprintf("%d", u.ID)
 				name := getUserName(u)
 
+				// Format username as secondary label
+				secondaryLabel := ""
+				if u.Username != "" {
+					secondaryLabel = "@" + u.Username
+				}
+
 				// Check if tracked
 				tracked, channelID, _, _ := db.IsSourceChannelTracked(source.SourceTypeTelegram, identifier)
 
 				ch := DiscoverableChannel{
-					Type:       "contact",
-					Identifier: identifier,
-					Name:       name,
-					IsTracked:  tracked,
+					Type:           "contact",
+					Identifier:     identifier,
+					Name:           name,
+					SecondaryLabel: secondaryLabel,
+					IsTracked:      tracked,
 				}
 				if tracked {
 					ch.ChannelID = &channelID

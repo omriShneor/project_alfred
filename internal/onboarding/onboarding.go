@@ -39,35 +39,32 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 		fmt.Printf("Warning: Could not load feature settings: %v\n", err)
 	}
 
+	// Always try to connect WhatsApp to restore session
+	// Note: Must connect first, then check IsLoggedIn() - the device JID isn't populated until connection
+	if err := waClient.WAClient.Connect(); err != nil {
+		fmt.Printf("Warning: Failed to connect WhatsApp: %v\n", err)
+		state.SetWhatsAppStatus("pending")
+	} else if waClient.IsLoggedIn() {
+		// Connection succeeded AND we have an authenticated session
+		fmt.Println("WhatsApp: Restored session - already logged in")
+		state.SetWhatsAppStatus("connected")
+	} else {
+		// Connection succeeded but no authenticated session - needs pairing
+		fmt.Println("WhatsApp: Connected but not authenticated - needs pairing")
+		state.SetWhatsAppStatus("pending")
+	}
+
+	// Set Google Calendar status
+	if gcalClient != nil && gcalClient.IsAuthenticated() {
+		state.SetGCalStatus("connected")
+		fmt.Println("Google Calendar: Already authenticated")
+	} else {
+		state.SetGCalStatus("pending")
+	}
+
 	if featureSettings != nil && featureSettings.SmartCalendarEnabled && featureSettings.SmartCalendarSetupComplete {
-		if featureSettings.WhatsAppInputEnabled && waClient.IsLoggedIn() {
-			if err := waClient.WAClient.Connect(); err != nil {
-				fmt.Printf("Warning: Failed to connect WhatsApp: %v\n", err)
-			} else {
-				fmt.Println("WhatsApp connected!")
-				state.SetWhatsAppStatus("connected")
-			}
-		}
-
-		if featureSettings.GoogleCalendarEnabled && gcalClient != nil && gcalClient.IsAuthenticated() {
-			state.SetGCalStatus("connected")
-			fmt.Println("Google Calendar connected!")
-		}
-
 		state.MarkComplete()
 	} else {
-		if waClient.IsLoggedIn() {
-			state.SetWhatsAppStatus("connected")
-		} else {
-			state.SetWhatsAppStatus("pending")
-		}
-
-		if gcalClient != nil && gcalClient.IsAuthenticated() {
-			state.SetGCalStatus("connected")
-		} else {
-			state.SetGCalStatus("pending")
-		}
-
 		state.MarkComplete()
 		fmt.Println("App started - configure Smart Calendar in Assistant Capabilities")
 	}

@@ -26,6 +26,7 @@ type Client struct {
 	ctx          context.Context
 	cancel       context.CancelFunc
 	updatesChan  chan tg.UpdatesClass
+	runDone      chan struct{} // Signals when client.Run() goroutine finishes
 }
 
 // ClientConfig holds configuration for the Telegram client
@@ -52,6 +53,7 @@ func NewClient(cfg ClientConfig) (*Client, error) {
 		ctx:         ctx,
 		cancel:      cancel,
 		updatesChan: make(chan tg.UpdatesClass, 100),
+		runDone:     make(chan struct{}),
 	}
 
 	return c, nil
@@ -91,10 +93,15 @@ func (c *Client) Connect() error {
 	})
 
 	c.client = client
-	c.mu.Unlock() // Release lock before starting goroutine
+	// Reinitialize runDone channel for this connection
+	c.runDone = make(chan struct{})
+	runDone := c.runDone // Capture for goroutine
+	c.mu.Unlock()        // Release lock before starting goroutine
 
 	// Start the client in a goroutine
 	go func() {
+		defer close(runDone) // Signal when goroutine exits
+
 		if err := client.Run(c.ctx, func(ctx context.Context) error {
 			// Get the API client
 			c.mu.Lock()
@@ -146,15 +153,42 @@ func (c *Client) Connect() error {
 	}
 }
 
-// Disconnect closes the Telegram connection
+// Disconnect closes the Telegram connection and waits for cleanup
 func (c *Client) Disconnect() {
+	c.mu.Lock()
+	cancel := c.cancel
+	runDone := c.runDone
+	c.mu.Unlock()
+
+	// Cancel the context to signal the goroutine to stop
+	if cancel != nil {
+		cancel()
+	}
+
+	// Wait for the client.Run() goroutine to finish (with timeout)
+	if runDone != nil {
+		select {
+		case <-runDone:
+			// Goroutine finished
+		case <-time.After(5 * time.Second):
+			fmt.Println("Telegram: Timeout waiting for client to disconnect")
+		}
+	}
+
+	// Now acquire lock and reset state
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.cancel != nil {
-		c.cancel()
-	}
 	c.connected = false
+	c.api = nil
+	c.client = nil
+
+	// Create new context for potential reconnection
+	c.ctx, c.cancel = context.WithCancel(context.Background())
+
+	// Drain and recreate updatesChan
+	close(c.updatesChan)
+	c.updatesChan = make(chan tg.UpdatesClass, 100)
 }
 
 // IsConnected returns whether the client is connected and authenticated
@@ -166,8 +200,12 @@ func (c *Client) IsConnected() bool {
 
 // SendCode requests a verification code for the given phone number
 func (c *Client) SendCode(ctx context.Context, phoneNumber string) error {
-	// Check if we need to connect first (without holding lock)
+	// Check if already authenticated (auto-connect sets this on startup)
 	c.mu.RLock()
+	if c.connected {
+		c.mu.RUnlock()
+		return fmt.Errorf("already authenticated - disconnect first to re-authenticate")
+	}
 	needsConnect := c.api == nil
 	c.mu.RUnlock()
 
@@ -180,6 +218,11 @@ func (c *Client) SendCode(ctx context.Context, phoneNumber string) error {
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	// Double-check after auto-connect (session may have been restored)
+	if c.connected {
+		return fmt.Errorf("already authenticated - disconnect first to re-authenticate")
+	}
 
 	if c.api == nil {
 		return fmt.Errorf("client not connected - connection may have failed")

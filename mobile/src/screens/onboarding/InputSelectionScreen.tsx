@@ -21,13 +21,13 @@ const inputOptions: InputOption[] = [
   {
     id: 'whatsapp',
     title: 'WhatsApp',
-    description: 'Scan messages from contacts and groups',
+    description: 'Scan messages from contacts',
     icon: 'chatbubble-outline',
   },
   {
     id: 'telegram',
     title: 'Telegram',
-    description: 'Scan messages from contacts and groups',
+    description: 'Scan messages from contacts',
     icon: 'paper-plane-outline',
   },
   {

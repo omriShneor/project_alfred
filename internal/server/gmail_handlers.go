@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
 )
@@ -178,6 +179,14 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// If no contacts and Gmail worker is available, trigger refresh and wait
+	// This handles the race condition where modal opens before async refresh completes
+	if len(contacts) == 0 && s.gmailWorker != nil {
+		s.gmailWorker.RefreshTopContactsNow()
+		time.Sleep(3 * time.Second)
+		contacts, _ = s.db.GetTopContacts(8)
 	}
 
 	// Get tracked sender sources to mark which contacts are already tracked

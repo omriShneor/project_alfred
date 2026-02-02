@@ -57,21 +57,33 @@ func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (
 	return c, nil
 }
 
+// Disconnect closes the WhatsApp connection without logging out.
+// The session is preserved so the user remains authenticated on restart.
 func (c *Client) Disconnect() {
-	if c.WAClient.Store.ID != nil {
-		if !c.WAClient.IsConnected() {
-			if err := c.WAClient.Connect(); err != nil {
-				fmt.Printf("Warning: could not connect for logout: %v\n", err)
-			}
-		}
-		if err := c.WAClient.Logout(context.Background()); err != nil {
-			fmt.Printf("Warning: logout failed: %v\n", err)
-		} else {
-			fmt.Println("WhatsApp logged out successfully")
+	c.WAClient.Disconnect()
+	fmt.Println("WhatsApp disconnected (session preserved)")
+}
+
+// Logout explicitly logs out from WhatsApp and clears the session.
+// Use this only when the user wants to disconnect their WhatsApp account.
+func (c *Client) Logout() error {
+	if c.WAClient.Store.ID == nil {
+		return fmt.Errorf("not logged in")
+	}
+
+	// Need to be connected to send logout request
+	if !c.WAClient.IsConnected() {
+		if err := c.WAClient.Connect(); err != nil {
+			return fmt.Errorf("could not connect for logout: %w", err)
 		}
 	}
 
-	c.WAClient.Disconnect()
+	if err := c.WAClient.Logout(context.Background()); err != nil {
+		return fmt.Errorf("logout failed: %w", err)
+	}
+
+	fmt.Println("WhatsApp logged out successfully (session cleared)")
+	return nil
 }
 
 func (c *Client) ReinitializeDevice() error {

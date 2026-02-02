@@ -76,7 +76,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
 	}
 
-	waitForShutdown(proc, srv, clients.WAClient, gmailWorker)
+	waitForShutdown(proc, srv, clients.WAClient, tgClient, gmailWorker)
 }
 
 func initDatabase(cfg *config.Config) (*database.DB, error) {
@@ -170,6 +170,17 @@ func initTelegram(db *database.DB, cfg *config.Config, state *sse.State) *telegr
 	}
 
 	fmt.Println("Telegram client initialized")
+
+	// Auto-connect to restore session if exists
+	if err := tgClient.Connect(); err != nil {
+		fmt.Printf("Warning: Failed to auto-connect Telegram: %v\n", err)
+	} else if tgClient.IsConnected() {
+		fmt.Println("Telegram: Restored session - already authenticated")
+		state.SetTelegramStatus("connected")
+	} else {
+		fmt.Println("Telegram: Connected but not authenticated")
+	}
+
 	return tgClient
 }
 
@@ -178,7 +189,7 @@ func fatal(context string, err error) {
 	os.Exit(1)
 }
 
-func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *whatsapp.Client, gmailWorker *gmail.Worker) {
+func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *whatsapp.Client, tgClient *telegram.Client, gmailWorker *gmail.Worker) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
@@ -191,6 +202,9 @@ func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *wh
 	proc.Stop()
 	if gmailWorker != nil {
 		gmailWorker.Stop()
+	}
+	if tgClient != nil {
+		tgClient.Disconnect()
 	}
 	srv.Shutdown(ctx)
 	waClient.Disconnect()

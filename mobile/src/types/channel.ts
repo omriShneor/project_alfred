@@ -34,6 +34,7 @@ export interface UpdateChannelRequest {
 export interface SourceTopContact {
   identifier: string;
   name: string;
+  secondary_label?: string; // Pre-formatted by backend: "+1234567890" or "@username"
   message_count: number;
   is_tracked: boolean;
   channel_id?: number;

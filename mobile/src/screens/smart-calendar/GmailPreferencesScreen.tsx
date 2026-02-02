@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,10 @@ import {
   FlatList,
   Switch,
   Alert,
-  TextInput,
-  Keyboard,
-  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { LoadingSpinner, Card, Button, Modal } from '../../components/common';
+import { LoadingSpinner, Card } from '../../components/common';
+import { AddSourceModal } from '../../components/sources/AddSourceModal';
 import { colors } from '../../theme/colors';
 import {
   useGmailStatus,
@@ -25,42 +23,11 @@ import {
   useAddCustomSource,
 } from '../../hooks';
 import type { EmailSource, EmailSourceType, TopContact } from '../../types/gmail';
-
-interface CustomEntry {
-  identifier: string;
-  name: string;
-}
+import type { SourceTopContact } from '../../types/channel';
 
 export function GmailPreferencesScreen() {
   const { data: gmailStatus } = useGmailStatus();
-
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
-  const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
-  const [customEntries, setCustomEntries] = useState<CustomEntry[]>([]);
-  const [customInput, setCustomInput] = useState('');
-  const [customInputError, setCustomInputError] = useState<string | null>(null);
-  const [isCustomInputFocused, setIsCustomInputFocused] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [isAdding, setIsAdding] = useState(false);
-
-  // Track keyboard visibility
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSubscription = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-      setIsCustomInputFocused(false);
-    });
-
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
   const { data: topContacts, isLoading: contactsLoading } = useTopContacts();
@@ -69,6 +36,17 @@ export function GmailPreferencesScreen() {
   const updateSource = useUpdateEmailSource();
   const deleteSource = useDeleteEmailSource();
   const addCustomSource = useAddCustomSource();
+
+  // Map Gmail TopContact to SourceTopContact for the shared modal
+  const mappedContacts: SourceTopContact[] = (topContacts || []).map((contact: TopContact) => ({
+    identifier: contact.email,
+    name: contact.name || contact.email,
+    secondary_label: contact.email,
+    message_count: contact.email_count,
+    is_tracked: contact.is_tracked,
+    channel_id: contact.source_id,
+    type: 'sender' as const,
+  }));
 
   const handleToggleSource = async (source: EmailSource) => {
     try {
@@ -111,35 +89,10 @@ export function GmailPreferencesScreen() {
       );
       return;
     }
-
-    setSelectedContacts(new Set());
-    setCustomEntries([]);
-    setCustomInput('');
-    setCustomInputError(null);
     setAddSourceModalVisible(true);
   };
 
-  const toggleContactSelection = (email: string) => {
-    setSelectedContacts((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(email)) {
-        newSet.delete(email);
-      } else {
-        newSet.add(email);
-      }
-      return newSet;
-    });
-  };
-
-  const removeCustomEntry = (identifier: string) => {
-    setCustomEntries((prev) => prev.filter((e) => e.identifier !== identifier));
-    setSelectedContacts((prev) => {
-      const newSet = new Set(prev);
-      newSet.delete(identifier);
-      return newSet;
-    });
-  };
-
+  // Validation for custom email/domain input
   const validateCustomInput = (value: string): string | null => {
     if (!value.trim()) return null;
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -150,66 +103,22 @@ export function GmailPreferencesScreen() {
     return 'Enter a valid email (user@domain.com) or domain (domain.com)';
   };
 
-  const handleAddCustomToList = () => {
-    const error = validateCustomInput(customInput);
-    if (error) {
-      setCustomInputError(error);
-      return;
-    }
-
-    const trimmedValue = customInput.trim();
-
-    // Check if already in custom entries
-    if (customEntries.some((e) => e.identifier === trimmedValue)) {
-      setCustomInputError('Already added');
-      return;
-    }
-
-    // Check if already in top contacts
-    if (topContacts?.some((c: TopContact) => c.email === trimmedValue)) {
-      setCustomInputError('Already in suggested contacts');
-      return;
-    }
-
-    // Add to custom entries and select it
-    setCustomEntries((prev) => [...prev, { identifier: trimmedValue, name: trimmedValue }]);
-    setSelectedContacts((prev) => new Set(prev).add(trimmedValue));
-    setCustomInput('');
-    setCustomInputError(null);
-    Keyboard.dismiss();
-  };
-
-  const handleAddAllSelected = async () => {
-    setIsAdding(true);
-    try {
-      // Add selected top contacts
-      for (const email of selectedContacts) {
-        const contact = topContacts?.find((c: TopContact) => c.email === email);
-        if (contact && !contact.is_tracked) {
-          await createSource.mutateAsync({
-            type: 'sender',
-            identifier: email,
-            name: contact.name || email,
-          });
-        }
-      }
-
-      // Add custom entries
-      const customToAdd = customEntries.filter((e) => selectedContacts.has(e.identifier));
-      for (const entry of customToAdd) {
-        await addCustomSource.mutateAsync({
-          value: entry.identifier,
+  // Handler for adding selected contacts from the modal
+  const handleAddContacts = async (contacts: SourceTopContact[]) => {
+    for (const contact of contacts) {
+      if (!contact.is_tracked) {
+        await createSource.mutateAsync({
+          type: 'sender',
+          identifier: contact.identifier,
+          name: contact.name,
         });
       }
-
-      setSelectedContacts(new Set());
-      setCustomEntries([]);
-      setAddSourceModalVisible(false);
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to add sources');
-    } finally {
-      setIsAdding(false);
     }
+  };
+
+  // Handler for adding custom email/domain
+  const handleAddCustom = async (value: string) => {
+    await addCustomSource.mutateAsync({ value });
   };
 
   const getSourceTypeLabel = (type: EmailSourceType) => {
@@ -228,79 +137,6 @@ export function GmailPreferencesScreen() {
       case 'domain': return colors.warning;
       default: return colors.textSecondary;
     }
-  };
-
-  // Total selected count
-  const totalSelected = selectedContacts.size;
-
-  const renderContactItem = (item: TopContact, index: number) => {
-    const selected = selectedContacts.has(item.email);
-    return (
-      <React.Fragment key={item.email}>
-        {index > 0 && <View style={styles.separator} />}
-        <TouchableOpacity
-          style={[styles.contactItem, selected && styles.contactItemSelected, item.is_tracked && styles.contactItemDisabled]}
-          onPress={() => !item.is_tracked && toggleContactSelection(item.email)}
-          disabled={item.is_tracked}
-        >
-          <View style={styles.contactInfo}>
-            <Text style={styles.contactName} numberOfLines={1}>
-              {item.name || item.email}
-            </Text>
-            {item.name && (
-              <Text style={styles.contactEmail} numberOfLines={1}>
-                {item.email}
-              </Text>
-            )}
-            <Text style={styles.contactCount}>{item.email_count} emails</Text>
-          </View>
-          {item.is_tracked ? (
-            <Feather name="check-circle" size={20} color={colors.success} />
-          ) : selected ? (
-            <Feather name="check-square" size={20} color={colors.primary} />
-          ) : (
-            <Feather name="square" size={20} color={colors.textSecondary} />
-          )}
-        </TouchableOpacity>
-      </React.Fragment>
-    );
-  };
-
-  const renderCustomEntry = (entry: CustomEntry, index: number) => {
-    const selected = selectedContacts.has(entry.identifier);
-    return (
-      <React.Fragment key={`custom-${entry.identifier}`}>
-        {index > 0 && <View style={styles.separator} />}
-        <TouchableOpacity
-          style={[styles.contactItem, selected && styles.contactItemSelected]}
-          onPress={() => toggleContactSelection(entry.identifier)}
-        >
-          <View style={styles.contactInfo}>
-            <View style={styles.customEntryHeader}>
-              <Text style={styles.contactName} numberOfLines={1}>
-                {entry.identifier}
-              </Text>
-              <View style={styles.customBadge}>
-                <Text style={styles.customBadgeText}>Custom</Text>
-              </View>
-            </View>
-          </View>
-          <View style={styles.customEntryActions}>
-            {selected ? (
-              <Feather name="check-square" size={20} color={colors.primary} />
-            ) : (
-              <Feather name="square" size={20} color={colors.textSecondary} />
-            )}
-            <TouchableOpacity
-              style={styles.removeButton}
-              onPress={() => removeCustomEntry(entry.identifier)}
-            >
-              <Feather name="x" size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-        </TouchableOpacity>
-      </React.Fragment>
-    );
   };
 
   const renderSourceItem = ({ item }: { item: EmailSource }) => (
@@ -366,96 +202,20 @@ export function GmailPreferencesScreen() {
         </Card>
       </ScrollView>
 
-      <Modal
+      <AddSourceModal
         visible={addSourceModalVisible}
         onClose={() => setAddSourceModalVisible(false)}
         title="Add Email Source"
-        footer={
-          isCustomInputFocused && keyboardHeight > 0 ? (
-            <View style={styles.floatingFooter}>
-              <Button
-                title="Add to List"
-                onPress={handleAddCustomToList}
-                disabled={!customInput.trim()}
-              />
-            </View>
-          ) : totalSelected > 0 ? (
-            <View style={styles.floatingFooter}>
-              <Button
-                title={`Add ${totalSelected} Source${totalSelected !== 1 ? 's' : ''}`}
-                onPress={handleAddAllSelected}
-                loading={isAdding || createSource.isPending || addCustomSource.isPending}
-              />
-            </View>
-          ) : undefined
-        }
-      >
-        {/* Custom Entries Section (shown at top if any) */}
-        {customEntries.length > 0 && (
-          <View style={styles.customEntriesSection}>
-            <Text style={styles.sectionLabel}>Custom Entries</Text>
-            <View style={styles.contactList}>
-              {customEntries.map((entry, index) => renderCustomEntry(entry, index))}
-            </View>
-          </View>
-        )}
-
-        {/* Suggested Contacts Section */}
-        <View style={styles.suggestedSection}>
-          <Text style={styles.sectionLabel}>Suggested Contacts</Text>
-          {contactsLoading ? (
-            <LoadingSpinner />
-          ) : topContacts && topContacts.length > 0 ? (
-            <View style={styles.contactList}>
-              {topContacts.map((item, index) => renderContactItem(item, index))}
-            </View>
-          ) : (
-            <View style={styles.emptyContacts}>
-              <Text style={styles.emptyContactsText}>No contacts found</Text>
-              <Text style={styles.emptyContactsSubtext}>
-                Add a custom email or domain below
-              </Text>
-            </View>
-          )}
-        </View>
-
-        {/* Custom Input Section */}
-        <View style={styles.customSection}>
-          <Text style={styles.sectionLabel}>Add manually</Text>
-          <View style={styles.customInputRow}>
-            <TextInput
-              style={[styles.customInput, customInputError && styles.customInputError]}
-              value={customInput}
-              onChangeText={(text) => {
-                setCustomInput(text);
-                if (customInputError) setCustomInputError(null);
-              }}
-              placeholder="e.g. boss@work.com or acme.com"
-              placeholderTextColor={colors.textSecondary}
-              keyboardType="email-address"
-              autoCapitalize="none"
-              autoCorrect={false}
-              onFocus={() => setIsCustomInputFocused(true)}
-              onBlur={() => {
-                if (customInput.trim()) {
-                  setCustomInputError(validateCustomInput(customInput));
-                }
-              }}
-            />
-            {!isCustomInputFocused && customInput.trim() && (
-              <TouchableOpacity
-                style={styles.addToListButton}
-                onPress={handleAddCustomToList}
-              >
-                <Feather name="plus" size={20} color={colors.primary} />
-              </TouchableOpacity>
-            )}
-          </View>
-          {customInputError && (
-            <Text style={styles.errorText}>{customInputError}</Text>
-          )}
-        </View>
-      </Modal>
+        topContacts={mappedContacts}
+        contactsLoading={contactsLoading}
+        customInputPlaceholder="e.g. boss@work.com or acme.com"
+        customInputKeyboardType="email-address"
+        validateCustomInput={validateCustomInput}
+        onAddContacts={handleAddContacts}
+        onAddCustom={handleAddCustom}
+        addContactsLoading={createSource.isPending}
+        addCustomLoading={addCustomSource.isPending}
+      />
     </View>
   );
 }
@@ -561,131 +321,5 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
-  },
-  sectionLabel: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: colors.text,
-    marginBottom: 12,
-  },
-  customEntriesSection: {
-    marginBottom: 16,
-  },
-  suggestedSection: {
-    marginBottom: 16,
-  },
-  contactList: {
-    // No maxHeight - let the Modal's ScrollView handle scrolling
-  },
-  contactItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 10,
-    paddingHorizontal: 8,
-    borderRadius: 8,
-  },
-  contactItemSelected: {
-    backgroundColor: colors.primary + '10',
-  },
-  contactItemDisabled: {
-    opacity: 0.5,
-  },
-  contactInfo: {
-    flex: 1,
-    marginRight: 12,
-  },
-  contactName: {
-    fontSize: 15,
-    fontWeight: '500',
-    color: colors.text,
-  },
-  contactEmail: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  contactCount: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  customEntryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  customBadge: {
-    marginLeft: 8,
-    backgroundColor: colors.primary + '20',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  customBadgeText: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.primary,
-    textTransform: 'uppercase',
-  },
-  customEntryActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  removeButton: {
-    marginLeft: 12,
-    padding: 4,
-  },
-  emptyContacts: {
-    alignItems: 'center',
-    paddingVertical: 16,
-  },
-  emptyContactsText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  emptyContactsSubtext: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginTop: 4,
-  },
-  customSection: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 16,
-  },
-  customInputRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  customInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 15,
-    color: colors.text,
-    backgroundColor: colors.background,
-  },
-  customInputError: {
-    borderColor: colors.danger,
-  },
-  addToListButton: {
-    marginLeft: 8,
-    padding: 10,
-    backgroundColor: colors.primary + '15',
-    borderRadius: 8,
-  },
-  errorText: {
-    fontSize: 12,
-    color: colors.danger,
-    marginTop: 4,
-  },
-  floatingFooter: {
-    backgroundColor: colors.card,
-    padding: 16,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
   },
 });

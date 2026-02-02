@@ -265,12 +265,13 @@ func (s *Server) handleDeleteTelegramChannel(w http.ResponseWriter, r *http.Requ
 
 // TelegramTopContactResponse represents a top contact for the Add Source modal
 type TelegramTopContactResponse struct {
-	Identifier   string `json:"identifier"`
-	Name         string `json:"name"`
-	MessageCount int    `json:"message_count"`
-	IsTracked    bool   `json:"is_tracked"`
-	ChannelID    *int64 `json:"channel_id,omitempty"`
-	Type         string `json:"type"`
+	Identifier     string `json:"identifier"`
+	Name           string `json:"name"`
+	SecondaryLabel string `json:"secondary_label"` // Pre-formatted: "@username" or ""
+	MessageCount   int    `json:"message_count"`
+	IsTracked      bool   `json:"is_tracked"`
+	ChannelID      *int64 `json:"channel_id,omitempty"`
+	Type           string `json:"type"`
 }
 
 // handleTelegramTopContacts returns top contacts based on message history
@@ -299,11 +300,12 @@ func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Reques
 			for _, ch := range discoverableChannels {
 				if ch.Type == "contact" {
 					resp := TelegramTopContactResponse{
-						Identifier:   ch.Identifier,
-						Name:         ch.Name,
-						MessageCount: 0, // No message count from discovery
-						IsTracked:    ch.IsTracked,
-						Type:         ch.Type,
+						Identifier:     ch.Identifier,
+						Name:           ch.Name,
+						SecondaryLabel: ch.SecondaryLabel, // Already formatted in groups.go
+						MessageCount:   0,                 // No message count from discovery
+						IsTracked:      ch.IsTracked,
+						Type:           ch.Type,
 					}
 					if ch.IsTracked && ch.ChannelID != nil {
 						resp.ChannelID = ch.ChannelID
@@ -325,11 +327,12 @@ func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Reques
 	response := make([]TelegramTopContactResponse, len(contacts))
 	for i, c := range contacts {
 		response[i] = TelegramTopContactResponse{
-			Identifier:   c.Identifier,
-			Name:         c.Name,
-			MessageCount: c.MessageCount,
-			IsTracked:    c.IsTracked,
-			Type:         c.Type,
+			Identifier:     c.Identifier,
+			Name:           c.Name,
+			SecondaryLabel: "", // Username not available from message history
+			MessageCount:   c.MessageCount,
+			IsTracked:      c.IsTracked,
+			Type:           c.Type,
 		}
 		if c.IsTracked {
 			response[i].ChannelID = &c.ChannelID

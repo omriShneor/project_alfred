@@ -2,7 +2,12 @@ import React from 'react';
 import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
-import { TodoSection, PendingEventsSection, TodayCalendarSection } from '../components/home';
+import {
+  PendingRemindersSection,
+  AcceptedRemindersSection,
+  PendingEventsSection,
+  TodayCalendarSection,
+} from '../components/home';
 import { colors } from '../theme/colors';
 
 export function HomeScreen() {
@@ -13,6 +18,7 @@ export function HomeScreen() {
     setRefreshing(true);
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: ['events'] }),
+      queryClient.invalidateQueries({ queryKey: ['reminders'] }),
       queryClient.invalidateQueries({ queryKey: ['todayEvents'] }),
     ]);
     setRefreshing(false);
@@ -37,7 +43,8 @@ export function HomeScreen() {
           />
         }
       >
-        <TodoSection />
+        <PendingRemindersSection />
+        <AcceptedRemindersSection />
         <PendingEventsSection />
         <TodayCalendarSection />
       </ScrollView>

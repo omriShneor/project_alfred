@@ -404,3 +404,199 @@ var TestNonEventMessages = []string{
 	"Happy birthday!",
 	"Great work on the presentation",
 }
+
+// ReminderBuilder builds test reminders
+type ReminderBuilder struct {
+	channelID    int64
+	calendarID   string
+	title        string
+	description  string
+	dueDate      time.Time
+	reminderTime *time.Time
+	priority     database.ReminderPriority
+	status       database.ReminderStatus
+	actionType   database.ReminderActionType
+	reasoning    string
+	source       string
+}
+
+// NewReminderBuilder creates a new reminder builder with defaults
+func NewReminderBuilder(channelID int64) *ReminderBuilder {
+	dueDate := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	return &ReminderBuilder{
+		channelID:  channelID,
+		calendarID: "primary",
+		title:      "Test Reminder",
+		dueDate:    dueDate,
+		priority:   database.ReminderPriorityNormal,
+		status:     database.ReminderStatusPending,
+		actionType: database.ReminderActionCreate,
+		reasoning:  "Test reminder created by builder",
+		source:     "whatsapp",
+	}
+}
+
+// WithTitle sets the title
+func (b *ReminderBuilder) WithTitle(title string) *ReminderBuilder {
+	b.title = title
+	return b
+}
+
+// WithDescription sets the description
+func (b *ReminderBuilder) WithDescription(desc string) *ReminderBuilder {
+	b.description = desc
+	return b
+}
+
+// WithDueDate sets the due date
+func (b *ReminderBuilder) WithDueDate(t time.Time) *ReminderBuilder {
+	b.dueDate = t
+	return b
+}
+
+// WithReminderTime sets the reminder time
+func (b *ReminderBuilder) WithReminderTime(t time.Time) *ReminderBuilder {
+	b.reminderTime = &t
+	return b
+}
+
+// WithCalendarID sets the calendar ID
+func (b *ReminderBuilder) WithCalendarID(id string) *ReminderBuilder {
+	b.calendarID = id
+	return b
+}
+
+// WithReasoning sets the LLM reasoning
+func (b *ReminderBuilder) WithReasoning(reasoning string) *ReminderBuilder {
+	b.reasoning = reasoning
+	return b
+}
+
+// WithSource sets the source
+func (b *ReminderBuilder) WithSource(source string) *ReminderBuilder {
+	b.source = source
+	return b
+}
+
+// LowPriority sets priority to low
+func (b *ReminderBuilder) LowPriority() *ReminderBuilder {
+	b.priority = database.ReminderPriorityLow
+	return b
+}
+
+// NormalPriority sets priority to normal
+func (b *ReminderBuilder) NormalPriority() *ReminderBuilder {
+	b.priority = database.ReminderPriorityNormal
+	return b
+}
+
+// HighPriority sets priority to high
+func (b *ReminderBuilder) HighPriority() *ReminderBuilder {
+	b.priority = database.ReminderPriorityHigh
+	return b
+}
+
+// Pending sets status to pending
+func (b *ReminderBuilder) Pending() *ReminderBuilder {
+	b.status = database.ReminderStatusPending
+	return b
+}
+
+// Confirmed sets status to confirmed
+func (b *ReminderBuilder) Confirmed() *ReminderBuilder {
+	b.status = database.ReminderStatusConfirmed
+	return b
+}
+
+// Synced sets status to synced
+func (b *ReminderBuilder) Synced() *ReminderBuilder {
+	b.status = database.ReminderStatusSynced
+	return b
+}
+
+// Rejected sets status to rejected
+func (b *ReminderBuilder) Rejected() *ReminderBuilder {
+	b.status = database.ReminderStatusRejected
+	return b
+}
+
+// Completed sets status to completed
+func (b *ReminderBuilder) Completed() *ReminderBuilder {
+	b.status = database.ReminderStatusCompleted
+	return b
+}
+
+// Dismissed sets status to dismissed
+func (b *ReminderBuilder) Dismissed() *ReminderBuilder {
+	b.status = database.ReminderStatusDismissed
+	return b
+}
+
+// CreateAction sets action type to create
+func (b *ReminderBuilder) CreateAction() *ReminderBuilder {
+	b.actionType = database.ReminderActionCreate
+	return b
+}
+
+// UpdateAction sets action type to update
+func (b *ReminderBuilder) UpdateAction() *ReminderBuilder {
+	b.actionType = database.ReminderActionUpdate
+	return b
+}
+
+// DeleteAction sets action type to delete
+func (b *ReminderBuilder) DeleteAction() *ReminderBuilder {
+	b.actionType = database.ReminderActionDelete
+	return b
+}
+
+// Build creates the reminder in the database
+func (b *ReminderBuilder) Build(db *database.DB) (*database.Reminder, error) {
+	reminder := &database.Reminder{
+		ChannelID:    b.channelID,
+		CalendarID:   b.calendarID,
+		Title:        b.title,
+		Description:  b.description,
+		DueDate:      b.dueDate,
+		ReminderTime: b.reminderTime,
+		Priority:     b.priority,
+		Status:       b.status,
+		ActionType:   b.actionType,
+		LLMReasoning: b.reasoning,
+		Source:       b.source,
+	}
+
+	created, err := db.CreatePendingReminder(reminder)
+	if err != nil {
+		return nil, err
+	}
+
+	// If status is not pending, update it
+	if b.status != database.ReminderStatusPending {
+		if err := db.UpdateReminderStatus(created.ID, b.status); err != nil {
+			return nil, err
+		}
+		created.Status = b.status
+	}
+
+	return created, nil
+}
+
+// MustBuild creates the reminder or panics
+func (b *ReminderBuilder) MustBuild(db *database.DB) *database.Reminder {
+	reminder, err := b.Build(db)
+	if err != nil {
+		panic(fmt.Sprintf("failed to build reminder: %v", err))
+	}
+	return reminder
+}
+
+// TestReminderMessages contains sample messages for testing reminder detection
+var TestReminderMessages = []string{
+	"Remind me to call mom tomorrow",
+	"Don't forget to submit the report by Friday",
+	"Remember to buy groceries after work",
+	"I need to pay the electricity bill next week",
+	"Remind me to book the flight for next month",
+	"Don't forget the dentist appointment on the 15th",
+}

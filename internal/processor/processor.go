@@ -7,7 +7,6 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
-	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/source"
 )
@@ -19,7 +18,6 @@ const (
 // Processor handles incoming messages from any source and detects calendar events and reminders
 type Processor struct {
 	db               *database.DB
-	gcalClient       *gcal.Client
 	eventAnalyzer    agent.EventAnalyzer    // Event analyzer
 	reminderAnalyzer agent.ReminderAnalyzer // Reminder analyzer
 	msgChan          <-chan source.Message
@@ -36,7 +34,6 @@ type Processor struct {
 // New creates a new event processor
 func New(
 	db *database.DB,
-	gcalClient *gcal.Client,
 	eventAnalyzer agent.EventAnalyzer,
 	reminderAnalyzer agent.ReminderAnalyzer,
 	msgChan <-chan source.Message,
@@ -51,7 +48,6 @@ func New(
 
 	return &Processor{
 		db:               db,
-		gcalClient:       gcalClient,
 		eventAnalyzer:    eventAnalyzer,
 		reminderAnalyzer: reminderAnalyzer,
 		msgChan:          msgChan,

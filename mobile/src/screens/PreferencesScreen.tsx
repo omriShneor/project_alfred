@@ -127,7 +127,7 @@ export function PreferencesScreen() {
   const handleDisconnectWhatsApp = () => {
     Alert.alert(
       'Disconnect WhatsApp',
-      'Are you sure you want to disconnect WhatsApp? You will need to reconnect to scan messages.',
+      'Are you sure you want to disconnect WhatsApp?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -149,7 +149,7 @@ export function PreferencesScreen() {
   const handleDisconnectGoogle = () => {
     Alert.alert(
       'Disconnect Google',
-      'Are you sure you want to disconnect your Google account? This will disable Gmail scanning and Google Calendar sync.',
+      'Are you sure you want to disconnect your Google account?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -211,7 +211,7 @@ export function PreferencesScreen() {
   const handleDisconnectTelegram = () => {
     Alert.alert(
       'Disconnect Telegram',
-      'Are you sure you want to disconnect Telegram? You will need to reconnect to scan messages.',
+      'Are you sure you want to disconnect Telegram?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -356,7 +356,7 @@ export function PreferencesScreen() {
               No connected sources
             </Text>
             <Text style={styles.emptySubtext}>
-              Connect an account below to start scanning for events
+              Connect an account below to get suggestions
             </Text>
           </Card>
         )}

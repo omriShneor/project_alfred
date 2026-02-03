@@ -24,22 +24,22 @@ export function WelcomeScreen() {
         <View style={styles.features}>
           <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Scan WhatsApp messages for events</Text>
+            <Text style={styles.featureText}>Get event, reminder, and task suggestions from selected sources</Text>
           </View>
           <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Scan emails for appointments</Text>
+            <Text style={styles.featureText}>Review and confirm in one tap — nothing changes without your approval</Text>
           </View>
           <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Review before adding to calendar</Text>
+            <Text style={styles.featureText}>Apply changes in-app and sync with Google Calendar</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.footer}>
         <Button
-          title="Get Started"
+          title="Choose Sources"
           onPress={() => navigation.navigate('InputSelection')}
           style={styles.button}
         />

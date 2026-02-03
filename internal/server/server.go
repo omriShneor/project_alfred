@@ -22,7 +22,6 @@ type Server struct {
 	db               *database.DB
 	waClient         *whatsapp.Client
 	tgClient         *telegram.Client
-	gcalClient       *gcal.Client
 	gmailClient      *gmail.Client
 	gmailWorker      *gmail.Worker
 	onboardingState  *sse.State
@@ -36,6 +35,7 @@ type Server struct {
 	oauthCodeChan     chan string // Channel to receive OAuth code from callback
 	gmailPollInterval int         // Gmail worker poll interval in minutes
 	gmailMaxEmails    int         // Gmail worker max emails per poll
+	credentialsFile   string      // Path to Google OAuth credentials file (for per-user gcal clients)
 	// Authentication
 	authService    *auth.Service
 	authMiddleware *auth.Middleware
@@ -61,7 +61,6 @@ type ServerConfig struct {
 type ClientsConfig struct {
 	WAClient         *whatsapp.Client
 	TGClient         *telegram.Client
-	GCalClient       *gcal.Client
 	GmailClient      *gmail.Client
 	GmailWorker      *gmail.Worker
 	NotifyService    *notify.Service
@@ -88,6 +87,7 @@ func New(cfg ServerConfig) *Server {
 		resendAPIKey:      cfg.ResendAPIKey,
 		gmailPollInterval: gmailPollInterval,
 		gmailMaxEmails:    gmailMaxEmails,
+		credentialsFile:   cfg.CredentialsFile,
 	}
 
 	// Initialize authentication if credentials are available
@@ -118,17 +118,11 @@ func New(cfg ServerConfig) *Server {
 func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.waClient = cfg.WAClient
 	s.tgClient = cfg.TGClient
-	s.gcalClient = cfg.GCalClient
 	s.gmailClient = cfg.GmailClient
 	s.gmailWorker = cfg.GmailWorker
 	s.notifyService = cfg.NotifyService
 	s.eventAnalyzer = cfg.EventAnalyzer
 	s.reminderAnalyzer = cfg.ReminderAnalyzer
-}
-
-// SetGCalClient sets the gcal client (used during onboarding before full initialization)
-func (s *Server) SetGCalClient(client *gcal.Client) {
-	s.gcalClient = client
 }
 
 // SetWAClient sets the WhatsApp client (used during onboarding before full initialization)
@@ -139,6 +133,20 @@ func (s *Server) SetWAClient(client *whatsapp.Client) {
 // SetTGClient sets the Telegram client (used during onboarding before full initialization)
 func (s *Server) SetTGClient(client *telegram.Client) {
 	s.tgClient = client
+}
+
+// getGCalClientForUser creates or retrieves a GCal client for a specific user.
+// Returns nil if credentials are not configured or userID is 0.
+func (s *Server) getGCalClientForUser(userID int64) *gcal.Client {
+	if userID == 0 || s.credentialsFile == "" {
+		return nil
+	}
+	client, err := gcal.NewClientForUser(userID, s.credentialsFile, s.db)
+	if err != nil {
+		fmt.Printf("Warning: failed to create gcal client for user %d: %v\n", userID, err)
+		return nil
+	}
+	return client
 }
 
 // SetUserServiceManager sets the user service manager
@@ -329,8 +337,11 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 // initializeGmailClient creates and initializes the Gmail client after OAuth authentication.
 // This should be called after gcalClient.ExchangeCode() succeeds.
 func (s *Server) initializeGmailClient() error {
-	if s.gcalClient == nil || !s.gcalClient.IsAuthenticated() {
-		return fmt.Errorf("Google Calendar client not authenticated")
+	// For single-user mode, use userID = 1
+	userID := int64(1)
+	userGCalClient := s.getGCalClientForUser(userID)
+	if userGCalClient == nil || !userGCalClient.IsAuthenticated() {
+		return fmt.Errorf("Google Calendar client not authenticated for user %d", userID)
 	}
 
 	// Stop existing Gmail worker if running
@@ -339,8 +350,8 @@ func (s *Server) initializeGmailClient() error {
 		s.gmailWorker = nil
 	}
 
-	oauthConfig := s.gcalClient.GetOAuthConfig()
-	oauthToken := s.gcalClient.GetToken()
+	oauthConfig := userGCalClient.GetOAuthConfig()
+	oauthToken := userGCalClient.GetToken()
 	if oauthConfig == nil || oauthToken == nil {
 		return fmt.Errorf("OAuth config or token not available")
 	}

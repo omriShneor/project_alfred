@@ -2,7 +2,6 @@ package gcal
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -86,29 +85,6 @@ func loadConfigFromFile(path string) (*oauth2.Config, error) {
 	return config, nil
 }
 
-// loadToken loads an OAuth token from a file
-func loadToken(path string) (*oauth2.Token, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	var token oauth2.Token
-	if err := json.Unmarshal(data, &token); err != nil {
-		return nil, err
-	}
-
-	return &token, nil
-}
-
-// saveToken saves an OAuth token to a file
-func saveToken(path string, token *oauth2.Token) error {
-	data, err := json.MarshalIndent(token, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, data, 0600)
-}
 
 // StartCallbackServer starts the OAuth callback server and returns immediately.
 // It returns a channel that will receive the authorization code when received.

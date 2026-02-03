@@ -164,8 +164,7 @@ export function ConnectionScreen() {
   const handleConnectGoogle = async () => {
     try {
       const response = await getOAuthURL.mutateAsync(undefined);
-      await WebBrowser.openAuthSessionAsync(response.auth_url, 'alfred://oauth/success');
-      queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });
+      await WebBrowser.openAuthSessionAsync(response.auth_url, 'alfred://oauth/callback');
     } catch (error: any) {
       Alert.alert('Error', error.response?.data?.error || 'Failed to start Google authorization');
     }
@@ -247,7 +246,7 @@ export function ConnectionScreen() {
         <Text style={styles.step}>Step 2 of 2</Text>
         <Text style={styles.title}>Connect Your Accounts</Text>
         <Text style={styles.description}>
-          Connect the services you selected to start scanning for events.
+          Connect the services you selected to start receiving event, reminder, and task suggestions.
         </Text>
 
         {gmailEnabled && (

@@ -176,7 +176,8 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	// Check if sync is enabled and Google Calendar is connected
 	userID := getUserID(r)
 	gcalSettings, _ := s.db.GetGCalSettings(userID)
-	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && s.gcalClient != nil && s.gcalClient.IsAuthenticated()
+	userGCalClient := s.getGCalClientForUser(userID)
+	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && userGCalClient != nil && userGCalClient.IsAuthenticated()
 
 	// If not syncing to Google Calendar, just confirm the reminder locally
 	if !shouldSync {
@@ -204,7 +205,7 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 		// Use a 30-minute event block at the due date
 		endTime := reminder.DueDate.Add(30 * time.Minute)
 
-		googleEventID, err := s.gcalClient.CreateEvent(reminder.CalendarID, gcal.EventInput{
+		googleEventID, err := userGCalClient.CreateEvent(reminder.CalendarID, gcal.EventInput{
 			Summary:     "[Reminder] " + reminder.Title,
 			Description: reminder.Description,
 			StartTime:   reminder.DueDate,
@@ -230,7 +231,7 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			endTime := reminder.DueDate.Add(30 * time.Minute)
-			err = s.gcalClient.UpdateEvent(reminder.CalendarID, *reminder.GoogleEventID, gcal.EventInput{
+			err = userGCalClient.UpdateEvent(reminder.CalendarID, *reminder.GoogleEventID, gcal.EventInput{
 				Summary:     "[Reminder] " + reminder.Title,
 				Description: reminder.Description,
 				StartTime:   reminder.DueDate,
@@ -249,7 +250,7 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	case database.ReminderActionDelete:
 		// If we have a Google event ID, delete from calendar
 		if reminder.GoogleEventID != nil {
-			if err := s.gcalClient.DeleteEvent(reminder.CalendarID, *reminder.GoogleEventID); err != nil {
+			if err := userGCalClient.DeleteEvent(reminder.CalendarID, *reminder.GoogleEventID); err != nil {
 				fmt.Printf("Warning: failed to delete calendar reminder: %v\n", err)
 			}
 		}
@@ -341,8 +342,10 @@ func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If synced to Google Calendar, delete the event
-	if reminder.GoogleEventID != nil && s.gcalClient != nil && s.gcalClient.IsAuthenticated() {
-		if err := s.gcalClient.DeleteEvent(reminder.CalendarID, *reminder.GoogleEventID); err != nil {
+	userID := getUserID(r)
+	userGCalClient := s.getGCalClientForUser(userID)
+	if reminder.GoogleEventID != nil && userGCalClient != nil && userGCalClient.IsAuthenticated() {
+		if err := userGCalClient.DeleteEvent(reminder.CalendarID, *reminder.GoogleEventID); err != nil {
 			fmt.Printf("Warning: failed to delete calendar reminder: %v\n", err)
 		}
 	}

@@ -21,19 +21,19 @@ const inputOptions: InputOption[] = [
   {
     id: 'whatsapp',
     title: 'WhatsApp',
-    description: 'Scan messages from contacts',
+    description: 'Suggest events, reminders and tasks from selected WhatsApp contacts',
     icon: 'chatbubble-outline',
   },
   {
     id: 'telegram',
     title: 'Telegram',
-    description: 'Scan messages from contacts',
+    description: 'Suggest events, reminders and tasks from selected Telegram users',
     icon: 'paper-plane-outline',
   },
   {
     id: 'gmail',
     title: 'Gmail',
-    description: 'Scan emails for appointments and events',
+    description: 'Suggest events, reminders and tasks from selected emails or domains',
     icon: 'mail-outline',
   },
 ];

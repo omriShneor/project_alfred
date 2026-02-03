@@ -28,14 +28,14 @@ type UserServices struct {
 type UserServiceManager struct {
 	db               *database.DB
 	cfg              *config.Config
+	credentialsFile  string // Path to Google OAuth credentials file (for per-user gcal clients)
 	notifyService    *notify.Service
 	eventAnalyzer    agent.EventAnalyzer
 	reminderAnalyzer agent.ReminderAnalyzer
 
-	// Shared clients (currently single-instance, will be per-user later)
-	gcalClient *gcal.Client
-	waClient   *whatsapp.Client
-	tgClient   *telegram.Client
+	// Shared clients
+	waClient *whatsapp.Client
+	tgClient *telegram.Client
 
 	// Message channel for processor
 	msgChan <-chan source.Message
@@ -49,10 +49,10 @@ type UserServiceManager struct {
 type UserServiceManagerConfig struct {
 	DB               *database.DB
 	Config           *config.Config
+	CredentialsFile  string // Path to Google OAuth credentials file
 	NotifyService    *notify.Service
 	EventAnalyzer    agent.EventAnalyzer
 	ReminderAnalyzer agent.ReminderAnalyzer
-	GCalClient       *gcal.Client
 	WAClient         *whatsapp.Client
 	TGClient         *telegram.Client
 	MsgChan          <-chan source.Message
@@ -63,10 +63,10 @@ func NewUserServiceManager(cfg UserServiceManagerConfig) *UserServiceManager {
 	return &UserServiceManager{
 		db:               cfg.DB,
 		cfg:              cfg.Config,
+		credentialsFile:  cfg.CredentialsFile,
 		notifyService:    cfg.NotifyService,
 		eventAnalyzer:    cfg.EventAnalyzer,
 		reminderAnalyzer: cfg.ReminderAnalyzer,
-		gcalClient:       cfg.GCalClient,
 		waClient:         cfg.WAClient,
 		tgClient:         cfg.TGClient,
 		msgChan:          cfg.MsgChan,
@@ -75,10 +75,9 @@ func NewUserServiceManager(cfg UserServiceManagerConfig) *UserServiceManager {
 }
 
 // SetClients updates the shared clients (used after OAuth completion)
-func (m *UserServiceManager) SetClients(gcalClient *gcal.Client, waClient *whatsapp.Client, tgClient *telegram.Client, msgChan <-chan source.Message) {
+func (m *UserServiceManager) SetClients(waClient *whatsapp.Client, tgClient *telegram.Client, msgChan <-chan source.Message) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.gcalClient = gcalClient
 	m.waClient = waClient
 	m.tgClient = tgClient
 	m.msgChan = msgChan
@@ -113,22 +112,19 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 		fmt.Printf("  - Telegram handler userID set to %d\n", userID)
 	}
 
-	// Start Gmail worker if Gmail client is authenticated
-	if m.gcalClient != nil && m.gcalClient.IsAuthenticated() {
-		gmailWorker, err := m.createGmailWorker(userID)
-		if err != nil {
-			fmt.Printf("  - Gmail worker failed to start: %v\n", err)
-		} else if gmailWorker != nil {
-			services.GmailWorker = gmailWorker
-			fmt.Printf("  - Gmail worker started\n")
-		}
+	// Start Gmail worker if user has authenticated Google Calendar (for Gmail access)
+	gmailWorker, err := m.createGmailWorker(userID)
+	if err != nil {
+		fmt.Printf("  - Gmail worker failed to start: %v\n", err)
+	} else if gmailWorker != nil {
+		services.GmailWorker = gmailWorker
+		fmt.Printf("  - Gmail worker started\n")
 	}
 
 	// Start processor
 	if m.msgChan != nil && m.eventAnalyzer != nil {
 		proc := processor.New(
 			m.db,
-			m.gcalClient,
 			m.eventAnalyzer,
 			m.reminderAnalyzer,
 			m.msgChan,
@@ -199,12 +195,18 @@ func (m *UserServiceManager) IsRunningForUser(userID int64) bool {
 
 // createGmailWorker creates and starts a Gmail worker for a user
 func (m *UserServiceManager) createGmailWorker(userID int64) (*gmail.Worker, error) {
-	if m.gcalClient == nil || !m.gcalClient.IsAuthenticated() {
+	// Create per-user gcal client to get OAuth token for Gmail
+	if m.credentialsFile == "" || userID == 0 {
 		return nil, nil
 	}
 
-	oauthConfig := m.gcalClient.GetOAuthConfig()
-	oauthToken := m.gcalClient.GetToken()
+	userGCalClient, err := gcal.NewClientForUser(userID, m.credentialsFile, m.db)
+	if err != nil || userGCalClient == nil || !userGCalClient.IsAuthenticated() {
+		return nil, nil
+	}
+
+	oauthConfig := userGCalClient.GetOAuthConfig()
+	oauthToken := userGCalClient.GetToken()
 	if oauthConfig == nil || oauthToken == nil {
 		return nil, nil
 	}

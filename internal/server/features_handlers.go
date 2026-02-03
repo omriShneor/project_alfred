@@ -28,7 +28,8 @@ func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
 	// Check actual connection status (available regardless of user login)
 	whatsappConnected := s.waClient != nil && s.waClient.IsLoggedIn()
 	gmailConnected := s.gmailClient != nil && s.gmailClient.IsAuthenticated()
-	googleCalConnected := s.gcalClient != nil && s.gcalClient.IsAuthenticated()
+	userGCalClient := s.getGCalClientForUser(userID)
+	googleCalConnected := userGCalClient != nil && userGCalClient.IsAuthenticated()
 
 	// If no user is logged in, return default status
 	if userID == 0 {

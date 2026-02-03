@@ -66,7 +66,6 @@ func main() {
 	srv.InitializeClients(server.ClientsConfig{
 		WAClient:         clients.WAClient,
 		TGClient:         tgClient,
-		GCalClient:       clients.GCalClient,
 		GmailClient:      nil, // Created per-user after login
 		GmailWorker:      nil, // Created per-user after login
 		NotifyService:    notifyService,
@@ -78,10 +77,10 @@ func main() {
 	userServiceManager := server.NewUserServiceManager(server.UserServiceManagerConfig{
 		DB:               db,
 		Config:           cfg,
+		CredentialsFile:  cfg.GoogleCredentialsFile,
 		NotifyService:    notifyService,
 		EventAnalyzer:    eventAnalyzer,
 		ReminderAnalyzer: reminderAnalyzer,
-		GCalClient:       clients.GCalClient,
 		WAClient:         clients.WAClient,
 		TGClient:         tgClient,
 		MsgChan:          clients.MsgChan,

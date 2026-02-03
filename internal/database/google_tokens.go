@@ -26,7 +26,7 @@ func getEncryptionKey() ([]byte, error) {
 
 	// Fall back to deriving from ANTHROPIC_API_KEY
 	if apiKey := os.Getenv("ANTHROPIC_API_KEY"); apiKey != "" {
-		hash := sha256.Sum256([]byte("alfred-token-encryption-" + apiKey))
+		hash := sha256.Sum256([]byte("alfred-encryption-" + apiKey))
 		return hash[:], nil
 	}
 

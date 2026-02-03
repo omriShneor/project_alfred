@@ -14,11 +14,8 @@ import (
 	"github.com/omriShneor/project_alfred/internal/agent/reminder"
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
-	"github.com/omriShneor/project_alfred/internal/gcal"
-	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/onboarding"
-	"github.com/omriShneor/project_alfred/internal/processor"
 	"github.com/omriShneor/project_alfred/internal/server"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/omriShneor/project_alfred/internal/telegram"
@@ -45,6 +42,7 @@ func main() {
 		Port:              cfg.HTTPPort,
 		ResendAPIKey:      cfg.ResendAPIKey,
 		CredentialsFile:   cfg.GoogleCredentialsFile,
+		CredentialsJSON:   cfg.GoogleCredentialsJSON,
 		GmailPollInterval: cfg.GmailPollInterval,
 		GmailMaxEmails:    cfg.GmailMaxEmails,
 	})
@@ -62,26 +60,38 @@ func main() {
 
 	eventAnalyzer := initEventAnalyzer(cfg)
 	reminderAnalyzer := initReminderAnalyzer(cfg)
-	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, eventAnalyzer, reminderAnalyzer, notifyService, cfg)
 	tgClient := initTelegram(db, cfg, state)
 
+	// Initialize clients on server (but don't start workers yet - they start after user login)
 	srv.InitializeClients(server.ClientsConfig{
 		WAClient:         clients.WAClient,
 		TGClient:         tgClient,
 		GCalClient:       clients.GCalClient,
-		GmailClient:      gmailClient,
-		GmailWorker:      gmailWorker,
+		GmailClient:      nil, // Created per-user after login
+		GmailWorker:      nil, // Created per-user after login
 		NotifyService:    notifyService,
 		EventAnalyzer:    eventAnalyzer,
 		ReminderAnalyzer: reminderAnalyzer,
 	})
 
-	proc := processor.New(db, clients.GCalClient, eventAnalyzer, reminderAnalyzer, clients.MsgChan, cfg.MessageHistorySize, notifyService)
-	if err := proc.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
-	}
+	// Create UserServiceManager for per-user service lifecycle
+	userServiceManager := server.NewUserServiceManager(server.UserServiceManagerConfig{
+		DB:               db,
+		Config:           cfg,
+		NotifyService:    notifyService,
+		EventAnalyzer:    eventAnalyzer,
+		ReminderAnalyzer: reminderAnalyzer,
+		GCalClient:       clients.GCalClient,
+		WAClient:         clients.WAClient,
+		TGClient:         tgClient,
+		MsgChan:          clients.MsgChan,
+	})
+	srv.SetUserServiceManager(userServiceManager)
 
-	waitForShutdown(proc, srv, clients.WAClient, tgClient, gmailWorker)
+	// NOTE: Workers and processors are NOT started here.
+	// They will be started by UserServiceManager after user login + onboarding.
+
+	waitForShutdown(srv, clients.WAClient, tgClient, userServiceManager)
 }
 
 func initDatabase(cfg *config.Config) (*database.DB, error) {
@@ -135,44 +145,6 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
-func initGmail(gcalClient *gcal.Client, db *database.DB, eventAnalyzer agent.EventAnalyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
-	if gcalClient == nil || !gcalClient.IsAuthenticated() {
-		return nil, nil
-	}
-
-	oauthConfig := gcalClient.GetOAuthConfig()
-	oauthToken := gcalClient.GetToken()
-	if oauthConfig == nil || oauthToken == nil {
-		return nil, nil
-	}
-
-	gmailClient, err := gmail.NewClient(oauthConfig, oauthToken)
-	if err != nil {
-		fmt.Printf("Warning: Failed to create Gmail client: %v\n", err)
-		return nil, nil
-	}
-
-	if !gmailClient.IsAuthenticated() {
-		fmt.Println("Gmail client created but not authenticated (may need re-authorization for Gmail scope)")
-		return nil, nil
-	}
-
-	fmt.Println("Gmail client initialized")
-
-	emailProc := processor.NewEmailProcessor(db, eventAnalyzer, reminderAnalyzer, notifyService)
-	gmailWorker := gmail.NewWorker(gmailClient, db, emailProc, gmail.WorkerConfig{
-		PollIntervalMinutes: cfg.GmailPollInterval,
-		MaxEmailsPerPoll:    cfg.GmailMaxEmails,
-	})
-
-	if err := gmailWorker.Start(); err != nil {
-		fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
-		return gmailClient, nil
-	}
-
-	return gmailClient, gmailWorker
-}
-
 func initTelegram(db *database.DB, cfg *config.Config, state *sse.State) *telegram.Client {
 	if cfg.TelegramAPIID == 0 || cfg.TelegramAPIHash == "" {
 		fmt.Println("Telegram: Not configured (ALFRED_TELEGRAM_API_ID and ALFRED_TELEGRAM_API_HASH required)")
@@ -212,7 +184,7 @@ func fatal(context string, err error) {
 	os.Exit(1)
 }
 
-func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *whatsapp.Client, tgClient *telegram.Client, gmailWorker *gmail.Worker) {
+func waitForShutdown(srv *server.Server, waClient *whatsapp.Client, tgClient *telegram.Client, userServiceManager *server.UserServiceManager) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
@@ -222,13 +194,15 @@ func waitForShutdown(proc *processor.Processor, srv *server.Server, waClient *wh
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	proc.Stop()
-	if gmailWorker != nil {
-		gmailWorker.Stop()
+	// Stop all user services (processors, workers)
+	if userServiceManager != nil {
+		userServiceManager.StopAllServices()
 	}
 	if tgClient != nil {
 		tgClient.Disconnect()
 	}
 	srv.Shutdown(ctx)
-	waClient.Disconnect()
+	if waClient != nil {
+		waClient.Disconnect()
+	}
 }

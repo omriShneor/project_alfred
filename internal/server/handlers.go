@@ -374,10 +374,21 @@ func respondError(w http.ResponseWriter, status int, message string) {
 // Google Calendar API
 
 func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	status := map[string]interface{}{
-		"connected": false,
-		"message":   "Not configured",
+		"connected":  false,
+		"message":    "Not configured",
+		"has_scopes": false,
 	}
+
+	// Check if user has Calendar scope granted
+	hasCalendarScope := false
+	if s.authService != nil && userID != 0 {
+		hasCalendarScope, _ = s.authService.HasCalendarScope(userID)
+	}
+
+	status["has_scopes"] = hasCalendarScope
 
 	if s.gcalClient == nil {
 		status["message"] = "Google Calendar client not initialized. Check credentials.json."
@@ -385,11 +396,14 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if s.gcalClient.IsAuthenticated() {
+	if !hasCalendarScope {
+		// User hasn't granted Calendar access yet
+		status["message"] = "Calendar access not authorized. Please connect Google Calendar."
+	} else if s.gcalClient.IsAuthenticated() {
 		status["connected"] = true
 		status["message"] = "Connected"
 	} else {
-		status["message"] = "Not authenticated. Click Connect to authorize."
+		status["message"] = "Calendar configured but not connected"
 	}
 
 	respondJSON(w, http.StatusOK, status)

@@ -39,6 +39,8 @@ type Server struct {
 	// Authentication
 	authService    *auth.Service
 	authMiddleware *auth.Middleware
+	// Per-user service management
+	userServiceManager *UserServiceManager
 }
 
 // ServerConfig holds configuration for initial server creation (onboarding-capable)
@@ -139,101 +141,158 @@ func (s *Server) SetTGClient(client *telegram.Client) {
 	s.tgClient = client
 }
 
+// SetUserServiceManager sets the user service manager
+func (s *Server) SetUserServiceManager(mgr *UserServiceManager) {
+	s.userServiceManager = mgr
+}
+
+// GetUserServiceManager returns the user service manager
+func (s *Server) GetUserServiceManager() *UserServiceManager {
+	return s.userServiceManager
+}
+
+// requireAuth wraps a handler to require authentication
+func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.authMiddleware == nil {
+			// Auth not configured, allow through (development mode)
+			handler(w, r)
+			return
+		}
+		s.authMiddleware.RequireAuth(http.HandlerFunc(handler)).ServeHTTP(w, r)
+	}
+}
+
+// optionalAuth wraps a handler to optionally populate user context if authenticated
+func (s *Server) optionalAuth(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.authMiddleware == nil {
+			// Auth not configured, allow through
+			handler(w, r)
+			return
+		}
+		s.authMiddleware.OptionalAuth(http.HandlerFunc(handler)).ServeHTTP(w, r)
+	}
+}
+
 func (s *Server) registerRoutes(mux *http.ServeMux) {
+	// ============================================
+	// PUBLIC ROUTES (no authentication required)
+	// ============================================
+
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
 
-	// Authentication API (public routes)
+	// Authentication API (must be public for login flow)
 	mux.HandleFunc("GET /api/auth/google", s.handleAuthGoogle)
 	mux.HandleFunc("POST /api/auth/google/callback", s.handleAuthGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 
-	// Onboarding API
+	// Incremental authorization (requires auth - user must be logged in to add scopes)
+	mux.HandleFunc("POST /api/auth/google/add-scopes", s.requireAuth(s.handleRequestAdditionalScopes))
+	mux.HandleFunc("POST /api/auth/google/add-scopes/callback", s.requireAuth(s.handleAddScopesCallback))
+
+	// Onboarding API (public for initial app load)
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
 	mux.HandleFunc("GET /api/onboarding/stream", s.handleOnboardingSSE)
 
-	// WhatsApp API
-	mux.HandleFunc("GET /api/whatsapp/status", s.handleWhatsAppStatus)
-	mux.HandleFunc("POST /api/whatsapp/pair", s.handleWhatsAppPair)
-	mux.HandleFunc("POST /api/whatsapp/reconnect", s.handleWhatsAppReconnect)
-	mux.HandleFunc("POST /api/whatsapp/disconnect", s.handleWhatsAppDisconnect)
-	mux.HandleFunc("GET /api/whatsapp/top-contacts", s.handleWhatsAppTopContacts)
-	mux.HandleFunc("POST /api/whatsapp/sources/custom", s.handleWhatsAppCustomSource)
-
-	// Telegram API
-	mux.HandleFunc("GET /api/telegram/status", s.handleTelegramStatus)
-	mux.HandleFunc("POST /api/telegram/send-code", s.handleTelegramSendCode)
-	mux.HandleFunc("POST /api/telegram/verify-code", s.handleTelegramVerifyCode)
-	mux.HandleFunc("POST /api/telegram/disconnect", s.handleTelegramDisconnect)
-	mux.HandleFunc("POST /api/telegram/reconnect", s.handleTelegramReconnect)
-	mux.HandleFunc("GET /api/telegram/discovery/channels", s.handleDiscoverTelegramChannels)
-	mux.HandleFunc("GET /api/telegram/channel", s.handleListTelegramChannels)
-	mux.HandleFunc("POST /api/telegram/channel", s.handleCreateTelegramChannel)
-	mux.HandleFunc("PUT /api/telegram/channel/{id}", s.handleUpdateTelegramChannel)
-	mux.HandleFunc("DELETE /api/telegram/channel/{id}", s.handleDeleteTelegramChannel)
-	mux.HandleFunc("GET /api/telegram/top-contacts", s.handleTelegramTopContacts)
-	mux.HandleFunc("POST /api/telegram/sources/custom", s.handleTelegramCustomSource)
-
-	// Discovery API
-	mux.HandleFunc("GET /api/discovery/channels", s.handleDiscoverChannels)
-
-	//Whatsapp Channel Registry API
-	mux.HandleFunc("GET /api/channel", s.handleListChannels)
-	mux.HandleFunc("POST /api/channel", s.handleCreateChannel)
-	mux.HandleFunc("PUT /api/channel/{id}", s.handleUpdateChannel)
-	mux.HandleFunc("DELETE /api/channel/{id}", s.handleDeleteChannel)
-
-	// Google Calendar API
-	mux.HandleFunc("GET /api/gcal/status", s.handleGCalStatus)
-	mux.HandleFunc("GET /api/gcal/calendars", s.handleGCalListCalendars)
-	mux.HandleFunc("GET /api/gcal/settings", s.handleGetGCalSettings)
-	mux.HandleFunc("PUT /api/gcal/settings", s.handleUpdateGCalSettings)
-	mux.HandleFunc("GET /api/gcal/events/today", s.handleListTodayEvents)
-	mux.HandleFunc("POST /api/gcal/connect", s.handleGCalConnect)
-	mux.HandleFunc("POST /api/gcal/callback", s.handleGCalExchangeCode)
-	mux.HandleFunc("POST /api/gcal/disconnect", s.handleGCalDisconnect)
+	// OAuth callback (browser redirect for Google Calendar)
 	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
 
+	// OAuth callback for auth flow (browser redirect from Google, redirects to mobile deep link)
+	mux.HandleFunc("GET /api/auth/callback", s.handleAuthOAuthCallback)
+
+	// ============================================
+	// OPTIONAL AUTH ROUTES (work for both authenticated and anonymous)
+	// ============================================
+
+	// App status works for both (returns defaults for anonymous)
+	mux.HandleFunc("GET /api/app/status", s.optionalAuth(s.handleGetAppStatus))
+
+	// ============================================
+	// PROTECTED ROUTES (require authentication)
+	// ============================================
+
+	// WhatsApp API
+	mux.HandleFunc("GET /api/whatsapp/status", s.requireAuth(s.handleWhatsAppStatus))
+	mux.HandleFunc("POST /api/whatsapp/pair", s.requireAuth(s.handleWhatsAppPair))
+	mux.HandleFunc("POST /api/whatsapp/reconnect", s.requireAuth(s.handleWhatsAppReconnect))
+	mux.HandleFunc("POST /api/whatsapp/disconnect", s.requireAuth(s.handleWhatsAppDisconnect))
+	mux.HandleFunc("GET /api/whatsapp/top-contacts", s.requireAuth(s.handleWhatsAppTopContacts))
+	mux.HandleFunc("POST /api/whatsapp/sources/custom", s.requireAuth(s.handleWhatsAppCustomSource))
+
+	// Telegram API
+	mux.HandleFunc("GET /api/telegram/status", s.requireAuth(s.handleTelegramStatus))
+	mux.HandleFunc("POST /api/telegram/send-code", s.requireAuth(s.handleTelegramSendCode))
+	mux.HandleFunc("POST /api/telegram/verify-code", s.requireAuth(s.handleTelegramVerifyCode))
+	mux.HandleFunc("POST /api/telegram/disconnect", s.requireAuth(s.handleTelegramDisconnect))
+	mux.HandleFunc("POST /api/telegram/reconnect", s.requireAuth(s.handleTelegramReconnect))
+	mux.HandleFunc("GET /api/telegram/discovery/channels", s.requireAuth(s.handleDiscoverTelegramChannels))
+	mux.HandleFunc("GET /api/telegram/channel", s.requireAuth(s.handleListTelegramChannels))
+	mux.HandleFunc("POST /api/telegram/channel", s.requireAuth(s.handleCreateTelegramChannel))
+	mux.HandleFunc("PUT /api/telegram/channel/{id}", s.requireAuth(s.handleUpdateTelegramChannel))
+	mux.HandleFunc("DELETE /api/telegram/channel/{id}", s.requireAuth(s.handleDeleteTelegramChannel))
+	mux.HandleFunc("GET /api/telegram/top-contacts", s.requireAuth(s.handleTelegramTopContacts))
+	mux.HandleFunc("POST /api/telegram/sources/custom", s.requireAuth(s.handleTelegramCustomSource))
+
+	// Discovery API
+	mux.HandleFunc("GET /api/discovery/channels", s.requireAuth(s.handleDiscoverChannels))
+
+	// WhatsApp Channel Registry API
+	mux.HandleFunc("GET /api/channel", s.requireAuth(s.handleListChannels))
+	mux.HandleFunc("POST /api/channel", s.requireAuth(s.handleCreateChannel))
+	mux.HandleFunc("PUT /api/channel/{id}", s.requireAuth(s.handleUpdateChannel))
+	mux.HandleFunc("DELETE /api/channel/{id}", s.requireAuth(s.handleDeleteChannel))
+
+	// Google Calendar API
+	mux.HandleFunc("GET /api/gcal/status", s.requireAuth(s.handleGCalStatus))
+	mux.HandleFunc("GET /api/gcal/calendars", s.requireAuth(s.handleGCalListCalendars))
+	mux.HandleFunc("GET /api/gcal/settings", s.requireAuth(s.handleGetGCalSettings))
+	mux.HandleFunc("PUT /api/gcal/settings", s.requireAuth(s.handleUpdateGCalSettings))
+	mux.HandleFunc("GET /api/gcal/events/today", s.requireAuth(s.handleListTodayEvents))
+	mux.HandleFunc("POST /api/gcal/connect", s.requireAuth(s.handleGCalConnect))
+	mux.HandleFunc("POST /api/gcal/callback", s.requireAuth(s.handleGCalExchangeCode))
+	mux.HandleFunc("POST /api/gcal/disconnect", s.requireAuth(s.handleGCalDisconnect))
+
 	// Events API
-	mux.HandleFunc("GET /api/events", s.handleListEvents)
-	mux.HandleFunc("GET /api/events/today", s.handleListMergedTodayEvents) // Today's Schedule (Alfred + external)
-	mux.HandleFunc("GET /api/events/{id}", s.handleGetEvent)
-	mux.HandleFunc("PUT /api/events/{id}", s.handleUpdateEvent)
-	mux.HandleFunc("POST /api/events/{id}/confirm", s.handleConfirmEvent)
-	mux.HandleFunc("POST /api/events/{id}/reject", s.handleRejectEvent)
-	mux.HandleFunc("GET /api/events/channel/{channelId}/history", s.handleGetChannelHistory)
+	mux.HandleFunc("GET /api/events", s.requireAuth(s.handleListEvents))
+	mux.HandleFunc("GET /api/events/today", s.requireAuth(s.handleListMergedTodayEvents))
+	mux.HandleFunc("GET /api/events/{id}", s.requireAuth(s.handleGetEvent))
+	mux.HandleFunc("PUT /api/events/{id}", s.requireAuth(s.handleUpdateEvent))
+	mux.HandleFunc("POST /api/events/{id}/confirm", s.requireAuth(s.handleConfirmEvent))
+	mux.HandleFunc("POST /api/events/{id}/reject", s.requireAuth(s.handleRejectEvent))
+	mux.HandleFunc("GET /api/events/channel/{channelId}/history", s.requireAuth(s.handleGetChannelHistory))
 
 	// Reminders API
-	mux.HandleFunc("GET /api/reminders", s.handleListReminders)
-	mux.HandleFunc("GET /api/reminders/{id}", s.handleGetReminder)
-	mux.HandleFunc("PUT /api/reminders/{id}", s.handleUpdateReminder)
-	mux.HandleFunc("POST /api/reminders/{id}/confirm", s.handleConfirmReminder)
-	mux.HandleFunc("POST /api/reminders/{id}/reject", s.handleRejectReminder)
-	mux.HandleFunc("POST /api/reminders/{id}/complete", s.handleCompleteReminder)
-	mux.HandleFunc("POST /api/reminders/{id}/dismiss", s.handleDismissReminder)
+	mux.HandleFunc("GET /api/reminders", s.requireAuth(s.handleListReminders))
+	mux.HandleFunc("GET /api/reminders/{id}", s.requireAuth(s.handleGetReminder))
+	mux.HandleFunc("PUT /api/reminders/{id}", s.requireAuth(s.handleUpdateReminder))
+	mux.HandleFunc("POST /api/reminders/{id}/confirm", s.requireAuth(s.handleConfirmReminder))
+	mux.HandleFunc("POST /api/reminders/{id}/reject", s.requireAuth(s.handleRejectReminder))
+	mux.HandleFunc("POST /api/reminders/{id}/complete", s.requireAuth(s.handleCompleteReminder))
+	mux.HandleFunc("POST /api/reminders/{id}/dismiss", s.requireAuth(s.handleDismissReminder))
 
 	// Notification Preferences API
-	mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
-	mux.HandleFunc("PUT /api/notifications/email", s.handleUpdateEmailPrefs)
-	mux.HandleFunc("POST /api/notifications/push/register", s.handleRegisterPushToken)
-	mux.HandleFunc("PUT /api/notifications/push", s.handleUpdatePushPrefs)
+	mux.HandleFunc("GET /api/notifications/preferences", s.requireAuth(s.handleGetNotificationPrefs))
+	mux.HandleFunc("PUT /api/notifications/email", s.requireAuth(s.handleUpdateEmailPrefs))
+	mux.HandleFunc("POST /api/notifications/push/register", s.requireAuth(s.handleRegisterPushToken))
+	mux.HandleFunc("PUT /api/notifications/push", s.requireAuth(s.handleUpdatePushPrefs))
 
-	// Gmail Top Contacts API (cached, fast discovery)
-	mux.HandleFunc("GET /api/gmail/top-contacts", s.handleGetTopContacts)
-	mux.HandleFunc("POST /api/gmail/sources/custom", s.handleAddCustomSource)
+	// Gmail Top Contacts API
+	mux.HandleFunc("GET /api/gmail/top-contacts", s.requireAuth(s.handleGetTopContacts))
+	mux.HandleFunc("POST /api/gmail/sources/custom", s.requireAuth(s.handleAddCustomSource))
 
 	// Gmail Sources API
-	mux.HandleFunc("GET /api/gmail/status", s.handleGmailStatus)
-	mux.HandleFunc("GET /api/gmail/sources", s.handleListEmailSources)
-	mux.HandleFunc("POST /api/gmail/sources", s.handleCreateEmailSource)
-	mux.HandleFunc("PUT /api/gmail/sources/{id}", s.handleUpdateEmailSource)
-	mux.HandleFunc("DELETE /api/gmail/sources/{id}", s.handleDeleteEmailSource)
+	mux.HandleFunc("GET /api/gmail/status", s.requireAuth(s.handleGmailStatus))
+	mux.HandleFunc("GET /api/gmail/sources", s.requireAuth(s.handleListEmailSources))
+	mux.HandleFunc("POST /api/gmail/sources", s.requireAuth(s.handleCreateEmailSource))
+	mux.HandleFunc("PUT /api/gmail/sources/{id}", s.requireAuth(s.handleUpdateEmailSource))
+	mux.HandleFunc("DELETE /api/gmail/sources/{id}", s.requireAuth(s.handleDeleteEmailSource))
 
-	// App Status API (new simplified flow)
-	mux.HandleFunc("GET /api/app/status", s.handleGetAppStatus)
-	mux.HandleFunc("POST /api/onboarding/complete", s.handleCompleteOnboarding)
-	mux.HandleFunc("POST /api/onboarding/reset", s.handleResetOnboarding)
+	// Onboarding completion (requires auth - user must be logged in)
+	mux.HandleFunc("POST /api/onboarding/complete", s.requireAuth(s.handleCompleteOnboarding))
+	mux.HandleFunc("POST /api/onboarding/reset", s.requireAuth(s.handleResetOnboarding))
 }
 
 func (s *Server) Start() error {

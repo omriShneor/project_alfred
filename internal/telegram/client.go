@@ -332,3 +332,10 @@ func (c *Client) GetAPI() *tg.Client {
 	defer c.mu.RUnlock()
 	return c.api
 }
+
+// SetUserID sets the user ID on the handler
+func (c *Client) SetUserID(userID int64) {
+	if c.handler != nil {
+		c.handler.UserID = userID
+	}
+}

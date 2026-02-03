@@ -8,8 +8,12 @@ import {
   FlatList,
   Switch,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import * as ExpoLinking from 'expo-linking';
+import { useQueryClient } from '@tanstack/react-query';
 import { LoadingSpinner, Card } from '../../components/common';
 import { AddSourceModal } from '../../components/sources/AddSourceModal';
 import { colors } from '../../theme/colors';
@@ -22,12 +26,16 @@ import {
   useTopContacts,
   useAddCustomSource,
 } from '../../hooks';
+import { requestAdditionalScopes, exchangeAddScopesCode } from '../../api/auth';
+import { API_BASE_URL } from '../../config/api';
 import type { EmailSource, EmailSourceType, TopContact } from '../../types/gmail';
 import type { SourceTopContact } from '../../types/channel';
 
 export function GmailPreferencesScreen() {
-  const { data: gmailStatus } = useGmailStatus();
+  const queryClient = useQueryClient();
+  const { data: gmailStatus, isLoading: statusLoading } = useGmailStatus();
   const [addSourceModalVisible, setAddSourceModalVisible] = useState(false);
+  const [isConnecting, setIsConnecting] = useState(false);
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
   const { data: topContacts, isLoading: contactsLoading } = useTopContacts();
@@ -36,6 +44,43 @@ export function GmailPreferencesScreen() {
   const updateSource = useUpdateEmailSource();
   const deleteSource = useDeleteEmailSource();
   const addCustomSource = useAddCustomSource();
+
+  // Handle connecting Gmail (requesting Gmail scope)
+  const handleConnectGmail = async () => {
+    setIsConnecting(true);
+    try {
+      // Use the backend callback URL as the redirect (same pattern as login)
+      const backendCallbackUri = `${API_BASE_URL}/api/auth/callback`;
+      const appDeepLink = ExpoLinking.createURL('oauth/callback');
+
+      // Request Gmail scope
+      const response = await requestAdditionalScopes(['gmail'], backendCallbackUri);
+
+      // Open browser for authorization
+      const result = await WebBrowser.openAuthSessionAsync(response.auth_url, appDeepLink);
+
+      if (result.type === 'success' && result.url) {
+        // Extract code from callback URL
+        const parsed = ExpoLinking.parse(result.url);
+        const code = parsed.queryParams?.code as string | undefined;
+
+        if (code) {
+          // Exchange code and add Gmail scopes
+          await exchangeAddScopesCode(code, ['gmail'], backendCallbackUri);
+          // Refresh Gmail status
+          queryClient.invalidateQueries({ queryKey: ['gmailStatus'] });
+          Alert.alert('Success', 'Gmail access authorized successfully!');
+        } else {
+          throw new Error('No authorization code received');
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to connect Gmail:', error);
+      Alert.alert('Error', error.message || 'Failed to connect Gmail');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
 
   // Map Gmail TopContact to SourceTopContact for the shared modal
   const mappedContacts: SourceTopContact[] = (topContacts || []).map((contact: TopContact) => ({
@@ -165,6 +210,42 @@ export function GmailPreferencesScreen() {
       </View>
     </View>
   );
+
+  // Show connect UI if Gmail scopes not granted
+  if (!statusLoading && gmailStatus && !gmailStatus.has_scopes) {
+    return (
+      <View style={styles.screen}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+          <Card>
+            <View style={styles.connectContainer}>
+              <View style={styles.connectIconContainer}>
+                <Feather name="mail" size={48} color={colors.primary} />
+              </View>
+              <Text style={styles.connectTitle}>Connect Gmail</Text>
+              <Text style={styles.connectDescription}>
+                Grant Gmail access to scan your emails for events and reminders.
+                We only read emails - we never send, modify, or delete anything.
+              </Text>
+              <TouchableOpacity
+                style={[styles.connectButton, isConnecting && styles.connectButtonDisabled]}
+                onPress={handleConnectGmail}
+                disabled={isConnecting}
+              >
+                {isConnecting ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Feather name="link" size={18} color="#fff" />
+                    <Text style={styles.connectButtonText}>Connect Gmail</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </Card>
+        </ScrollView>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -321,5 +402,52 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
     textAlign: 'center',
+  },
+  // Connect Gmail styles
+  connectContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  connectIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  connectTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  connectDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  connectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    minWidth: 180,
+  },
+  connectButtonDisabled: {
+    opacity: 0.7,
+  },
+  connectButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 8,
   },
 });

@@ -15,6 +15,7 @@ type Config struct {
 	// Required
 	AnthropicAPIKey       string
 	GoogleCredentialsFile string
+	GoogleCredentialsJSON string // JSON string (alternative to file)
 	GoogleTokenFile       string
 
 	// Optional with defaults
@@ -46,6 +47,7 @@ func LoadFromEnv() *Config {
 		// Required
 		AnthropicAPIKey:       os.Getenv("ANTHROPIC_API_KEY"),
 		GoogleCredentialsFile: getEnvOrDefault("GOOGLE_CREDENTIALS_FILE", "./credentials.json"),
+		GoogleCredentialsJSON: os.Getenv("GOOGLE_CREDENTIALS_JSON"), // Takes precedence over file
 		GoogleTokenFile:       getEnvOrDefault("GOOGLE_TOKEN_FILE", "./token.json"),
 
 		// Optional with defaults

@@ -6,8 +6,13 @@ import {
   ScrollView,
   Alert,
   Switch,
+  TouchableOpacity,
+  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import * as WebBrowser from 'expo-web-browser';
+import * as ExpoLinking from 'expo-linking';
+import { useQueryClient } from '@tanstack/react-query';
 import { LoadingSpinner, Card, Select } from '../../components/common';
 import { colors } from '../../theme/colors';
 import {
@@ -16,9 +21,12 @@ import {
   useUpdateGCalSettings,
   useCalendars,
 } from '../../hooks';
+import { requestAdditionalScopes, exchangeAddScopesCode } from '../../api/auth';
+import { API_BASE_URL } from '../../config/api';
 import type { Calendar } from '../../types/event';
 
 export function GoogleCalendarPreferencesScreen() {
+  const queryClient = useQueryClient();
   const { data: gcalStatus, isLoading: statusLoading } = useGCalStatus();
   const { data: settings, isLoading: settingsLoading } = useGCalSettings();
   const { data: calendars, isLoading: calendarsLoading } = useCalendars(gcalStatus?.connected ?? false);
@@ -26,6 +34,7 @@ export function GoogleCalendarPreferencesScreen() {
 
   const [syncEnabled, setSyncEnabled] = useState<boolean>(false);
   const [selectedCalendarId, setSelectedCalendarId] = useState<string>('');
+  const [isConnecting, setIsConnecting] = useState(false);
   const initializedRef = useRef(false);
 
   // Initialize from settings (only once)
@@ -77,6 +86,43 @@ export function GoogleCalendarPreferencesScreen() {
     }
   };
 
+  // Handle connecting Google Calendar (requesting Calendar scope)
+  const handleConnectCalendar = async () => {
+    setIsConnecting(true);
+    try {
+      // Use the backend callback URL as the redirect (same pattern as login)
+      const backendCallbackUri = `${API_BASE_URL}/api/auth/callback`;
+      const appDeepLink = ExpoLinking.createURL('oauth/callback');
+
+      // Request Calendar scope
+      const response = await requestAdditionalScopes(['calendar'], backendCallbackUri);
+
+      // Open browser for authorization
+      const result = await WebBrowser.openAuthSessionAsync(response.auth_url, appDeepLink);
+
+      if (result.type === 'success' && result.url) {
+        // Extract code from callback URL
+        const parsed = ExpoLinking.parse(result.url);
+        const code = parsed.queryParams?.code as string | undefined;
+
+        if (code) {
+          // Exchange code and add Calendar scopes
+          await exchangeAddScopesCode(code, ['calendar'], backendCallbackUri);
+          // Refresh GCal status
+          queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });
+          Alert.alert('Success', 'Google Calendar access authorized successfully!');
+        } else {
+          throw new Error('No authorization code received');
+        }
+      }
+    } catch (error: any) {
+      console.error('Failed to connect Google Calendar:', error);
+      Alert.alert('Error', error.message || 'Failed to connect Google Calendar');
+    } finally {
+      setIsConnecting(false);
+    }
+  };
+
   const isLoading = statusLoading || settingsLoading || calendarsLoading;
   const isConnected = gcalStatus?.connected ?? false;
 
@@ -107,6 +153,42 @@ export function GoogleCalendarPreferencesScreen() {
               <Text style={styles.emptyStateText}>
                 Connect your Google account first to configure calendar sync.
               </Text>
+            </View>
+          </Card>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // Show connect UI if Calendar scopes not granted
+  if (!statusLoading && gcalStatus && !gcalStatus.has_scopes) {
+    return (
+      <View style={styles.screen}>
+        <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+          <Card>
+            <View style={styles.connectContainer}>
+              <View style={styles.connectIconContainer}>
+                <Feather name="calendar" size={48} color={colors.primary} />
+              </View>
+              <Text style={styles.connectTitle}>Connect Google Calendar</Text>
+              <Text style={styles.connectDescription}>
+                Grant calendar access to sync your confirmed events to Google Calendar.
+                This allows Alfred to create and manage events on your behalf.
+              </Text>
+              <TouchableOpacity
+                style={[styles.connectButton, isConnecting && styles.connectButtonDisabled]}
+                onPress={handleConnectCalendar}
+                disabled={isConnecting}
+              >
+                {isConnecting ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <>
+                    <Feather name="link" size={18} color="#fff" />
+                    <Text style={styles.connectButtonText}>Connect Calendar</Text>
+                  </>
+                )}
+              </TouchableOpacity>
             </View>
           </Card>
         </ScrollView>
@@ -266,5 +348,52 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 4,
+  },
+  // Connect Calendar styles
+  connectContainer: {
+    alignItems: 'center',
+    paddingVertical: 32,
+    paddingHorizontal: 24,
+  },
+  connectIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primary + '15',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  connectTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 8,
+  },
+  connectDescription: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  connectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    minWidth: 180,
+  },
+  connectButtonDisabled: {
+    opacity: 0.7,
+  },
+  connectButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+    marginLeft: 8,
   },
 });

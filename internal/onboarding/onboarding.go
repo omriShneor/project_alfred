@@ -34,16 +34,9 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 		clientsReady.SetWAClient(waClient)
 	}
 
-	// TODO: Multi-user migration - during startup we check settings for default user
-	// This will need to be refactored when per-user session management is implemented
-	const defaultUserID int64 = 1
-	featureSettings, err := db.GetFeatureSettings(defaultUserID)
-	if err != nil {
-		fmt.Printf("Warning: Could not load feature settings: %v\n", err)
-	}
-
 	// Always try to connect WhatsApp to restore session
 	// Note: Must connect first, then check IsLoggedIn() - the device JID isn't populated until connection
+	// UserID will be set later when user logs in
 	if err := waClient.WAClient.Connect(); err != nil {
 		fmt.Printf("Warning: Failed to connect WhatsApp: %v\n", err)
 		state.SetWhatsAppStatus("pending")
@@ -65,12 +58,8 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 		state.SetGCalStatus("pending")
 	}
 
-	if featureSettings != nil && featureSettings.SmartCalendarEnabled && featureSettings.SmartCalendarSetupComplete {
-		state.MarkComplete()
-	} else {
-		state.MarkComplete()
-		fmt.Println("App started - configure Smart Calendar in Assistant Capabilities")
-	}
+	state.MarkComplete()
+	fmt.Println("App started - waiting for user login")
 
 	return &Clients{
 		WAClient:   waClient,
@@ -79,23 +68,10 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 	}, nil
 }
 
+// NeedsSetup is deprecated - onboarding is now per-user after login
+// Keeping for backwards compatibility but always returns false
 func NeedsSetup(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client) bool {
-	// TODO: Multi-user migration - NeedsSetup checks for default user
-	const defaultUserID int64 = 1
-	settings, err := db.GetFeatureSettings(defaultUserID)
-	if err != nil {
-		return false
-	}
-
-	if !settings.SmartCalendarEnabled {
-		return false
-	}
-
-	if settings.SmartCalendarSetupComplete {
-		return false
-	}
-
-	return true
+	return false
 }
 
 func RunWeb(ctx context.Context, state *sse.State, waClient *whatsapp.Client, gcalClient *gcal.Client) {

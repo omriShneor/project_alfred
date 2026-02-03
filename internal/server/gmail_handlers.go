@@ -22,16 +22,25 @@ func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
 		"has_scopes": false,
 	}
 
-	// Check if Gmail client is available and authenticated
-	if s.gmailClient != nil && s.gmailClient.IsAuthenticated() {
+	// Check if user has Gmail scope granted
+	hasGmailScope := false
+	if s.authService != nil && userID != 0 {
+		hasGmailScope, _ = s.authService.HasGmailScope(userID)
+	}
+
+	status["has_scopes"] = hasGmailScope
+
+	if !hasGmailScope {
+		// User hasn't granted Gmail access yet
+		status["message"] = "Gmail access not authorized. Please connect Gmail to scan emails."
+	} else if s.gmailClient != nil && s.gmailClient.IsAuthenticated() {
+		// User has scope and Gmail client is ready
 		status["connected"] = true
-		status["has_scopes"] = true
 		status["message"] = "Connected"
-	} else if s.gcalClient != nil && s.gcalClient.IsAuthenticated() {
-		// GCal is connected but Gmail might need re-authorization for new scopes
+	} else {
+		// User has scope but Gmail client not initialized yet
 		status["connected"] = false
-		status["has_scopes"] = false
-		status["message"] = "Gmail requires re-authorization. Please reconnect Google account to grant Gmail access."
+		status["message"] = "Gmail configured but not connected"
 	}
 
 	// Get settings

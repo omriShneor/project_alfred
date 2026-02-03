@@ -164,3 +164,19 @@ func scanChannelRows(rows *sql.Rows) (*Channel, error) {
 	}
 	return &c, nil
 }
+
+// UserHasAnySources checks if user has any configured sources (WhatsApp, Telegram channels or Gmail email sources)
+func (d *DB) UserHasAnySources(userID int64) (bool, error) {
+	var count int
+	err := d.QueryRow(`
+		SELECT COUNT(*) FROM (
+			SELECT 1 FROM channels WHERE user_id = ? AND enabled = 1
+			UNION ALL
+			SELECT 1 FROM email_sources WHERE user_id = ? AND enabled = 1
+		)
+	`, userID, userID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check user sources: %w", err)
+	}
+	return count > 0, nil
+}

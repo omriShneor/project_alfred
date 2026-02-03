@@ -23,7 +23,24 @@ const (
 	SessionDuration = 30 * 24 * time.Hour // 30 days
 )
 
-// OAuthScopes contains all required OAuth scopes
+// ProfileScopes - minimum scopes for login (user identity only)
+var ProfileScopes = []string{
+	"https://www.googleapis.com/auth/userinfo.email",
+	"https://www.googleapis.com/auth/userinfo.profile",
+}
+
+// GmailScopes - for email scanning (requested separately)
+var GmailScopes = []string{
+	gmail.GmailReadonlyScope,
+}
+
+// CalendarScopes - for calendar sync (requested separately)
+var CalendarScopes = []string{
+	calendar.CalendarScope,
+}
+
+// OAuthScopes contains all OAuth scopes - kept for backward compatibility
+// Existing users may have all scopes granted
 var OAuthScopes = []string{
 	calendar.CalendarScope,
 	gmail.GmailReadonlyScope,
@@ -63,9 +80,131 @@ func NewServiceWithCredentials(db *sql.DB, credentialsJSON []byte, redirectURL s
 	return NewService(db, config)
 }
 
-// GetAuthURL returns the Google OAuth authorization URL
+// GetAuthURL returns the Google OAuth authorization URL (with all scopes - for backward compatibility)
 func (s *Service) GetAuthURL(state string) string {
 	return s.config.AuthCodeURL(state, oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+}
+
+// GetAuthURLWithScopes generates OAuth URL for specific scopes
+// If includeGranted is true, adds include_granted_scopes=true for incremental auth
+func (s *Service) GetAuthURLWithScopes(scopes []string, state string, includeGranted bool) string {
+	// Create a modified config with the specific scopes
+	modifiedConfig := &oauth2.Config{
+		ClientID:     s.config.ClientID,
+		ClientSecret: s.config.ClientSecret,
+		Endpoint:     s.config.Endpoint,
+		RedirectURL:  s.config.RedirectURL,
+		Scopes:       scopes,
+	}
+
+	opts := []oauth2.AuthCodeOption{
+		oauth2.AccessTypeOffline,
+		oauth2.ApprovalForce,
+	}
+
+	if includeGranted {
+		// Add include_granted_scopes for incremental authorization
+		opts = append(opts, oauth2.SetAuthURLParam("include_granted_scopes", "true"))
+	}
+
+	return modifiedConfig.AuthCodeURL(state, opts...)
+}
+
+// GetUserScopes returns the scopes a user has granted
+// If no scopes are stored (legacy users), returns all scopes for backward compatibility
+func (s *Service) GetUserScopes(userID int64) ([]string, error) {
+	var scopesJSON sql.NullString
+
+	err := s.db.QueryRow(`
+		SELECT scopes FROM google_tokens WHERE user_id = ?
+	`, userID).Scan(&scopesJSON)
+	if err == sql.ErrNoRows {
+		return nil, nil // No token stored
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// If scopes is empty/null, assume all scopes (backward compatibility)
+	if !scopesJSON.Valid || scopesJSON.String == "" || scopesJSON.String == "null" {
+		return OAuthScopes, nil
+	}
+
+	var scopes []string
+	if err := json.Unmarshal([]byte(scopesJSON.String), &scopes); err != nil {
+		// If parsing fails, assume all scopes
+		return OAuthScopes, nil
+	}
+
+	return scopes, nil
+}
+
+// HasScope checks if a user has granted a specific scope
+func (s *Service) HasScope(userID int64, scope string) (bool, error) {
+	scopes, err := s.GetUserScopes(userID)
+	if err != nil {
+		return false, err
+	}
+
+	for _, s := range scopes {
+		if s == scope {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// HasGmailScope checks if user has Gmail read scope
+func (s *Service) HasGmailScope(userID int64) (bool, error) {
+	return s.HasScope(userID, gmail.GmailReadonlyScope)
+}
+
+// HasCalendarScope checks if user has Calendar scope
+func (s *Service) HasCalendarScope(userID int64) (bool, error) {
+	return s.HasScope(userID, calendar.CalendarScope)
+}
+
+// mergeScopes combines two scope slices, removing duplicates
+func mergeScopes(existing, newScopes []string) []string {
+	scopeSet := make(map[string]bool)
+	for _, s := range existing {
+		scopeSet[s] = true
+	}
+	for _, s := range newScopes {
+		scopeSet[s] = true
+	}
+
+	result := make([]string, 0, len(scopeSet))
+	for s := range scopeSet {
+		result = append(result, s)
+	}
+	return result
+}
+
+// ExchangeCodeAndAddScopes exchanges an OAuth code and merges new scopes with existing token
+// This is used for incremental authorization
+func (s *Service) ExchangeCodeAndAddScopes(ctx context.Context, userID int64, code string, newScopes []string) error {
+	// Exchange code for new token
+	token, err := s.config.Exchange(ctx, code)
+	if err != nil {
+		return fmt.Errorf("failed to exchange code: %w", err)
+	}
+
+	// Get existing scopes
+	existingScopes, err := s.GetUserScopes(userID)
+	if err != nil {
+		existingScopes = ProfileScopes // Default to profile scopes
+	}
+
+	// Merge scopes
+	mergedScopes := mergeScopes(existingScopes, newScopes)
+
+	// Store updated token with merged scopes
+	if err := s.storeGoogleTokenWithScopes(userID, token, mergedScopes); err != nil {
+		return fmt.Errorf("failed to store token: %w", err)
+	}
+
+	return nil
 }
 
 // GetOAuthConfig returns the OAuth config for use by other packages
@@ -75,9 +214,25 @@ func (s *Service) GetOAuthConfig() *oauth2.Config {
 
 // ExchangeCodeAndLogin exchanges an OAuth code for tokens and creates/updates the user
 // Returns the user and a session token
-func (s *Service) ExchangeCodeAndLogin(ctx context.Context, code string, deviceInfo string) (*User, string, error) {
+// If redirectURI is provided, it will be used for the token exchange (must match the one used to generate the auth URL)
+func (s *Service) ExchangeCodeAndLogin(ctx context.Context, code string, deviceInfo string, redirectURI string) (*User, string, error) {
 	// Exchange code for token
-	token, err := s.config.Exchange(ctx, code)
+	// If a custom redirect URI was used for the auth URL, we need to use the same one for the exchange
+	var token *oauth2.Token
+	var err error
+	if redirectURI != "" {
+		// Create a temporary config with the custom redirect URI
+		tempConfig := &oauth2.Config{
+			ClientID:     s.config.ClientID,
+			ClientSecret: s.config.ClientSecret,
+			Endpoint:     s.config.Endpoint,
+			RedirectURL:  redirectURI,
+			Scopes:       s.config.Scopes,
+		}
+		token, err = tempConfig.Exchange(ctx, code)
+	} else {
+		token, err = s.config.Exchange(ctx, code)
+	}
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to exchange code: %w", err)
 	}
@@ -183,31 +338,54 @@ func (s *Service) upsertUser(googleUser *goauth2.Userinfo) (*User, error) {
 	return &user, nil
 }
 
-// storeGoogleToken stores encrypted OAuth tokens for a user
+// storeGoogleToken stores encrypted OAuth tokens for a user with ProfileScopes (login only)
 func (s *Service) storeGoogleToken(userID int64, token *oauth2.Token) error {
+	return s.storeGoogleTokenWithScopes(userID, token, ProfileScopes)
+}
+
+// storeGoogleTokenWithScopes stores encrypted OAuth tokens with specific scopes
+func (s *Service) storeGoogleTokenWithScopes(userID int64, token *oauth2.Token, scopes []string) error {
 	accessEncrypted, err := s.encryptor.Encrypt([]byte(token.AccessToken))
 	if err != nil {
 		return fmt.Errorf("failed to encrypt access token: %w", err)
 	}
 
-	refreshEncrypted, err := s.encryptor.Encrypt([]byte(token.RefreshToken))
-	if err != nil {
-		return fmt.Errorf("failed to encrypt refresh token: %w", err)
+	// Handle empty refresh token (incremental auth may not return a new refresh token)
+	var refreshEncrypted []byte
+	if token.RefreshToken != "" {
+		refreshEncrypted, err = s.encryptor.Encrypt([]byte(token.RefreshToken))
+		if err != nil {
+			return fmt.Errorf("failed to encrypt refresh token: %w", err)
+		}
 	}
 
-	scopesJSON, _ := json.Marshal(OAuthScopes)
+	scopesJSON, _ := json.Marshal(scopes)
 
-	_, err = s.db.Exec(`
-		INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, expiry, scopes, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(user_id) DO UPDATE SET
-			access_token_encrypted = excluded.access_token_encrypted,
-			refresh_token_encrypted = excluded.refresh_token_encrypted,
-			token_type = excluded.token_type,
-			expiry = excluded.expiry,
-			scopes = excluded.scopes,
-			updated_at = CURRENT_TIMESTAMP
-	`, userID, accessEncrypted, refreshEncrypted, token.TokenType, token.Expiry, string(scopesJSON))
+	if refreshEncrypted != nil {
+		// Full token update (has refresh token)
+		_, err = s.db.Exec(`
+			INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, expiry, scopes, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			ON CONFLICT(user_id) DO UPDATE SET
+				access_token_encrypted = excluded.access_token_encrypted,
+				refresh_token_encrypted = excluded.refresh_token_encrypted,
+				token_type = excluded.token_type,
+				expiry = excluded.expiry,
+				scopes = excluded.scopes,
+				updated_at = CURRENT_TIMESTAMP
+		`, userID, accessEncrypted, refreshEncrypted, token.TokenType, token.Expiry, string(scopesJSON))
+	} else {
+		// Partial update (no new refresh token - keep existing)
+		_, err = s.db.Exec(`
+			UPDATE google_tokens SET
+				access_token_encrypted = ?,
+				token_type = ?,
+				expiry = ?,
+				scopes = ?,
+				updated_at = CURRENT_TIMESTAMP
+			WHERE user_id = ?
+		`, accessEncrypted, token.TokenType, token.Expiry, string(scopesJSON), userID)
+	}
 
 	return err
 }

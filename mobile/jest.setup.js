@@ -6,10 +6,11 @@ process.env.RNTL_SKIP_AUTO_DETECT_HOST_COMPONENT_NAMES = 'true';
 const { configure } = require('@testing-library/react-native');
 
 // Configure with web host component names
+// react-native-web renders Text as nested divs, not spans
 configure({
   asyncUtilTimeout: 5000,
   hostComponentNames: {
-    text: 'span',
+    text: 'div',
     textInput: 'input',
     switch: 'input',
     scrollView: 'div',
@@ -26,6 +27,27 @@ jest.mock('expo-constants', () => ({
     },
   },
 }));
+
+// Mock @expo/vector-icons (requires expo-font which doesn't work in jsdom)
+jest.mock('@expo/vector-icons', () => {
+  const React = require('react');
+  const mockIcon = ({ name, size, color, ...props }) =>
+    React.createElement('span', {
+      'data-testid': `icon-${name}`,
+      'data-icon-name': name,
+      ...props
+    });
+  return {
+    Feather: mockIcon,
+    Ionicons: mockIcon,
+    MaterialIcons: mockIcon,
+    MaterialCommunityIcons: mockIcon,
+    FontAwesome: mockIcon,
+    AntDesign: mockIcon,
+    Entypo: mockIcon,
+    createIconSet: () => mockIcon,
+  };
+});
 
 // Mock expo-clipboard
 jest.mock('expo-clipboard', () => ({
@@ -176,6 +198,37 @@ jest.mock('react-native-screens', () => ({
   Screen: 'Screen',
   ScreenContainer: 'ScreenContainer',
 }));
+
+// Mock Modal from react-native-web (Modal portals don't work in jsdom)
+// We need to mock it within the react-native-web exports
+jest.mock('react-native-web', () => {
+  const actualRNW = jest.requireActual('react-native-web');
+  const React = require('react');
+
+  // Create a simple Modal mock that renders children when visible
+  const MockModal = ({ visible, children, onRequestClose, transparent, animationType }) => {
+    if (!visible) return null;
+    return React.createElement('div', {
+      'data-testid': 'modal',
+      style: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0 }
+    }, children);
+  };
+
+  // Create a mock Alert that stores calls for testing
+  const MockAlert = {
+    alert: jest.fn((title, message, buttons) => {
+      // Auto-confirm by calling the last button (typically the confirm action)
+      // This allows tests to verify the behavior
+    }),
+  };
+
+  return {
+    ...actualRNW,
+    Modal: MockModal,
+    Alert: MockAlert,
+  };
+});
+
 
 // Mock fetch globally
 global.fetch = jest.fn();

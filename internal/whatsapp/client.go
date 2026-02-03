@@ -179,6 +179,14 @@ func (c *Client) IsLoggedIn() bool {
 	return c.WAClient.Store.ID != nil
 }
 
+// SetUserID sets the user ID on both the client and its handler
+func (c *Client) SetUserID(userID int64) {
+	c.UserID = userID
+	if c.handler != nil {
+		c.handler.UserID = userID
+	}
+}
+
 func (c *Client) Reconnect(ctx context.Context, state *sse.State) {
 	// Disconnect first
 	c.WAClient.Disconnect()

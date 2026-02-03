@@ -19,20 +19,29 @@ export function LoginScreen() {
     setIsSigningIn(true);
 
     try {
-      // Get the redirect URI for our app
-      const redirectUri = ExpoLinking.createURL('oauth/callback');
+      // Use the backend callback URL as the OAuth redirect URI
+      // The backend will then redirect to our app's deep link (alfred://oauth/callback)
+      // This is needed because Google doesn't allow custom URL schemes as redirect URIs
+      const backendCallbackUri = `${API_BASE_URL}/api/auth/callback`;
+
+      // The deep link URL that we expect the backend to redirect to
+      const appDeepLink = ExpoLinking.createURL('oauth/callback');
 
       // Get the Google OAuth URL from our backend
-      const response = await fetch(`${API_BASE_URL}/api/auth/google?redirect_uri=${encodeURIComponent(redirectUri)}`);
+      const response = await fetch(
+        `${API_BASE_URL}/api/auth/google?redirect_uri=${encodeURIComponent(backendCallbackUri)}`
+      );
 
       if (!response.ok) {
-        throw new Error('Failed to get authentication URL');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to get authentication URL (${response.status})`);
       }
 
       const { auth_url } = await response.json();
 
       // Open the browser for Google sign-in
-      const result = await WebBrowser.openAuthSessionAsync(auth_url, redirectUri);
+      // The second param is the deep link that WebBrowser listens for (backend redirects here)
+      const result = await WebBrowser.openAuthSessionAsync(auth_url, appDeepLink);
 
       if (result.type === 'success' && result.url) {
         // Extract the code from the callback URL
@@ -40,7 +49,8 @@ export function LoginScreen() {
         const code = parsed.queryParams?.code as string | undefined;
 
         if (code) {
-          await login(code, redirectUri);
+          // Pass the backend callback URI for token exchange (must match what was used in auth URL)
+          await login(code, backendCallbackUri);
         } else {
           throw new Error('No authorization code received');
         }
@@ -63,11 +73,10 @@ export function LoginScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.logo}>Alfred</Text>
-        <Text style={styles.tagline}>Your Personal Calendar Assistant</Text>
+        <Text style={styles.tagline}>Your Personal Virtual Assistant</Text>
       </View>
 
       <View style={styles.content}>
-        <Text style={styles.title}>Welcome</Text>
         <Text style={styles.subtitle}>
           Sign in with your Google account to get started
         </Text>
@@ -97,11 +106,6 @@ export function LoginScreen() {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>
-          By signing in, you agree to allow Alfred to access your calendar
-        </Text>
-      </View>
     </View>
   );
 }
@@ -113,7 +117,7 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   header: {
-    paddingTop: 60,
+    paddingTop: 200,
     alignItems: 'center',
   },
   logo: {

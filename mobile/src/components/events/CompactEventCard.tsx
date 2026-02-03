@@ -89,6 +89,7 @@ export function CompactEventCard({ event }: CompactEventCardProps) {
 
           <View style={styles.actions}>
             <IconButton
+              testID="edit-button"
               icon="edit-2"
               onPress={() => setShowEditModal(true)}
               color={colors.primary}
@@ -97,6 +98,7 @@ export function CompactEventCard({ event }: CompactEventCardProps) {
               disabled={isLoading}
             />
             <IconButton
+              testID="reject-button"
               icon="x"
               onPress={handleReject}
               color={colors.danger}
@@ -106,6 +108,7 @@ export function CompactEventCard({ event }: CompactEventCardProps) {
               loading={rejectEvent.isPending}
             />
             <IconButton
+              testID="confirm-button"
               icon="check"
               onPress={handleConfirm}
               color={colors.success}

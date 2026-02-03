@@ -2,6 +2,7 @@ import { apiClient } from './client';
 
 export interface GCalStatus {
   connected: boolean;
+  has_scopes: boolean;
   message: string;
 }
 

@@ -24,16 +24,38 @@ type ConnectionStatus struct {
 // handleGetAppStatus returns the simplified app status
 func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
+
+	// Check actual connection status (available regardless of user login)
+	whatsappConnected := s.waClient != nil && s.waClient.IsLoggedIn()
+	gmailConnected := s.gmailClient != nil && s.gmailClient.IsAuthenticated()
+	googleCalConnected := s.gcalClient != nil && s.gcalClient.IsAuthenticated()
+
+	// If no user is logged in, return default status
+	if userID == 0 {
+		response := AppStatusResponse{
+			OnboardingComplete: false,
+			WhatsApp: ConnectionStatus{
+				Enabled:   false,
+				Connected: whatsappConnected,
+			},
+			Gmail: ConnectionStatus{
+				Enabled:   false,
+				Connected: gmailConnected,
+			},
+			GoogleCalendar: ConnectionStatus{
+				Enabled:   false,
+				Connected: googleCalConnected,
+			},
+		}
+		respondJSON(w, http.StatusOK, response)
+		return
+	}
+
 	status, err := s.db.GetAppStatus(userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-
-	// Check actual connection status
-	whatsappConnected := s.waClient != nil && s.waClient.IsLoggedIn()
-	gmailConnected := s.gmailClient != nil && s.gmailClient.IsAuthenticated()
-	googleCalConnected := s.gcalClient != nil && s.gcalClient.IsAuthenticated()
 
 	response := AppStatusResponse{
 		OnboardingComplete: status.OnboardingComplete,
@@ -80,6 +102,11 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 	if err := s.db.CompleteOnboarding(userID, req.WhatsAppEnabled, req.TelegramEnabled, req.GmailEnabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Start user services now that onboarding is complete
+	if s.userServiceManager != nil {
+		go s.userServiceManager.StartServicesForUser(userID)
 	}
 
 	// Return updated status

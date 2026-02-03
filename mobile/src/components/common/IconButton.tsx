@@ -11,6 +11,7 @@ interface IconButtonProps {
   size?: number;
   disabled?: boolean;
   loading?: boolean;
+  testID?: string;
 }
 
 export function IconButton({
@@ -21,11 +22,13 @@ export function IconButton({
   size = 20,
   disabled = false,
   loading = false,
+  testID,
 }: IconButtonProps) {
   const buttonSize = size + 16;
 
   return (
     <TouchableOpacity
+      testID={testID}
       style={[
         styles.button,
         {

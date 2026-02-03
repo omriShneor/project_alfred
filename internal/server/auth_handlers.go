@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 
 	"github.com/omriShneor/project_alfred/internal/auth"
@@ -44,8 +45,9 @@ func (s *Server) initAuth(cfg AuthConfig) error {
 		}
 	}
 
-	// Parse and create OAuth config
-	oauthConfig, err := google.ConfigFromJSON(credJSON, auth.OAuthScopes...)
+	// Parse and create OAuth config with profile scopes only (for login)
+	// Gmail and Calendar scopes are requested separately via incremental auth
+	oauthConfig, err := google.ConfigFromJSON(credJSON, auth.ProfileScopes...)
 	if err != nil {
 		return fmt.Errorf("failed to parse credentials: %w", err)
 	}
@@ -82,24 +84,25 @@ func (s *Server) handleAuthGoogle(w http.ResponseWriter, r *http.Request) {
 
 	// Get optional redirect URI override from query params
 	redirectURI := r.URL.Query().Get("redirect_uri")
+
 	if redirectURI != "" {
-		// For mobile apps, allow specifying a deep link redirect
-		// Create a modified OAuth config with the custom redirect
+		// For mobile apps, allow specifying a custom redirect
+		// Create a modified OAuth config with the custom redirect and PROFILE scopes only
 		config := s.authService.GetOAuthConfig()
 		modifiedConfig := &oauth2.Config{
 			ClientID:     config.ClientID,
 			ClientSecret: config.ClientSecret,
 			Endpoint:     config.Endpoint,
 			RedirectURL:  redirectURI,
-			Scopes:       config.Scopes,
+			Scopes:       auth.ProfileScopes, // Only profile scopes for login
 		}
 		authURL := modifiedConfig.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
 		respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
 		return
 	}
 
-	// Use default redirect URL
-	authURL := s.authService.GetAuthURL("state")
+	// Use default redirect URL with profile scopes only
+	authURL := s.authService.GetAuthURLWithScopes(auth.ProfileScopes, "state", false)
 	respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
 }
 
@@ -137,13 +140,20 @@ func (s *Server) handleAuthGoogleCallback(w http.ResponseWriter, r *http.Request
 	var sessionToken string
 	var err error
 
-	// Note: For custom redirect URIs, the mobile app should use the same redirect_uri
-	// that was used to generate the auth URL. The auth service will handle the exchange.
-	user, sessionToken, err = s.authService.ExchangeCodeAndLogin(r.Context(), req.Code, deviceInfo)
+	// Pass the redirect URI so the token exchange uses the same URI as the auth URL
+	user, sessionToken, err = s.authService.ExchangeCodeAndLogin(r.Context(), req.Code, deviceInfo, req.RedirectURI)
 
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "authentication failed: "+err.Error())
 		return
+	}
+
+	// Check if returning user has sources configured - start services immediately
+	if s.userServiceManager != nil {
+		hasSources, _ := s.db.UserHasAnySources(user.ID)
+		if hasSources {
+			go s.userServiceManager.StartServicesForUser(user.ID)
+		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -195,6 +205,150 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"name":       user.Name,
 		"avatar_url": user.AvatarURL,
 	})
+}
+
+// handleAuthOAuthCallback handles the OAuth callback from Google (browser redirect)
+// Google redirects here with ?code=..., then we redirect to the mobile app's deep link
+// This allows using a standard http(s) URL as the Google OAuth redirect URI
+// GET /api/auth/callback?code=...
+func (s *Server) handleAuthOAuthCallback(w http.ResponseWriter, r *http.Request) {
+	code := r.URL.Query().Get("code")
+	errorParam := r.URL.Query().Get("error")
+
+	// Deep link URL for the mobile app
+	deepLinkBase := "alfred://oauth/callback"
+
+	// Handle OAuth errors
+	if errorParam != "" {
+		errorDesc := r.URL.Query().Get("error_description")
+		redirectURL := fmt.Sprintf("%s?error=%s&error_description=%s",
+			deepLinkBase, url.QueryEscape(errorParam), url.QueryEscape(errorDesc))
+		http.Redirect(w, r, redirectURL, http.StatusFound)
+		return
+	}
+
+	// Handle missing code
+	if code == "" {
+		http.Redirect(w, r, deepLinkBase+"?error=no_code", http.StatusFound)
+		return
+	}
+
+	// Redirect to mobile app with the auth code
+	redirectURL := fmt.Sprintf("%s?code=%s", deepLinkBase, url.QueryEscape(code))
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
+// handleRequestAdditionalScopes initiates incremental OAuth authorization
+// POST /api/auth/google/add-scopes
+// Body: { "scopes": ["gmail"] } or { "scopes": ["calendar"] }, "redirect_uri": "..." }
+func (s *Server) handleRequestAdditionalScopes(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		respondError(w, http.StatusServiceUnavailable, "authentication not configured")
+		return
+	}
+
+	var req struct {
+		Scopes      []string `json:"scopes"`       // "gmail" or "calendar"
+		RedirectURI string   `json:"redirect_uri"` // Optional custom redirect
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.Scopes) == 0 {
+		respondError(w, http.StatusBadRequest, "scopes required")
+		return
+	}
+
+	// Map scope names to actual OAuth scopes
+	var requestedScopes []string
+	for _, scope := range req.Scopes {
+		switch scope {
+		case "gmail":
+			requestedScopes = append(requestedScopes, auth.GmailScopes...)
+		case "calendar":
+			requestedScopes = append(requestedScopes, auth.CalendarScopes...)
+		default:
+			respondError(w, http.StatusBadRequest, "invalid scope: "+scope)
+			return
+		}
+	}
+
+	// Use custom redirect URI if provided, otherwise use default
+	redirectURI := req.RedirectURI
+	if redirectURI == "" {
+		redirectURI = s.authService.GetOAuthConfig().RedirectURL
+	}
+
+	// Create OAuth config with custom redirect and incremental scopes
+	config := s.authService.GetOAuthConfig()
+	modifiedConfig := &oauth2.Config{
+		ClientID:     config.ClientID,
+		ClientSecret: config.ClientSecret,
+		Endpoint:     config.Endpoint,
+		RedirectURL:  redirectURI,
+		Scopes:       requestedScopes,
+	}
+
+	// Generate incremental auth URL with include_granted_scopes=true
+	authURL := modifiedConfig.AuthCodeURL("state",
+		oauth2.AccessTypeOffline,
+		oauth2.ApprovalForce,
+		oauth2.SetAuthURLParam("include_granted_scopes", "true"),
+	)
+
+	respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
+}
+
+// handleAddScopesCallback handles the OAuth callback for incremental authorization
+// POST /api/auth/google/add-scopes/callback
+// Body: { "code": "...", "redirect_uri": "...", "scopes": ["gmail"] }
+func (s *Server) handleAddScopesCallback(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		respondError(w, http.StatusServiceUnavailable, "authentication not configured")
+		return
+	}
+
+	userID := getUserID(r)
+	if userID == 0 {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req struct {
+		Code        string   `json:"code"`
+		RedirectURI string   `json:"redirect_uri"`
+		Scopes      []string `json:"scopes"` // "gmail" or "calendar"
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Code == "" {
+		respondError(w, http.StatusBadRequest, "missing authorization code")
+		return
+	}
+
+	// Map scope names to actual OAuth scopes
+	var newScopes []string
+	for _, scope := range req.Scopes {
+		switch scope {
+		case "gmail":
+			newScopes = append(newScopes, auth.GmailScopes...)
+		case "calendar":
+			newScopes = append(newScopes, auth.CalendarScopes...)
+		}
+	}
+
+	// Exchange code and add scopes
+	if err := s.authService.ExchangeCodeAndAddScopes(r.Context(), userID, req.Code, newScopes); err != nil {
+		respondError(w, http.StatusBadRequest, "failed to add scopes: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]string{"status": "scopes_added"})
 }
 
 // extractBearerToken extracts the token from the Authorization header

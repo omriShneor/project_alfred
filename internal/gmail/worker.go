@@ -140,6 +140,11 @@ func (w *Worker) pollLoop() {
 
 // poll performs a single polling cycle
 func (w *Worker) poll() {
+	// Skip if no valid user - services not started yet
+	if w.userID == 0 {
+		return
+	}
+
 	w.mu.Lock()
 	client := w.client
 	scanner := w.scanner
@@ -264,6 +269,11 @@ func (w *Worker) PollNow() {
 
 // maybeRefreshTopContacts checks if top contacts need refreshing (every 3 days)
 func (w *Worker) maybeRefreshTopContacts() {
+	// Skip if no valid user
+	if w.userID == 0 {
+		return
+	}
+
 	lastComputed, err := w.db.GetTopContactsComputedAt(w.userID)
 	if err != nil {
 		fmt.Printf("Gmail worker: failed to get top contacts computed at: %v\n", err)

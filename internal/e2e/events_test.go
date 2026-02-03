@@ -19,12 +19,14 @@ func TestEventLifecycle(t *testing.T) {
 
 	// Setup: Create a channel and pending event
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("John Doe").
 		WithIdentifier("john@s.whatsapp.net").
 		MustBuild(ts.DB)
 
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Lunch Meeting").
 		WithDescription("Discuss project updates").
 		WithLocation("Italian Restaurant").
@@ -94,11 +96,13 @@ func TestEventConfirmation(t *testing.T) {
 
 	// Setup channel and event
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Alice").
 		MustBuild(ts.DB)
 
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Team Standup").
 		Pending().
 		MustBuild(ts.DB)
@@ -137,11 +141,13 @@ func TestEventRejection(t *testing.T) {
 
 	// Setup channel and event
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Bob").
 		MustBuild(ts.DB)
 
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Optional Meeting").
 		Pending().
 		MustBuild(ts.DB)
@@ -183,18 +189,21 @@ func TestEventFiltering(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Test Channel").
 		MustBuild(ts.DB)
 
 	// Create events with different statuses
 	pendingEvent := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Pending Event").
 		Pending().
 		MustBuild(ts.DB)
 
 	// Create and confirm an event
 	confirmedEvent := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Confirmed Event").
 		Pending().
 		MustBuild(ts.DB)
@@ -202,6 +211,7 @@ func TestEventFiltering(t *testing.T) {
 
 	// Create and reject an event
 	rejectedEvent := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Rejected Event").
 		Pending().
 		MustBuild(ts.DB)
@@ -264,6 +274,7 @@ func TestTodayEvents(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Today Channel").
 		MustBuild(ts.DB)
@@ -274,6 +285,7 @@ func TestTodayEvents(t *testing.T) {
 	endOfEvent := startOfDay.Add(time.Hour)
 
 	todayEvent := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Today's Meeting").
 		WithStartTime(startOfDay).
 		WithEndTime(endOfEvent).
@@ -305,12 +317,14 @@ func TestEventWithAttendees(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Meeting Channel").
 		MustBuild(ts.DB)
 
 	// Create event
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Team Meeting with Attendees").
 		Pending().
 		MustBuild(ts.DB)

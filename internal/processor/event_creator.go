@@ -13,6 +13,9 @@ import (
 
 // EventCreationParams contains parameters for creating a calendar event from analysis
 type EventCreationParams struct {
+	// User info
+	UserID int64
+
 	// Channel info
 	ChannelID  int64
 	CalendarID string // If empty, will be looked up from settings
@@ -75,10 +78,11 @@ func (ec *EventCreator) CreateEventFromAnalysis(ctx context.Context, params Even
 	// Get calendar ID if not provided
 	calendarID := params.CalendarID
 	if calendarID == "" {
-		calendarID, _ = ec.db.GetSelectedCalendarID()
+		calendarID, _ = ec.db.GetSelectedCalendarID(params.UserID)
 	}
 
 	event := &database.CalendarEvent{
+		UserID:        params.UserID,
 		ChannelID:     params.ChannelID,
 		GoogleEventID: googleEventID,
 		CalendarID:    calendarID,

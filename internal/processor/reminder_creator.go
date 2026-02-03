@@ -13,6 +13,9 @@ import (
 
 // ReminderCreationParams contains parameters for creating a reminder from analysis
 type ReminderCreationParams struct {
+	// User info
+	UserID int64
+
 	// Channel info
 	ChannelID  int64
 	CalendarID string // If empty, will be looked up from settings
@@ -93,7 +96,7 @@ func (rc *ReminderCreator) createReminder(_ context.Context, params ReminderCrea
 	// Get calendar ID if not provided
 	calendarID := params.CalendarID
 	if calendarID == "" {
-		calendarID, _ = rc.db.GetSelectedCalendarID()
+		calendarID, _ = rc.db.GetSelectedCalendarID(params.UserID)
 	}
 
 	reminder := &database.Reminder{

@@ -187,6 +187,7 @@ type TelegramCreateChannelRequest struct {
 
 // handleCreateTelegramChannel adds a Telegram channel to track
 func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	var req TelegramCreateChannelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -205,7 +206,7 @@ func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Requ
 	}
 	channelType := source.ChannelTypeSender
 
-	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, channelType, req.Identifier, req.Name)
+	channel, err := s.db.CreateSourceChannel(userID, source.SourceTypeTelegram, channelType, req.Identifier, req.Name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
 		return
@@ -351,6 +352,7 @@ type TelegramCustomSourceRequest struct {
 
 // handleTelegramCustomSource creates a Telegram channel from a username
 func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	if s.tgClient == nil || !s.tgClient.IsConnected() {
 		respondError(w, http.StatusServiceUnavailable, "Telegram not connected")
 		return
@@ -394,7 +396,7 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Create the channel as a contact type
-	channel, err := s.db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, identifier, "@"+username)
+	channel, err := s.db.CreateSourceChannel(userID, source.SourceTypeTelegram, source.ChannelTypeSender, identifier, "@"+username)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
 		return

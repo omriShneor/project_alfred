@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import * as Notifications from 'expo-notifications';
 
+import { AuthProvider } from './src/auth';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { colors } from './src/theme/colors';
@@ -39,14 +40,16 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
       <QueryClientProvider client={queryClient}>
-        <SafeAreaProvider>
-          <NavigationContainer ref={navigationRef}>
-            <View style={styles.container}>
-              <StatusBar style="dark" />
-              <RootNavigator />
-            </View>
-          </NavigationContainer>
-        </SafeAreaProvider>
+        <AuthProvider>
+          <SafeAreaProvider>
+            <NavigationContainer ref={navigationRef}>
+              <View style={styles.container}>
+                <StatusBar style="dark" />
+                <RootNavigator />
+              </View>
+            </NavigationContainer>
+          </SafeAreaProvider>
+        </AuthProvider>
       </QueryClientProvider>
     </GestureHandlerRootView>
   );

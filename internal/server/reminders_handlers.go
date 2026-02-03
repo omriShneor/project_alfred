@@ -13,6 +13,7 @@ import (
 
 // handleListReminders returns reminders with optional status and channel_id filters
 func (s *Server) handleListReminders(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	statusFilter := r.URL.Query().Get("status")
 	channelIDStr := r.URL.Query().Get("channel_id")
 
@@ -30,7 +31,7 @@ func (s *Server) handleListReminders(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	reminders, err := s.db.ListReminders(status, channelID)
+	reminders, err := s.db.ListReminders(userID, status, channelID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -173,7 +174,8 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if sync is enabled and Google Calendar is connected
-	gcalSettings, _ := s.db.GetGCalSettings()
+	userID := getUserID(r)
+	gcalSettings, _ := s.db.GetGCalSettings(userID)
 	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && s.gcalClient != nil && s.gcalClient.IsAuthenticated()
 
 	// If not syncing to Google Calendar, just confirm the reminder locally

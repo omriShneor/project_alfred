@@ -258,9 +258,11 @@ func TestCreateEventFromAnalysis_UnknownAction(t *testing.T) {
 
 func TestCreateEventFromAnalysis_Success(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Create a channel first (required for foreign key)
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"test@s.whatsapp.net",
@@ -271,6 +273,7 @@ func TestCreateEventFromAnalysis_Success(t *testing.T) {
 	creator := NewEventCreator(db, nil)
 
 	params := EventCreationParams{
+		UserID:     user.ID,
 		ChannelID:  channel.ID,
 		SourceType: source.SourceTypeWhatsApp,
 		Analysis: &agent.EventAnalysis{
@@ -303,8 +306,10 @@ func TestCreateEventFromAnalysis_Success(t *testing.T) {
 
 func TestCreateEventFromAnalysis_WithGoogleEventRef(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"test@s.whatsapp.net",
@@ -315,6 +320,7 @@ func TestCreateEventFromAnalysis_WithGoogleEventRef(t *testing.T) {
 	creator := NewEventCreator(db, nil)
 
 	params := EventCreationParams{
+		UserID:     user.ID,
 		ChannelID:  channel.ID,
 		SourceType: source.SourceTypeWhatsApp,
 		Analysis: &agent.EventAnalysis{
@@ -339,8 +345,10 @@ func TestCreateEventFromAnalysis_WithGoogleEventRef(t *testing.T) {
 
 func TestHandleExistingPendingEvent_Update(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"test@s.whatsapp.net",
@@ -350,6 +358,7 @@ func TestHandleExistingPendingEvent_Update(t *testing.T) {
 
 	// Create an existing pending event
 	existingEvent := &database.CalendarEvent{
+		UserID:     user.ID,
 		ChannelID:  channel.ID,
 		CalendarID: "primary",
 		Title:      "Original Title",
@@ -363,6 +372,7 @@ func TestHandleExistingPendingEvent_Update(t *testing.T) {
 
 	// Update the existing pending event
 	params := EventCreationParams{
+		UserID:        user.ID,
 		ChannelID:     channel.ID,
 		SourceType:    source.SourceTypeWhatsApp,
 		ExistingEvent: created,
@@ -394,8 +404,10 @@ func TestHandleExistingPendingEvent_Update(t *testing.T) {
 
 func TestHandleExistingPendingEvent_Delete(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"test@s.whatsapp.net",
@@ -405,6 +417,7 @@ func TestHandleExistingPendingEvent_Delete(t *testing.T) {
 
 	// Create an existing pending event
 	existingEvent := &database.CalendarEvent{
+		UserID:     user.ID,
 		ChannelID:  channel.ID,
 		CalendarID: "primary",
 		Title:      "Event to Cancel",
@@ -418,6 +431,7 @@ func TestHandleExistingPendingEvent_Delete(t *testing.T) {
 
 	// Delete (cancel) the existing pending event
 	params := EventCreationParams{
+		UserID:        user.ID,
 		ChannelID:     channel.ID,
 		SourceType:    source.SourceTypeWhatsApp,
 		ExistingEvent: created,
@@ -444,8 +458,10 @@ func TestHandleExistingPendingEvent_Delete(t *testing.T) {
 
 func TestCreateEventFromAnalysis_WithMessageID(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"test@s.whatsapp.net",
@@ -468,6 +484,7 @@ func TestCreateEventFromAnalysis_WithMessageID(t *testing.T) {
 	creator := NewEventCreator(db, nil)
 
 	params := EventCreationParams{
+		UserID:     user.ID,
 		ChannelID:  channel.ID,
 		SourceType: source.SourceTypeWhatsApp,
 		MessageID:  &msg.ID,

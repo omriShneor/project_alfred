@@ -29,6 +29,7 @@ const (
 // CalendarEvent represents a detected calendar event
 type CalendarEvent struct {
 	ID              int64           `json:"id"`
+	UserID          int64           `json:"user_id"`
 	ChannelID       int64           `json:"channel_id"`
 	GoogleEventID   *string         `json:"google_event_id,omitempty"`
 	CalendarID      string          `json:"calendar_id"`
@@ -48,15 +49,16 @@ type CalendarEvent struct {
 }
 
 // CreatePendingEvent creates a new pending event in the database
+// The event must have UserID set
 func (d *DB) CreatePendingEvent(event *CalendarEvent) (*CalendarEvent, error) {
 	result, err := d.Exec(`
 		INSERT INTO calendar_events (
-			channel_id, google_event_id, calendar_id, title, description,
+			user_id, channel_id, google_event_id, calendar_id, title, description,
 			start_time, end_time, location, status, action_type,
 			original_message_id, llm_reasoning
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		event.ChannelID, event.GoogleEventID, event.CalendarID, event.Title, event.Description,
+		event.UserID, event.ChannelID, event.GoogleEventID, event.CalendarID, event.Title, event.Description,
 		event.StartTime, event.EndTime, event.Location, EventStatusPending, event.ActionType,
 		event.OriginalMsgID, event.LLMReasoning,
 	)
@@ -85,7 +87,7 @@ func (d *DB) GetEventByID(id int64) (*CalendarEvent, error) {
 	var origMsgIDNull sql.NullInt64
 
 	err := d.QueryRow(`
-		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
 			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
 			c.name as channel_name
@@ -93,7 +95,7 @@ func (d *DB) GetEventByID(id int64) (*CalendarEvent, error) {
 		JOIN channels c ON e.channel_id = c.id
 		WHERE e.id = ?
 	`, id).Scan(
-		&event.ID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+		&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 		&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
 		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
 		&event.ChannelName,
@@ -160,18 +162,18 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 	return &event, nil
 }
 
-// ListEvents retrieves events with optional filtering by status and channel
-func (d *DB) ListEvents(status *EventStatus, channelID *int64) ([]CalendarEvent, error) {
+// ListEvents retrieves events for a user with optional filtering by status and channel
+func (d *DB) ListEvents(userID int64, status *EventStatus, channelID *int64) ([]CalendarEvent, error) {
 	query := `
-		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
 			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
 			c.name as channel_name
 		FROM calendar_events e
 		JOIN channels c ON e.channel_id = c.id
-		WHERE 1=1
+		WHERE e.user_id = ?
 	`
-	args := []interface{}{}
+	args := []any{userID}
 
 	if status != nil {
 		query += " AND e.status = ?"
@@ -199,7 +201,7 @@ func (d *DB) ListEvents(status *EventStatus, channelID *int64) ([]CalendarEvent,
 		var origMsgIDNull sql.NullInt64
 
 		if err := rows.Scan(
-			&event.ID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
 			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName,
@@ -236,15 +238,15 @@ func (d *DB) ListEvents(status *EventStatus, channelID *int64) ([]CalendarEvent,
 	return events, nil
 }
 
-// GetPendingEvents retrieves all pending events, optionally filtered by channel
-func (d *DB) GetPendingEvents(channelID *int64) ([]CalendarEvent, error) {
+// GetPendingEvents retrieves all pending events for a user, optionally filtered by channel
+func (d *DB) GetPendingEvents(userID int64, channelID *int64) ([]CalendarEvent, error) {
 	status := EventStatusPending
-	return d.ListEvents(&status, channelID)
+	return d.ListEvents(userID, &status, channelID)
 }
 
-// ListEventsByChannel retrieves all events for a specific channel
-func (d *DB) ListEventsByChannel(channelID int64) ([]CalendarEvent, error) {
-	return d.ListEvents(nil, &channelID)
+// ListEventsByChannel retrieves all events for a specific channel for a user
+func (d *DB) ListEventsByChannel(userID int64, channelID int64) ([]CalendarEvent, error) {
+	return d.ListEvents(userID, nil, &channelID)
 }
 
 // UpdatePendingEvent updates a pending event's details (title, description, start_time, end_time, location)
@@ -295,28 +297,28 @@ func (d *DB) DeleteEvent(id int64) error {
 	return nil
 }
 
-// GetExistingEventsForChannel retrieves synced events for a channel (used for Claude context)
+// GetExistingEventsForChannel retrieves synced events for a channel for a user (used for Claude context)
 // Deprecated: Use GetActiveEventsForChannel instead which includes pending events
-func (d *DB) GetExistingEventsForChannel(channelID int64) ([]CalendarEvent, error) {
+func (d *DB) GetExistingEventsForChannel(userID int64, channelID int64) ([]CalendarEvent, error) {
 	status := EventStatusSynced
-	return d.ListEvents(&status, &channelID)
+	return d.ListEvents(userID, &status, &channelID)
 }
 
-// GetActiveEventsForChannel retrieves both pending and synced events for a channel
+// GetActiveEventsForChannel retrieves both pending and synced events for a channel for a user
 // This is used for Claude context so it can reference and update pending events
-func (d *DB) GetActiveEventsForChannel(channelID int64) ([]CalendarEvent, error) {
+func (d *DB) GetActiveEventsForChannel(userID int64, channelID int64) ([]CalendarEvent, error) {
 	query := `
-		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
 			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
 			c.name as channel_name
 		FROM calendar_events e
 		JOIN channels c ON e.channel_id = c.id
-		WHERE e.channel_id = ? AND e.status IN (?, ?)
+		WHERE e.user_id = ? AND e.channel_id = ? AND e.status IN (?, ?)
 		ORDER BY e.start_time ASC
 	`
 
-	rows, err := d.Query(query, channelID, EventStatusPending, EventStatusSynced)
+	rows, err := d.Query(query, userID, channelID, EventStatusPending, EventStatusSynced)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list active events: %w", err)
 	}
@@ -330,7 +332,7 @@ func (d *DB) GetActiveEventsForChannel(channelID int64) ([]CalendarEvent, error)
 		var origMsgIDNull sql.NullInt64
 
 		if err := rows.Scan(
-			&event.ID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
 			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName,
@@ -367,37 +369,37 @@ func (d *DB) GetActiveEventsForChannel(channelID int64) ([]CalendarEvent, error)
 	return events, nil
 }
 
-// CountPendingEvents returns the number of pending events
-func (d *DB) CountPendingEvents() (int, error) {
+// CountPendingEvents returns the number of pending events for a user
+func (d *DB) CountPendingEvents(userID int64) (int, error) {
 	var count int
-	err := d.QueryRow(`SELECT COUNT(*) FROM calendar_events WHERE status = ?`, EventStatusPending).Scan(&count)
+	err := d.QueryRow(`SELECT COUNT(*) FROM calendar_events WHERE user_id = ? AND status = ?`, userID, EventStatusPending).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count pending events: %w", err)
 	}
 	return count, nil
 }
 
-// GetTodayEvents retrieves confirmed/synced events for today from the Alfred Calendar (local database)
-func (d *DB) GetTodayEvents() ([]CalendarEvent, error) {
+// GetTodayEvents retrieves confirmed/synced events for today from the Alfred Calendar for a user
+func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 	// Get start and end of today in local time
 	now := time.Now()
 	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	query := `
-		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
 			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
 			COALESCE(c.name, 'Alfred') as channel_name
 		FROM calendar_events e
 		LEFT JOIN channels c ON e.channel_id = c.id
-		WHERE e.status IN (?, ?)
+		WHERE e.user_id = ? AND e.status IN (?, ?)
 		  AND e.start_time >= ?
 		  AND e.start_time < ?
 		ORDER BY e.start_time ASC
 	`
 
-	rows, err := d.Query(query, EventStatusConfirmed, EventStatusSynced, startOfDay, endOfDay)
+	rows, err := d.Query(query, userID, EventStatusConfirmed, EventStatusSynced, startOfDay, endOfDay)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get today's events: %w", err)
 	}
@@ -411,7 +413,7 @@ func (d *DB) GetTodayEvents() ([]CalendarEvent, error) {
 		var origMsgIDNull sql.NullInt64
 
 		if err := rows.Scan(
-			&event.ID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
 			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName,

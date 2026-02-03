@@ -9,6 +9,7 @@ import (
 // GmailSettings represents Gmail integration settings
 type GmailSettings struct {
 	ID                  int64      `json:"id"`
+	UserID              int64      `json:"user_id"`
 	Enabled             bool       `json:"enabled"`
 	PollIntervalMinutes int        `json:"poll_interval_minutes"`
 	LastPollAt          *time.Time `json:"last_poll_at,omitempty"`
@@ -16,24 +17,32 @@ type GmailSettings struct {
 	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
-// GetGmailSettings retrieves the Gmail settings (single row)
-func (d *DB) GetGmailSettings() (*GmailSettings, error) {
+// GetGmailSettings retrieves the Gmail settings for a user
+func (d *DB) GetGmailSettings(userID int64) (*GmailSettings, error) {
 	var settings GmailSettings
 	var lastPollAt sql.NullTime
 
 	err := d.QueryRow(`
-		SELECT id, enabled, poll_interval_minutes, last_poll_at, created_at, updated_at
-		FROM gmail_settings WHERE id = 1
-	`).Scan(&settings.ID, &settings.Enabled, &settings.PollIntervalMinutes,
+		SELECT id, user_id, enabled, poll_interval_minutes, last_poll_at, created_at, updated_at
+		FROM gmail_settings WHERE user_id = ?
+	`, userID).Scan(&settings.ID, &settings.UserID, &settings.Enabled, &settings.PollIntervalMinutes,
 		&lastPollAt, &settings.CreatedAt, &settings.UpdatedAt)
 
 	if err == sql.ErrNoRows {
-		// Create default settings
-		_, err = d.Exec(`INSERT OR IGNORE INTO gmail_settings (id) VALUES (1)`)
+		// Create default settings for this user
+		_, err = d.Exec(`
+			INSERT INTO gmail_settings (user_id, enabled, poll_interval_minutes)
+			VALUES (?, 0, 5)
+		`, userID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create default gmail settings: %w", err)
 		}
-		return d.GetGmailSettings()
+		// Return fresh settings (avoid recursion)
+		return &GmailSettings{
+			UserID:              userID,
+			Enabled:             false,
+			PollIntervalMinutes: 5,
+		}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get gmail settings: %w", err)
@@ -46,13 +55,13 @@ func (d *DB) GetGmailSettings() (*GmailSettings, error) {
 	return &settings, nil
 }
 
-// UpdateGmailLastPoll updates the last poll timestamp
-func (d *DB) UpdateGmailLastPoll() error {
+// UpdateGmailLastPoll updates the last poll timestamp for a user
+func (d *DB) UpdateGmailLastPoll(userID int64) error {
 	_, err := d.Exec(`
 		UPDATE gmail_settings
 		SET last_poll_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-		WHERE id = 1
-	`)
+		WHERE user_id = ?
+	`, userID)
 	if err != nil {
 		return fmt.Errorf("failed to update gmail last poll: %w", err)
 	}
@@ -103,14 +112,15 @@ type TopContact struct {
 	LastUpdated time.Time `json:"last_updated"`
 }
 
-// GetTopContacts retrieves the cached top contacts up to the specified limit
-func (d *DB) GetTopContacts(limit int) ([]TopContact, error) {
+// GetTopContacts retrieves the cached top contacts for a user up to the specified limit
+func (d *DB) GetTopContacts(userID int64, limit int) ([]TopContact, error) {
 	rows, err := d.Query(`
 		SELECT id, email, name, email_count, last_updated
 		FROM gmail_top_contacts
+		WHERE user_id = ?
 		ORDER BY email_count DESC
 		LIMIT ?
-	`, limit)
+	`, userID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top contacts: %w", err)
 	}
@@ -132,23 +142,23 @@ func (d *DB) GetTopContacts(limit int) ([]TopContact, error) {
 	return contacts, nil
 }
 
-// ReplaceTopContacts replaces all cached top contacts with the new list
-func (d *DB) ReplaceTopContacts(contacts []TopContact) error {
+// ReplaceTopContacts replaces all cached top contacts for a user with the new list
+func (d *DB) ReplaceTopContacts(userID int64, contacts []TopContact) error {
 	tx, err := d.Begin()
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Clear existing contacts
-	if _, err := tx.Exec(`DELETE FROM gmail_top_contacts`); err != nil {
+	// Clear existing contacts for this user
+	if _, err := tx.Exec(`DELETE FROM gmail_top_contacts WHERE user_id = ?`, userID); err != nil {
 		return fmt.Errorf("failed to clear top contacts: %w", err)
 	}
 
 	// Insert new contacts
 	stmt, err := tx.Prepare(`
-		INSERT INTO gmail_top_contacts (email, name, email_count, last_updated)
-		VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO gmail_top_contacts (user_id, email, name, email_count, last_updated)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
 		return fmt.Errorf("failed to prepare statement: %w", err)
@@ -160,7 +170,7 @@ func (d *DB) ReplaceTopContacts(contacts []TopContact) error {
 		if c.Name != "" {
 			name = c.Name
 		}
-		if _, err := stmt.Exec(c.Email, name, c.EmailCount); err != nil {
+		if _, err := stmt.Exec(userID, c.Email, name, c.EmailCount); err != nil {
 			return fmt.Errorf("failed to insert top contact: %w", err)
 		}
 	}
@@ -172,12 +182,12 @@ func (d *DB) ReplaceTopContacts(contacts []TopContact) error {
 	return nil
 }
 
-// GetTopContactsComputedAt returns when top contacts were last computed
-func (d *DB) GetTopContactsComputedAt() (*time.Time, error) {
+// GetTopContactsComputedAt returns when top contacts were last computed for a user
+func (d *DB) GetTopContactsComputedAt(userID int64) (*time.Time, error) {
 	var computedAt sql.NullTime
 	err := d.QueryRow(`
-		SELECT top_contacts_computed_at FROM gmail_settings WHERE id = 1
-	`).Scan(&computedAt)
+		SELECT top_contacts_computed_at FROM gmail_settings WHERE user_id = ?
+	`, userID).Scan(&computedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top contacts computed at: %w", err)
 	}
@@ -187,13 +197,13 @@ func (d *DB) GetTopContactsComputedAt() (*time.Time, error) {
 	return nil, nil
 }
 
-// SetTopContactsComputedAt updates when top contacts were last computed
-func (d *DB) SetTopContactsComputedAt(t time.Time) error {
+// SetTopContactsComputedAt updates when top contacts were last computed for a user
+func (d *DB) SetTopContactsComputedAt(userID int64, t time.Time) error {
 	_, err := d.Exec(`
 		UPDATE gmail_settings
 		SET top_contacts_computed_at = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = 1
-	`, t)
+		WHERE user_id = ?
+	`, t, userID)
 	if err != nil {
 		return fmt.Errorf("failed to set top contacts computed at: %w", err)
 	}

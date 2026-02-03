@@ -19,6 +19,7 @@ func TestReminderLifecycle(t *testing.T) {
 
 	// Setup: Create a channel and pending reminder
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("John Doe").
 		WithIdentifier("john@s.whatsapp.net").
@@ -97,6 +98,7 @@ func TestReminderConfirmation(t *testing.T) {
 
 	// Setup channel and reminder
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Alice").
 		MustBuild(ts.DB)
@@ -140,6 +142,7 @@ func TestReminderRejection(t *testing.T) {
 
 	// Setup channel and reminder
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Bob").
 		MustBuild(ts.DB)
@@ -197,6 +200,7 @@ func TestReminderCompletion(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Charlie").
 		MustBuild(ts.DB)
@@ -272,6 +276,7 @@ func TestReminderDismissal(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Diana").
 		MustBuild(ts.DB)
@@ -362,6 +367,7 @@ func TestReminderFiltering(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Test Channel").
 		MustBuild(ts.DB)
@@ -463,12 +469,14 @@ func TestReminderFilterByChannel(t *testing.T) {
 
 	// Setup two channels
 	channel1 := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Channel 1").
 		WithIdentifier("channel1@s.whatsapp.net").
 		MustBuild(ts.DB)
 
 	channel2 := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Channel 2").
 		WithIdentifier("channel2@s.whatsapp.net").
@@ -525,7 +533,7 @@ func TestReminderFilterByChannel(t *testing.T) {
 
 	t.Run("filter by status and channel combined", func(t *testing.T) {
 		// Confirm one reminder from channel 1
-		reminders, _ := ts.DB.ListReminders(nil, &channel1.ID)
+		reminders, _ := ts.DB.ListReminders(ts.TestUser.ID, nil, &channel1.ID)
 		_ = ts.DB.UpdateReminderStatus(reminders[0].ID, database.ReminderStatusConfirmed)
 
 		resp, err := http.Get(ts.BaseURL() + fmt.Sprintf("/api/reminders?status=confirmed&channel_id=%d", channel1.ID))
@@ -547,6 +555,7 @@ func TestReminderPriorities(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Priority Test").
 		MustBuild(ts.DB)
@@ -630,6 +639,7 @@ func TestReminderWithTriggerMessage(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Message Source").
 		MustBuild(ts.DB)
@@ -734,6 +744,7 @@ func TestReminderUpdateValidation(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Validation Test").
 		MustBuild(ts.DB)
@@ -814,6 +825,7 @@ func TestReminderFromMultipleSources(t *testing.T) {
 
 	// Create WhatsApp channel
 	waChannel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("WhatsApp Contact").
 		WithIdentifier("wa@s.whatsapp.net").
@@ -821,6 +833,7 @@ func TestReminderFromMultipleSources(t *testing.T) {
 
 	// Create Telegram channel
 	tgChannel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		Telegram().
 		WithName("Telegram Contact").
 		WithIdentifier("tg_user_456").
@@ -887,6 +900,7 @@ func TestReminderDeleteAction(t *testing.T) {
 
 	// Setup channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Delete Test").
 		MustBuild(ts.DB)
@@ -919,6 +933,7 @@ func TestReminderChannelName(t *testing.T) {
 
 	// Setup channel with a specific name
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Important Contact").
 		WithIdentifier("important@s.whatsapp.net").

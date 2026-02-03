@@ -23,7 +23,8 @@ type ConnectionStatus struct {
 
 // handleGetAppStatus returns the simplified app status
 func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
-	status, err := s.db.GetAppStatus()
+	userID := getUserID(r)
+	status, err := s.db.GetAppStatus(userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -62,6 +63,8 @@ type CompleteOnboardingRequest struct {
 
 // handleCompleteOnboarding marks the onboarding as complete
 func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	var req CompleteOnboardingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "invalid JSON")
@@ -74,7 +77,7 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := s.db.CompleteOnboarding(req.WhatsAppEnabled, req.TelegramEnabled, req.GmailEnabled); err != nil {
+	if err := s.db.CompleteOnboarding(userID, req.WhatsAppEnabled, req.TelegramEnabled, req.GmailEnabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -85,7 +88,9 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 
 // handleResetOnboarding resets the onboarding status (for testing)
 func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
-	if err := s.db.ResetOnboarding(); err != nil {
+	userID := getUserID(r)
+
+	if err := s.db.ResetOnboarding(userID); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

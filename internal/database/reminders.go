@@ -39,6 +39,7 @@ const (
 // Reminder represents a detected reminder
 type Reminder struct {
 	ID              int64              `json:"id"`
+	UserID          int64              `json:"user_id"`
 	ChannelID       int64              `json:"channel_id"`
 	GoogleEventID   *string            `json:"google_event_id,omitempty"`
 	CalendarID      string             `json:"calendar_id"`
@@ -59,15 +60,16 @@ type Reminder struct {
 }
 
 // CreatePendingReminder creates a new pending reminder in the database
+// The reminder must have UserID set
 func (d *DB) CreatePendingReminder(reminder *Reminder) (*Reminder, error) {
 	result, err := d.Exec(`
 		INSERT INTO reminders (
-			channel_id, google_event_id, calendar_id, title, description,
+			user_id, channel_id, google_event_id, calendar_id, title, description,
 			due_date, reminder_time, priority, status, action_type,
 			original_message_id, llm_reasoning, source, email_source_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		reminder.ChannelID, reminder.GoogleEventID, reminder.CalendarID, reminder.Title, reminder.Description,
+		reminder.UserID, reminder.ChannelID, reminder.GoogleEventID, reminder.CalendarID, reminder.Title, reminder.Description,
 		reminder.DueDate, reminder.ReminderTime, reminder.Priority, ReminderStatusPending, reminder.ActionType,
 		reminder.OriginalMsgID, reminder.LLMReasoning, reminder.Source, reminder.EmailSourceID,
 	)
@@ -137,7 +139,7 @@ func (d *DB) GetReminderByID(id int64) (*Reminder, error) {
 }
 
 // ListReminders retrieves reminders with optional filtering by status and channel
-func (d *DB) ListReminders(status *ReminderStatus, channelID *int64) ([]Reminder, error) {
+func (d *DB) ListReminders(userID int64, status *ReminderStatus, channelID *int64) ([]Reminder, error) {
 	query := `
 		SELECT r.id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
 			r.description, r.due_date, r.reminder_time, r.priority, r.status,
@@ -146,9 +148,9 @@ func (d *DB) ListReminders(status *ReminderStatus, channelID *int64) ([]Reminder
 			c.name as channel_name
 		FROM reminders r
 		JOIN channels c ON r.channel_id = c.id
-		WHERE 1=1
+		WHERE r.user_id = ?
 	`
-	args := []any{}
+	args := []any{userID}
 
 	if status != nil {
 		query += " AND r.status = ?"
@@ -214,9 +216,9 @@ func (d *DB) ListReminders(status *ReminderStatus, channelID *int64) ([]Reminder
 }
 
 // GetPendingReminders retrieves all pending reminders, optionally filtered by channel
-func (d *DB) GetPendingReminders(channelID *int64) ([]Reminder, error) {
+func (d *DB) GetPendingReminders(userID int64, channelID *int64) ([]Reminder, error) {
 	status := ReminderStatusPending
-	return d.ListReminders(&status, channelID)
+	return d.ListReminders(userID, &status, channelID)
 }
 
 // GetActiveRemindersForChannel retrieves both pending and synced reminders for a channel

@@ -34,7 +34,10 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 		clientsReady.SetWAClient(waClient)
 	}
 
-	featureSettings, err := db.GetFeatureSettings()
+	// TODO: Multi-user migration - during startup we check settings for default user
+	// This will need to be refactored when per-user session management is implemented
+	const defaultUserID int64 = 1
+	featureSettings, err := db.GetFeatureSettings(defaultUserID)
 	if err != nil {
 		fmt.Printf("Warning: Could not load feature settings: %v\n", err)
 	}
@@ -77,7 +80,9 @@ func Initialize(ctx context.Context, db *database.DB, cfg *config.Config, state 
 }
 
 func NeedsSetup(db *database.DB, waClient *whatsapp.Client, gcalClient *gcal.Client) bool {
-	settings, err := db.GetFeatureSettings()
+	// TODO: Multi-user migration - NeedsSetup checks for default user
+	const defaultUserID int64 = 1
+	settings, err := db.GetFeatureSettings(defaultUserID)
 	if err != nil {
 		return false
 	}

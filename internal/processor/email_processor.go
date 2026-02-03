@@ -14,7 +14,7 @@ import (
 // EmailProcessor processes emails for calendar event and reminder detection
 type EmailProcessor struct {
 	db               *database.DB
-	analyzer         agent.Analyzer
+	eventAnalyzer    agent.EventAnalyzer
 	reminderAnalyzer agent.ReminderAnalyzer
 	notifyService    *notify.Service
 	eventCreator     *EventCreator
@@ -22,10 +22,10 @@ type EmailProcessor struct {
 }
 
 // NewEmailProcessor creates a new email processor
-func NewEmailProcessor(db *database.DB, analyzer agent.Analyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service) *EmailProcessor {
+func NewEmailProcessor(db *database.DB, eventAnalyzer agent.EventAnalyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service) *EmailProcessor {
 	return &EmailProcessor{
 		db:               db,
-		analyzer:         analyzer,
+		eventAnalyzer:    eventAnalyzer,
 		reminderAnalyzer: reminderAnalyzer,
 		notifyService:    notifyService,
 		eventCreator:     NewEventCreator(db, notifyService),
@@ -66,9 +66,9 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, e
 	}
 
 	// Run event analyzer (independent goroutine - fire and forget)
-	if p.analyzer != nil && p.analyzer.IsConfigured() {
+	if p.eventAnalyzer != nil && p.eventAnalyzer.IsConfigured() {
 		go func() {
-			analysis, err := p.analyzer.AnalyzeEmail(ctx, emailContent)
+			analysis, err := p.eventAnalyzer.AnalyzeEmail(ctx, emailContent)
 			if err != nil {
 				fmt.Printf("Email event analysis error: %v\n", err)
 				return

@@ -10,6 +10,7 @@ import (
 
 // ChannelBuilder builds test channels
 type ChannelBuilder struct {
+	userID      int64
 	sourceType  source.SourceType
 	channelType source.ChannelType
 	identifier  string
@@ -20,12 +21,19 @@ type ChannelBuilder struct {
 // NewChannelBuilder creates a new channel builder with defaults
 func NewChannelBuilder() *ChannelBuilder {
 	return &ChannelBuilder{
+		userID:      1, // Default test user ID
 		sourceType:  source.SourceTypeWhatsApp,
 		channelType: source.ChannelTypeSender,
 		identifier:  "test@s.whatsapp.net",
 		name:        "Test Contact",
 		enabled:     true,
 	}
+}
+
+// WithUserID sets the user ID
+func (b *ChannelBuilder) WithUserID(userID int64) *ChannelBuilder {
+	b.userID = userID
+	return b
 }
 
 // WithSourceType sets the source type
@@ -106,7 +114,7 @@ func (b *ChannelBuilder) Disabled() *ChannelBuilder {
 
 // Build creates the channel in the database
 func (b *ChannelBuilder) Build(db *database.DB) (*database.SourceChannel, error) {
-	channel, err := db.CreateSourceChannel(b.sourceType, b.channelType, b.identifier, b.name)
+	channel, err := db.CreateSourceChannel(b.userID, b.sourceType, b.channelType, b.identifier, b.name)
 	if err != nil {
 		return nil, err
 	}
@@ -132,6 +140,7 @@ func (b *ChannelBuilder) MustBuild(db *database.DB) *database.SourceChannel {
 
 // EventBuilder builds test events
 type EventBuilder struct {
+	userID      int64
 	channelID   int64
 	calendarID  string
 	title       string
@@ -149,6 +158,7 @@ func NewEventBuilder(channelID int64) *EventBuilder {
 	now := time.Now().Truncate(time.Second)
 	endTime := now.Add(time.Hour)
 	return &EventBuilder{
+		userID:     1, // Default test user ID
 		channelID:  channelID,
 		calendarID: "primary",
 		title:      "Test Event",
@@ -158,6 +168,12 @@ func NewEventBuilder(channelID int64) *EventBuilder {
 		actionType: database.EventActionCreate,
 		reasoning:  "Test event created by builder",
 	}
+}
+
+// WithUserID sets the user ID
+func (b *EventBuilder) WithUserID(userID int64) *EventBuilder {
+	b.userID = userID
+	return b
 }
 
 // WithTitle sets the title
@@ -247,6 +263,7 @@ func (b *EventBuilder) DeleteAction() *EventBuilder {
 // Build creates the event in the database
 func (b *EventBuilder) Build(db *database.DB) (*database.CalendarEvent, error) {
 	event := &database.CalendarEvent{
+		UserID:       b.userID,
 		ChannelID:    b.channelID,
 		CalendarID:   b.calendarID,
 		Title:        b.title,
@@ -407,6 +424,7 @@ var TestNonEventMessages = []string{
 
 // ReminderBuilder builds test reminders
 type ReminderBuilder struct {
+	userID       int64
 	channelID    int64
 	calendarID   string
 	title        string
@@ -424,6 +442,7 @@ type ReminderBuilder struct {
 func NewReminderBuilder(channelID int64) *ReminderBuilder {
 	dueDate := time.Now().Add(24 * time.Hour).Truncate(time.Second)
 	return &ReminderBuilder{
+		userID:     1, // Default test user ID
 		channelID:  channelID,
 		calendarID: "primary",
 		title:      "Test Reminder",
@@ -434,6 +453,12 @@ func NewReminderBuilder(channelID int64) *ReminderBuilder {
 		reasoning:  "Test reminder created by builder",
 		source:     "whatsapp",
 	}
+}
+
+// WithUserID sets the user ID
+func (b *ReminderBuilder) WithUserID(userID int64) *ReminderBuilder {
+	b.userID = userID
+	return b
 }
 
 // WithTitle sets the title
@@ -553,6 +578,7 @@ func (b *ReminderBuilder) DeleteAction() *ReminderBuilder {
 // Build creates the reminder in the database
 func (b *ReminderBuilder) Build(db *database.DB) (*database.Reminder, error) {
 	reminder := &database.Reminder{
+		UserID:       b.userID,
 		ChannelID:    b.channelID,
 		CalendarID:   b.calendarID,
 		Title:        b.title,

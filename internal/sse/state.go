@@ -270,3 +270,81 @@ func (s *State) GetStatusJSON() string {
 	data, _ := json.Marshal(status)
 	return string(data)
 }
+
+// StateManager manages per-user SSE states for multi-user support
+type StateManager struct {
+	mu     sync.RWMutex
+	states map[int64]*State
+}
+
+// NewStateManager creates a new per-user state manager
+func NewStateManager() *StateManager {
+	return &StateManager{
+		states: make(map[int64]*State),
+	}
+}
+
+// GetState returns the SSE state for a user, creating one if it doesn't exist
+func (m *StateManager) GetState(userID int64) *State {
+	m.mu.RLock()
+	state, exists := m.states[userID]
+	m.mu.RUnlock()
+
+	if exists {
+		return state
+	}
+
+	// Create new state for user
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Double-check after acquiring write lock
+	if state, exists = m.states[userID]; exists {
+		return state
+	}
+
+	state = NewState()
+	m.states[userID] = state
+	return state
+}
+
+// RemoveState removes a user's state (e.g., on logout)
+func (m *StateManager) RemoveState(userID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if state, exists := m.states[userID]; exists {
+		// Close all subscriber channels
+		state.mu.Lock()
+		for ch := range state.subscribers {
+			close(ch)
+		}
+		state.subscribers = make(map[chan Update]struct{})
+		state.mu.Unlock()
+
+		delete(m.states, userID)
+	}
+}
+
+// BroadcastToUser sends an update to a specific user's subscribers
+func (m *StateManager) BroadcastToUser(userID int64, update Update) {
+	m.mu.RLock()
+	state, exists := m.states[userID]
+	m.mu.RUnlock()
+
+	if exists {
+		state.broadcast(update)
+	}
+}
+
+// GetAllStates returns a copy of all user states (for debugging/admin)
+func (m *StateManager) GetAllStates() map[int64]*State {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make(map[int64]*State, len(m.states))
+	for k, v := range m.states {
+		result[k] = v
+	}
+	return result
+}

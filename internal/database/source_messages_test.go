@@ -10,9 +10,10 @@ import (
 )
 
 // createTestChannelForMessages creates a channel for message tests
-func createTestChannelForMessages(t *testing.T, db *DB) *SourceChannel {
+func createTestChannelForMessages(t *testing.T, db *DB, userID int64) *SourceChannel {
 	t.Helper()
 	channel, err := db.CreateSourceChannel(
+		userID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"msg-test@s.whatsapp.net",
@@ -76,9 +77,11 @@ func TestStoreSourceMessage(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := NewTestDB(t)
+			user := CreateTestUser(t, db)
 
 			// Create appropriate channel
 			channel, err := db.CreateSourceChannel(
+				user.ID,
 				tt.sourceType,
 				source.ChannelTypeSender,
 				tt.senderID,
@@ -131,7 +134,8 @@ func TestStoreSourceMessage_InvalidChannel(t *testing.T) {
 
 func TestGetSourceMessageHistory(t *testing.T) {
 	db := NewTestDB(t)
-	channel := createTestChannelForMessages(t, db)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
 
 	// Store messages with different timestamps
 	baseTime := time.Now()
@@ -181,6 +185,7 @@ func TestGetSourceMessageHistory(t *testing.T) {
 
 	t.Run("empty history for channel with no messages", func(t *testing.T) {
 		emptyChannel, err := db.CreateSourceChannel(
+			user.ID,
 			source.SourceTypeWhatsApp,
 			source.ChannelTypeSender,
 			"empty@s.whatsapp.net",
@@ -196,6 +201,7 @@ func TestGetSourceMessageHistory(t *testing.T) {
 	t.Run("filter by source type", func(t *testing.T) {
 		// Create a Telegram channel and message
 		tgChannel, err := db.CreateSourceChannel(
+			user.ID,
 			source.SourceTypeTelegram,
 			source.ChannelTypeSender,
 			"tg_user",
@@ -225,7 +231,8 @@ func TestGetSourceMessageHistory(t *testing.T) {
 
 func TestPruneSourceMessages(t *testing.T) {
 	db := NewTestDB(t)
-	channel := createTestChannelForMessages(t, db)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
 
 	// Store 10 messages
 	baseTime := time.Now()
@@ -279,6 +286,7 @@ func TestPruneSourceMessages(t *testing.T) {
 	t.Run("prune does not affect other source types", func(t *testing.T) {
 		// Create Telegram channel with messages
 		tgChannel, err := db.CreateSourceChannel(
+			user.ID,
 			source.SourceTypeTelegram,
 			source.ChannelTypeSender,
 			"tg_prune_test",
@@ -312,7 +320,8 @@ func TestPruneSourceMessages(t *testing.T) {
 
 func TestGetSourceMessageByID(t *testing.T) {
 	db := NewTestDB(t)
-	channel := createTestChannelForMessages(t, db)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
 
 	// Store a message
 	stored, err := db.StoreSourceMessage(
@@ -344,7 +353,8 @@ func TestGetSourceMessageByID(t *testing.T) {
 
 func TestCountSourceMessages(t *testing.T) {
 	db := NewTestDB(t)
-	channel := createTestChannelForMessages(t, db)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
 
 	t.Run("zero messages initially", func(t *testing.T) {
 		count, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
@@ -375,6 +385,7 @@ func TestCountSourceMessages(t *testing.T) {
 	t.Run("counts only for specified source type", func(t *testing.T) {
 		// Create Telegram channel with messages
 		tgChannel, err := db.CreateSourceChannel(
+			user.ID,
 			source.SourceTypeTelegram,
 			source.ChannelTypeSender,
 			"tg_count_test",
@@ -430,11 +441,12 @@ func TestSourceMessageToHistoryMessage(t *testing.T) {
 
 func TestGetAllSourceMessages(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create multiple channels
-	ch1, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa1@s.whatsapp.net", "WA 1")
+	ch1, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa1@s.whatsapp.net", "WA 1")
 	require.NoError(t, err)
-	ch2, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa2@s.whatsapp.net", "WA 2")
+	ch2, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa2@s.whatsapp.net", "WA 2")
 	require.NoError(t, err)
 
 	// Store messages in different channels
@@ -459,7 +471,7 @@ func TestGetAllSourceMessages(t *testing.T) {
 
 	t.Run("filter by source type", func(t *testing.T) {
 		// Create Telegram channel with message
-		tgChannel, err := db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, "tg_all", "TG All")
+		tgChannel, err := db.CreateSourceChannel(user.ID, source.SourceTypeTelegram, source.ChannelTypeSender, "tg_all", "TG All")
 		require.NoError(t, err)
 		_, err = db.StoreSourceMessage(source.SourceTypeTelegram, tgChannel.ID, "tg_all", "TG", "TG msg", "", time.Now())
 		require.NoError(t, err)

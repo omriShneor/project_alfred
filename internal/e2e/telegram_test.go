@@ -59,6 +59,7 @@ func TestTelegramChannelCRUD(t *testing.T) {
 
 	// Create a Telegram channel first
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		Telegram().
 		WithName("TG Test Contact").
 		WithIdentifier("tg_test_user").
@@ -152,6 +153,7 @@ func TestTelegramEventsFromChannel(t *testing.T) {
 
 	// Create Telegram channel
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		Telegram().
 		WithName("TG Event Source").
 		WithIdentifier("tg_event_user").
@@ -159,6 +161,7 @@ func TestTelegramEventsFromChannel(t *testing.T) {
 
 	// Create event for this channel
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Telegram Event").
 		Pending().
 		MustBuild(ts.DB)

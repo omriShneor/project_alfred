@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -114,9 +115,10 @@ func TestIsPushAvailable(t *testing.T) {
 
 func TestNotifyPendingEvent_EmailEnabled(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Set up notification preferences
-	err := db.UpdateEmailPrefs(true, "test@example.com")
+	err := db.UpdateEmailPrefs(user.ID, true, "test@example.com")
 	require.NoError(t, err)
 
 	// Create mock email notifier
@@ -127,8 +129,9 @@ func TestNotifyPendingEvent_EmailEnabled(t *testing.T) {
 	service := NewService(db, emailNotifier, nil)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	service.NotifyPendingEvent(context.Background(), event)
@@ -139,9 +142,10 @@ func TestNotifyPendingEvent_EmailEnabled(t *testing.T) {
 
 func TestNotifyPendingEvent_EmailDisabled(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Email disabled by default (or explicitly disable)
-	err := db.UpdateEmailPrefs(false, "")
+	err := db.UpdateEmailPrefs(user.ID, false, "")
 	require.NoError(t, err)
 
 	emailNotifier := &MockNotifier{}
@@ -150,8 +154,9 @@ func TestNotifyPendingEvent_EmailDisabled(t *testing.T) {
 	service := NewService(db, emailNotifier, nil)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	service.NotifyPendingEvent(context.Background(), event)
@@ -162,11 +167,12 @@ func TestNotifyPendingEvent_EmailDisabled(t *testing.T) {
 
 func TestNotifyPendingEvent_PushEnabled(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Set up push preferences
-	err := db.UpdatePushPrefs(true)
+	err := db.UpdatePushPrefs(user.ID, true)
 	require.NoError(t, err)
-	err = db.UpdatePushToken("ExponentPushToken[test-token-12345678]")
+	err = db.UpdatePushToken(user.ID, "ExponentPushToken[test-token-12345678]")
 	require.NoError(t, err)
 
 	// Create mock push notifier
@@ -177,8 +183,9 @@ func TestNotifyPendingEvent_PushEnabled(t *testing.T) {
 	service := NewService(db, nil, pushNotifier)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	service.NotifyPendingEvent(context.Background(), event)
@@ -188,6 +195,7 @@ func TestNotifyPendingEvent_PushEnabled(t *testing.T) {
 
 func TestNotifyPendingEvent_PushDisabled(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Push disabled by default
 	pushNotifier := &MockNotifier{}
@@ -196,8 +204,9 @@ func TestNotifyPendingEvent_PushDisabled(t *testing.T) {
 	service := NewService(db, nil, pushNotifier)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	service.NotifyPendingEvent(context.Background(), event)
@@ -208,13 +217,14 @@ func TestNotifyPendingEvent_PushDisabled(t *testing.T) {
 
 func TestNotifyPendingEvent_BothEnabled(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Enable both
-	err := db.UpdateEmailPrefs(true, "email@test.com")
+	err := db.UpdateEmailPrefs(user.ID, true, "email@test.com")
 	require.NoError(t, err)
-	err = db.UpdatePushPrefs(true)
+	err = db.UpdatePushPrefs(user.ID, true)
 	require.NoError(t, err)
-	err = db.UpdatePushToken("ExponentPushToken[both-enabled-token]")
+	err = db.UpdatePushToken(user.ID, "ExponentPushToken[both-enabled-token]")
 	require.NoError(t, err)
 
 	emailNotifier := &MockNotifier{}
@@ -228,8 +238,9 @@ func TestNotifyPendingEvent_BothEnabled(t *testing.T) {
 	service := NewService(db, emailNotifier, pushNotifier)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	service.NotifyPendingEvent(context.Background(), event)
@@ -240,9 +251,10 @@ func TestNotifyPendingEvent_BothEnabled(t *testing.T) {
 
 func TestNotifyPendingEvent_NotifierNotConfigured(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Email enabled but notifier not configured
-	err := db.UpdateEmailPrefs(true, "test@example.com")
+	err := db.UpdateEmailPrefs(user.ID, true, "test@example.com")
 	require.NoError(t, err)
 
 	emailNotifier := &MockNotifier{}
@@ -251,8 +263,9 @@ func TestNotifyPendingEvent_NotifierNotConfigured(t *testing.T) {
 	service := NewService(db, emailNotifier, nil)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	service.NotifyPendingEvent(context.Background(), event)
@@ -263,21 +276,23 @@ func TestNotifyPendingEvent_NotifierNotConfigured(t *testing.T) {
 
 func TestNotifyPendingEvent_NilNotifiers(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Enable preferences but notifiers are nil
-	err := db.UpdateEmailPrefs(true, "test@example.com")
+	err := db.UpdateEmailPrefs(user.ID, true, "test@example.com")
 	require.NoError(t, err)
-	err = db.UpdatePushPrefs(true)
+	err = db.UpdatePushPrefs(user.ID, true)
 	require.NoError(t, err)
-	err = db.UpdatePushToken("ExponentPushToken[nil-notifier-test]")
+	err = db.UpdatePushToken(user.ID, "ExponentPushToken[nil-notifier-test]")
 	require.NoError(t, err)
 
 	// Both notifiers are nil
 	service := NewService(db, nil, nil)
 
 	event := &database.CalendarEvent{
-		ID:    1,
-		Title: "Test Event",
+		ID:     1,
+		UserID: user.ID,
+		Title:  "Test Event",
 	}
 
 	// Should not panic
@@ -286,14 +301,16 @@ func TestNotifyPendingEvent_NilNotifiers(t *testing.T) {
 
 func TestNotifyPendingEvent_WithRealEvent(t *testing.T) {
 	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
 
 	// Create a real channel first
-	channel, err := db.CreateChannel(database.ChannelTypeSender, "notify-test@s.whatsapp.net", "Notify Test")
+	channel, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "notify-test@s.whatsapp.net", "Notify Test")
 	require.NoError(t, err)
 
 	// Create a real event
 	endTime := time.Now().Add(time.Hour)
 	event := &database.CalendarEvent{
+		UserID:      user.ID,
 		ChannelID:   channel.ID,
 		CalendarID:  "primary",
 		Title:       "Real Test Event",
@@ -307,7 +324,7 @@ func TestNotifyPendingEvent_WithRealEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Set up email preferences
-	err = db.UpdateEmailPrefs(true, "real@test.com")
+	err = db.UpdateEmailPrefs(user.ID, true, "real@test.com")
 	require.NoError(t, err)
 
 	emailNotifier := &MockNotifier{}

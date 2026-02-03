@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/omriShneor/project_alfred/internal/database"
 	"golang.org/x/oauth2"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/option"
@@ -12,11 +13,13 @@ import (
 
 // Client wraps the Google Calendar API client
 type Client struct {
+	userID          int64 // User who owns this client (for multi-user support)
 	service         *calendar.Service
 	config          *oauth2.Config
 	credentialsFile string
 	tokenFile       string
 	token           *oauth2.Token
+	db              *database.DB // For token storage in multi-user mode
 }
 
 // NewClient creates a new Google Calendar client
@@ -62,12 +65,26 @@ func (c *Client) tryInitService() error {
 			return fmt.Errorf("failed to refresh token: %w", err)
 		}
 		c.token = newToken
-		if err := saveToken(c.tokenFile, newToken); err != nil {
+		// Save refreshed token (database for multi-user, file for single-user)
+		if err := c.saveToken(newToken); err != nil {
 			fmt.Printf("Warning: could not save refreshed token: %v\n", err)
 		}
 	}
 
 	return c.initService(ctx)
+}
+
+// saveToken saves the token to database (multi-user) or file (single-user)
+func (c *Client) saveToken(token *oauth2.Token) error {
+	if c.db != nil && c.userID != 0 {
+		// Multi-user mode: save to database
+		return c.db.UpdateGoogleToken(c.userID, token)
+	}
+	// Single-user mode: save to file
+	if c.tokenFile != "" {
+		return saveToken(c.tokenFile, token)
+	}
+	return nil
 }
 
 // IsAuthenticated returns true if the client is authenticated
@@ -113,7 +130,7 @@ func (c *Client) ExchangeCode(ctx context.Context, code string) error {
 	}
 
 	c.token = token
-	if err := saveToken(c.tokenFile, token); err != nil {
+	if err := c.saveInitialToken(token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
 	}
 
@@ -133,18 +150,39 @@ func (c *Client) ExchangeCodeWithRedirect(ctx context.Context, code, redirectURI
 	}
 
 	c.token = token
-	if err := saveToken(c.tokenFile, token); err != nil {
+	if err := c.saveInitialToken(token); err != nil {
 		return fmt.Errorf("failed to save token: %w", err)
 	}
 
 	return c.initService(ctx)
 }
 
+// saveInitialToken saves a newly exchanged token (includes full token data)
+func (c *Client) saveInitialToken(token *oauth2.Token) error {
+	if c.db != nil && c.userID != 0 {
+		// Multi-user mode: save to database
+		// Note: email will be set later when we have user info
+		return c.db.SaveGoogleToken(c.userID, token, "")
+	}
+	// Single-user mode: save to file
+	if c.tokenFile != "" {
+		return saveToken(c.tokenFile, token)
+	}
+	return nil
+}
+
 // Disconnect removes the stored token and clears the service
 func (c *Client) Disconnect() error {
-	// Delete token file
-	if err := os.Remove(c.tokenFile); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("failed to delete token file: %w", err)
+	if c.db != nil && c.userID != 0 {
+		// Multi-user mode: delete from database
+		if err := c.db.DeleteGoogleToken(c.userID); err != nil {
+			return fmt.Errorf("failed to delete token from database: %w", err)
+		}
+	} else if c.tokenFile != "" {
+		// Single-user mode: delete token file
+		if err := os.Remove(c.tokenFile); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to delete token file: %w", err)
+		}
 	}
 
 	// Clear internal state
@@ -153,3 +191,33 @@ func (c *Client) Disconnect() error {
 
 	return nil
 }
+
+// NewClientForUser creates a Google Calendar client for a specific user (multi-user mode)
+// Token storage is handled via database instead of file
+func NewClientForUser(userID int64, credentialsFile string, db *database.DB) (*Client, error) {
+	config, err := loadOAuthConfig(credentialsFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load OAuth config: %w", err)
+	}
+
+	client := &Client{
+		userID:          userID,
+		config:          config,
+		credentialsFile: credentialsFile,
+		tokenFile:       "", // Not used in multi-user mode
+		db:              db,
+	}
+
+	// Try to load existing token from database
+	token, err := db.GetGoogleToken(userID)
+	if err == nil && token != nil {
+		client.token = token
+		// Try to initialize the service with the existing token
+		if err := client.tryInitService(); err != nil {
+			fmt.Printf("Note: Could not initialize calendar service for user %d: %v\n", userID, err)
+		}
+	}
+
+	return client, nil
+}
+

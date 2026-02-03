@@ -42,8 +42,10 @@ func TestCreateSourceChannel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			db := NewTestDB(t)
+			user := CreateTestUser(t, db)
 
 			channel, err := db.CreateSourceChannel(
+				user.ID,
 				tt.sourceType,
 				tt.channelType,
 				tt.identifier,
@@ -53,6 +55,7 @@ func TestCreateSourceChannel(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, channel)
 			assert.NotZero(t, channel.ID)
+			assert.Equal(t, user.ID, channel.UserID)
 			assert.Equal(t, tt.sourceType, channel.SourceType)
 			assert.Equal(t, tt.channelType, channel.Type)
 			assert.Equal(t, tt.identifier, channel.Identifier)
@@ -64,9 +67,11 @@ func TestCreateSourceChannel(t *testing.T) {
 
 func TestCreateSourceChannel_DuplicateIdentifier(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create first channel
 	_, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"duplicate@s.whatsapp.net",
@@ -76,6 +81,7 @@ func TestCreateSourceChannel_DuplicateIdentifier(t *testing.T) {
 
 	// Try to create channel with same identifier and source type
 	_, err = db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"duplicate@s.whatsapp.net",
@@ -86,9 +92,11 @@ func TestCreateSourceChannel_DuplicateIdentifier(t *testing.T) {
 
 func TestCreateSourceChannel_DifferentSourceTypes(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create WhatsApp channel
 	ch1, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"wa_user@s.whatsapp.net",
@@ -98,6 +106,7 @@ func TestCreateSourceChannel_DifferentSourceTypes(t *testing.T) {
 
 	// Different identifier for different source type
 	ch2, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeGmail,
 		source.ChannelTypeSender,
 		"email_user@example.com",
@@ -112,9 +121,11 @@ func TestCreateSourceChannel_DifferentSourceTypes(t *testing.T) {
 
 func TestGetSourceChannelByID(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create a channel
 	created, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"test@s.whatsapp.net",
@@ -140,9 +151,11 @@ func TestGetSourceChannelByID(t *testing.T) {
 
 func TestGetSourceChannelByIdentifier(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create channels
 	waChannel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"1234567890@s.whatsapp.net",
@@ -151,6 +164,7 @@ func TestGetSourceChannelByIdentifier(t *testing.T) {
 	require.NoError(t, err)
 
 	gmailChannel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeGmail,
 		source.ChannelTypeSender,
 		"test@example.com",
@@ -200,15 +214,16 @@ func TestGetSourceChannelByIdentifier(t *testing.T) {
 
 func TestListSourceChannels(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create multiple channels for different sources
-	_, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa1@s.whatsapp.net", "WA 1")
+	_, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa1@s.whatsapp.net", "WA 1")
 	require.NoError(t, err)
-	_, err = db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa2@s.whatsapp.net", "WA 2")
+	_, err = db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "wa2@s.whatsapp.net", "WA 2")
 	require.NoError(t, err)
-	_, err = db.CreateSourceChannel(source.SourceTypeTelegram, source.ChannelTypeSender, "tg1", "TG 1")
+	_, err = db.CreateSourceChannel(user.ID, source.SourceTypeTelegram, source.ChannelTypeSender, "tg1", "TG 1")
 	require.NoError(t, err)
-	_, err = db.CreateSourceChannel(source.SourceTypeGmail, source.ChannelTypeSender, "email@test.com", "Gmail 1")
+	_, err = db.CreateSourceChannel(user.ID, source.SourceTypeGmail, source.ChannelTypeSender, "email@test.com", "Gmail 1")
 	require.NoError(t, err)
 
 	t.Run("list whatsapp channels", func(t *testing.T) {
@@ -244,13 +259,14 @@ func TestListSourceChannels(t *testing.T) {
 
 func TestListEnabledSourceChannels(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create channels
-	ch1, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled1@s.whatsapp.net", "Enabled 1")
+	ch1, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled1@s.whatsapp.net", "Enabled 1")
 	require.NoError(t, err)
-	ch2, err := db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "disabled@s.whatsapp.net", "Disabled")
+	ch2, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "disabled@s.whatsapp.net", "Disabled")
 	require.NoError(t, err)
-	_, err = db.CreateSourceChannel(source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled2@s.whatsapp.net", "Enabled 2")
+	_, err = db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled2@s.whatsapp.net", "Enabled 2")
 	require.NoError(t, err)
 
 	// Disable one channel
@@ -284,8 +300,10 @@ func TestListEnabledSourceChannels(t *testing.T) {
 
 func TestUpdateSourceChannel(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"update@s.whatsapp.net",
@@ -326,8 +344,10 @@ func TestUpdateSourceChannel(t *testing.T) {
 
 func TestDeleteSourceChannel(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	channel, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"delete@s.whatsapp.net",
@@ -352,9 +372,11 @@ func TestDeleteSourceChannel(t *testing.T) {
 
 func TestIsSourceChannelTracked(t *testing.T) {
 	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
 
 	// Create an enabled channel
 	enabledCh, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"enabled@s.whatsapp.net",
@@ -364,6 +386,7 @@ func TestIsSourceChannelTracked(t *testing.T) {
 
 	// Create a disabled channel
 	disabledCh, err := db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"disabled@s.whatsapp.net",

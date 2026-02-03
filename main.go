@@ -40,10 +40,13 @@ func main() {
 	notifyService := initNotifyService(db, cfg)
 
 	srv := server.New(server.ServerConfig{
-		DB:              db,
-		OnboardingState: state,
-		Port:            cfg.HTTPPort,
-		ResendAPIKey:    cfg.ResendAPIKey,
+		DB:                db,
+		OnboardingState:   state,
+		Port:              cfg.HTTPPort,
+		ResendAPIKey:      cfg.ResendAPIKey,
+		CredentialsFile:   cfg.GoogleCredentialsFile,
+		GmailPollInterval: cfg.GmailPollInterval,
+		GmailMaxEmails:    cfg.GmailMaxEmails,
 	})
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
@@ -57,25 +60,23 @@ func main() {
 		fatal("initialization", err)
 	}
 
-	analyzer := initAnalyzer(cfg)
+	eventAnalyzer := initEventAnalyzer(cfg)
 	reminderAnalyzer := initReminderAnalyzer(cfg)
-	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, analyzer, reminderAnalyzer, notifyService, cfg)
+	gmailClient, gmailWorker := initGmail(clients.GCalClient, db, eventAnalyzer, reminderAnalyzer, notifyService, cfg)
 	tgClient := initTelegram(db, cfg, state)
 
 	srv.InitializeClients(server.ClientsConfig{
-		WAClient:          clients.WAClient,
-		TGClient:          tgClient,
-		GCalClient:        clients.GCalClient,
-		GmailClient:       gmailClient,
-		GmailWorker:       gmailWorker,
-		NotifyService:     notifyService,
-		Analyzer:          analyzer,
-		ReminderAnalyzer:  reminderAnalyzer,
-		GmailPollInterval: cfg.GmailPollInterval,
-		GmailMaxEmails:    cfg.GmailMaxEmails,
+		WAClient:         clients.WAClient,
+		TGClient:         tgClient,
+		GCalClient:       clients.GCalClient,
+		GmailClient:      gmailClient,
+		GmailWorker:      gmailWorker,
+		NotifyService:    notifyService,
+		EventAnalyzer:    eventAnalyzer,
+		ReminderAnalyzer: reminderAnalyzer,
 	})
 
-	proc := processor.New(db, clients.GCalClient, analyzer, reminderAnalyzer, clients.MsgChan, cfg.MessageHistorySize, notifyService)
+	proc := processor.New(db, clients.GCalClient, eventAnalyzer, reminderAnalyzer, clients.MsgChan, cfg.MessageHistorySize, notifyService)
 	if err := proc.Start(); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: Event processor failed to start: %v\n", err)
 	}
@@ -87,7 +88,7 @@ func initDatabase(cfg *config.Config) (*database.DB, error) {
 	return database.New(cfg.DBPath)
 }
 
-func initAnalyzer(cfg *config.Config) agent.Analyzer {
+func initEventAnalyzer(cfg *config.Config) agent.EventAnalyzer {
 	if cfg.AnthropicAPIKey == "" {
 		fmt.Println("Warning: ANTHROPIC_API_KEY not set, event detection disabled")
 		return nil
@@ -134,7 +135,7 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
-func initGmail(gcalClient *gcal.Client, db *database.DB, analyzer agent.Analyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
+func initGmail(gcalClient *gcal.Client, db *database.DB, eventAnalyzer agent.EventAnalyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service, cfg *config.Config) (*gmail.Client, *gmail.Worker) {
 	if gcalClient == nil || !gcalClient.IsAuthenticated() {
 		return nil, nil
 	}
@@ -158,7 +159,7 @@ func initGmail(gcalClient *gcal.Client, db *database.DB, analyzer agent.Analyzer
 
 	fmt.Println("Gmail client initialized")
 
-	emailProc := processor.NewEmailProcessor(db, analyzer, reminderAnalyzer, notifyService)
+	emailProc := processor.NewEmailProcessor(db, eventAnalyzer, reminderAnalyzer, notifyService)
 	gmailWorker := gmail.NewWorker(gmailClient, db, emailProc, gmail.WorkerConfig{
 		PollIntervalMinutes: cfg.GmailPollInterval,
 		MaxEmailsPerPoll:    cfg.GmailMaxEmails,

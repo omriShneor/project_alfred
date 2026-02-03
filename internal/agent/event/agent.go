@@ -79,7 +79,7 @@ func (a *Agent) AnalyzeMessages(
 }
 
 // AnalyzeEmail analyzes an email for calendar events
-// Implements agent.Analyzer interface
+// Implements agent.EventAnalyzer interface
 func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*agent.EventAnalysis, error) {
 	// Create a temporary agent with email-specific prompt
 	emailAgent := agent.NewAgent(agent.AgentConfig{

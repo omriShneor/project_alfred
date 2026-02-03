@@ -11,11 +11,18 @@ import (
 	"strings"
 	"time"
 
+	"github.com/omriShneor/project_alfred/internal/auth"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
+
+// getUserID extracts the authenticated user's ID from the request context.
+// Returns 0 if no user is authenticated (for development/testing).
+func getUserID(r *http.Request) int64 {
+	return auth.GetUserID(r.Context())
+}
 
 // Health Check
 
@@ -331,13 +338,18 @@ func (s *Server) handleUpdateChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 
-	if err := s.db.DeleteChannel(id); err != nil {
+	if err := s.db.DeleteChannel(userID, id); err != nil {
+		if err.Error() == "channel not found" {
+			respondError(w, http.StatusNotFound, "channel not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -436,10 +448,11 @@ type TodayEventResponse struct {
 // handleListMergedTodayEvents returns merged events from Alfred Calendar + external calendars
 // This is the primary endpoint for Today's Schedule
 func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	var events []TodayEventResponse
 
 	// Get feature settings to check which calendars are enabled
-	settings, err := s.db.GetFeatureSettings()
+	settings, err := s.db.GetFeatureSettings(userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -449,7 +462,7 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	seenGoogleIDs := make(map[string]bool)
 
 	// 1. Always get Alfred Calendar events (local database)
-	alfredEvents, err := s.db.GetTodayEvents()
+	alfredEvents, err := s.db.GetTodayEvents(userID)
 	if err != nil {
 		// Log error but don't fail - Alfred events are best-effort
 		fmt.Printf("Warning: failed to get Alfred events: %v\n", err)
@@ -765,6 +778,7 @@ func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 // Events API
 
 func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	statusFilter := r.URL.Query().Get("status")
 	channelIDStr := r.URL.Query().Get("channel_id")
 
@@ -782,7 +796,7 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	events, err := s.db.ListEvents(status, channelID)
+	events, err := s.db.ListEvents(userID, status, channelID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -838,7 +852,8 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if sync is enabled and Google Calendar is connected
-	gcalSettings, _ := s.db.GetGCalSettings()
+	userID := getUserID(r)
+	gcalSettings, _ := s.db.GetGCalSettings(userID)
 	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && s.gcalClient != nil && s.gcalClient.IsAuthenticated()
 
 	// If not syncing to Google Calendar, just confirm the event locally
@@ -1286,7 +1301,8 @@ func (s *Server) handleOnboardingSSE(w http.ResponseWriter, r *http.Request) {
 // Notification Preferences API
 
 func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Request) {
-	prefs, err := s.db.GetUserNotificationPrefs()
+	userID := getUserID(r)
+	prefs, err := s.db.GetUserNotificationPrefs(userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1312,6 +1328,7 @@ func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleUpdateEmailPrefs(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	var req struct {
 		Enabled bool   `json:"enabled"`
 		Address string `json:"address"`
@@ -1327,17 +1344,18 @@ func (s *Server) handleUpdateEmailPrefs(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := s.db.UpdateEmailPrefs(req.Enabled, req.Address); err != nil {
+	if err := s.db.UpdateEmailPrefs(userID, req.Enabled, req.Address); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	prefs, _ := s.db.GetUserNotificationPrefs()
+	prefs, _ := s.db.GetUserNotificationPrefs(userID)
 	respondJSON(w, http.StatusOK, prefs)
 }
 
 // handleRegisterPushToken stores the Expo push token from mobile app
 func (s *Server) handleRegisterPushToken(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	var req struct {
 		Token string `json:"token"`
 	}
@@ -1352,7 +1370,7 @@ func (s *Server) handleRegisterPushToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.db.UpdatePushToken(req.Token); err != nil {
+	if err := s.db.UpdatePushToken(userID, req.Token); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -1363,6 +1381,7 @@ func (s *Server) handleRegisterPushToken(w http.ResponseWriter, r *http.Request)
 
 // handleUpdatePushPrefs enables/disables push notifications
 func (s *Server) handleUpdatePushPrefs(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -1372,20 +1391,21 @@ func (s *Server) handleUpdatePushPrefs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.db.UpdatePushPrefs(req.Enabled); err != nil {
+	if err := s.db.UpdatePushPrefs(userID, req.Enabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	prefs, _ := s.db.GetUserNotificationPrefs()
+	prefs, _ := s.db.GetUserNotificationPrefs(userID)
 	respondJSON(w, http.StatusOK, prefs)
 }
 
 // Google Calendar Settings API
 
-// handleGetGCalSettings returns the global Google Calendar settings
+// handleGetGCalSettings returns the Google Calendar settings for the current user
 func (s *Server) handleGetGCalSettings(w http.ResponseWriter, r *http.Request) {
-	settings, err := s.db.GetGCalSettings()
+	userID := getUserID(r)
+	settings, err := s.db.GetGCalSettings(userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -1394,8 +1414,10 @@ func (s *Server) handleGetGCalSettings(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, settings)
 }
 
-// handleUpdateGCalSettings updates the global Google Calendar settings
+// handleUpdateGCalSettings updates the Google Calendar settings for the current user
 func (s *Server) handleUpdateGCalSettings(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	var req struct {
 		SyncEnabled          bool   `json:"sync_enabled"`
 		SelectedCalendarID   string `json:"selected_calendar_id"`
@@ -1415,11 +1437,11 @@ func (s *Server) handleUpdateGCalSettings(w http.ResponseWriter, r *http.Request
 		req.SelectedCalendarName = "Primary"
 	}
 
-	if err := s.db.UpdateGCalSettings(req.SyncEnabled, req.SelectedCalendarID, req.SelectedCalendarName); err != nil {
+	if err := s.db.UpdateGCalSettings(userID, req.SyncEnabled, req.SelectedCalendarID, req.SelectedCalendarName); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	settings, _ := s.db.GetGCalSettings()
+	settings, _ := s.db.GetGCalSettings(userID)
 	respondJSON(w, http.StatusOK, settings)
 }

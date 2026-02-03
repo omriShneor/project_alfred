@@ -20,6 +20,7 @@ import (
 type FilteredMessage = source.Message
 
 type Handler struct {
+	UserID           int64 // User who owns this handler (for multi-user support)
 	db               *database.DB
 	debugAllMessages bool
 	messageChan      chan source.Message
@@ -29,6 +30,19 @@ type Handler struct {
 
 func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
 	return &Handler{
+		UserID:           0, // Will be set by ClientManager in multi-user mode
+		db:               db,
+		debugAllMessages: debugAllMessages,
+		messageChan:      make(chan source.Message, 100),
+		state:            state,
+		wClient:          nil,
+	}
+}
+
+// NewHandlerForUser creates a handler for a specific user (multi-user mode)
+func NewHandlerForUser(userID int64, db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
+	return &Handler{
+		UserID:           userID,
 		db:               db,
 		debugAllMessages: debugAllMessages,
 		messageChan:      make(chan source.Message, 100),
@@ -363,6 +377,7 @@ func (h *Handler) getOrCreateHistoryChannel(identifier string, jid types.JID) (*
 
 	// Create new channel (disabled by default - user must enable to track events)
 	channel, err = h.db.CreateSourceChannel(
+		h.UserID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		identifier,

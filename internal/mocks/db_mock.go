@@ -161,8 +161,8 @@ func (m *MockDB) GetActiveEventsForChannel(channelID int64) ([]database.Calendar
 	return args.Get(0).([]database.CalendarEvent), args.Error(1)
 }
 
-func (m *MockDB) GetSelectedCalendarID() (string, error) {
-	args := m.Called()
+func (m *MockDB) GetSelectedCalendarID(userID int64) (string, error) {
+	args := m.Called(userID)
 	return args.String(0), args.Error(1)
 }
 

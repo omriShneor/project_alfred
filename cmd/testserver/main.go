@@ -63,9 +63,9 @@ func main() {
 	fmt.Println("Push notification service configured")
 
 	// Create event analyzer (uses real Claude API if ANTHROPIC_API_KEY is set)
-	var analyzer agent.Analyzer
+	var eventAnalyzer agent.EventAnalyzer
 	if cfg.AnthropicAPIKey != "" {
-		analyzer = event.NewAgent(event.Config{
+		eventAnalyzer = event.NewAgent(event.Config{
 			APIKey:      cfg.AnthropicAPIKey,
 			Model:       cfg.ClaudeModel,
 			Temperature: cfg.ClaudeTemperature,
@@ -78,8 +78,8 @@ func main() {
 
 	// Create message processor
 	var messageProcessor *processor.Processor
-	if analyzer != nil {
-		messageProcessor = processor.New(db, nil, analyzer, nil, msgChan, cfg.MessageHistorySize, notifyService)
+	if eventAnalyzer != nil {
+		messageProcessor = processor.New(db, nil, eventAnalyzer, nil, msgChan, cfg.MessageHistorySize, notifyService)
 		if err := messageProcessor.Start(); err != nil {
 			fmt.Printf("Warning: processor failed to start: %v\n", err)
 		} else {
@@ -98,7 +98,7 @@ func main() {
 	// Initialize clients with mock services
 	clientsCfg := server.ClientsConfig{
 		NotifyService: notifyService,
-		Analyzer:      analyzer,
+		EventAnalyzer: eventAnalyzer,
 	}
 	srv.InitializeClients(clientsCfg)
 
@@ -116,8 +116,8 @@ func main() {
 		// Reset database by recreating tables
 		fmt.Println("Resetting test database...")
 
-		// Reset onboarding
-		if err := db.ResetOnboarding(); err != nil {
+		// Reset onboarding for default test user (ID=1)
+		if err := db.ResetOnboarding(1); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to reset onboarding: %v", err), http.StatusInternalServerError)
 			return
 		}
@@ -175,6 +175,7 @@ func main() {
 		}
 
 		var req struct {
+			UserID      int64  `json:"user_id"`
 			SourceType  string `json:"source_type"`
 			ChannelType string `json:"channel_type"`
 			Identifier  string `json:"identifier"`
@@ -187,6 +188,9 @@ func main() {
 		}
 
 		// Default values
+		if req.UserID == 0 {
+			req.UserID = 1 // Default test user ID
+		}
 		if req.SourceType == "" {
 			req.SourceType = "whatsapp"
 		}
@@ -195,6 +199,7 @@ func main() {
 		}
 
 		channel, err := db.CreateSourceChannel(
+			req.UserID,
 			source.SourceType(req.SourceType),
 			source.ChannelType(req.ChannelType),
 			req.Identifier,

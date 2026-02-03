@@ -18,6 +18,7 @@ const (
 // EmailSource represents a tracked email source
 type EmailSource struct {
 	ID         int64           `json:"id"`
+	UserID     int64           `json:"user_id"`
 	Type       EmailSourceType `json:"type"`
 	Identifier string          `json:"identifier"`
 	Name       string          `json:"name"`
@@ -26,12 +27,12 @@ type EmailSource struct {
 	UpdatedAt  time.Time       `json:"updated_at"`
 }
 
-// CreateEmailSource creates a new email source
-func (d *DB) CreateEmailSource(sourceType EmailSourceType, identifier, name string) (*EmailSource, error) {
+// CreateEmailSource creates a new email source for a user
+func (d *DB) CreateEmailSource(userID int64, sourceType EmailSourceType, identifier, name string) (*EmailSource, error) {
 	result, err := d.Exec(`
-		INSERT INTO email_sources (type, identifier, name)
-		VALUES (?, ?, ?)
-	`, sourceType, identifier, name)
+		INSERT INTO email_sources (user_id, type, identifier, name)
+		VALUES (?, ?, ?, ?)
+	`, userID, sourceType, identifier, name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create email source: %w", err)
 	}
@@ -82,12 +83,12 @@ func (d *DB) GetEmailSourceByIdentifier(sourceType EmailSourceType, identifier s
 	return &source, nil
 }
 
-// ListEmailSources retrieves all email sources
-func (d *DB) ListEmailSources() ([]*EmailSource, error) {
+// ListEmailSources retrieves all email sources for a user
+func (d *DB) ListEmailSources(userID int64) ([]*EmailSource, error) {
 	rows, err := d.Query(`
-		SELECT id, type, identifier, name, enabled, created_at, updated_at
-		FROM email_sources ORDER BY created_at DESC
-	`)
+		SELECT id, user_id, type, identifier, name, enabled, created_at, updated_at
+		FROM email_sources WHERE user_id = ? ORDER BY created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list email sources: %w", err)
 	}
@@ -96,7 +97,7 @@ func (d *DB) ListEmailSources() ([]*EmailSource, error) {
 	var sources []*EmailSource
 	for rows.Next() {
 		var source EmailSource
-		if err := rows.Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
+		if err := rows.Scan(&source.ID, &source.UserID, &source.Type, &source.Identifier, &source.Name,
 			&source.Enabled, &source.CreatedAt, &source.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email source: %w", err)
 		}
@@ -106,12 +107,12 @@ func (d *DB) ListEmailSources() ([]*EmailSource, error) {
 	return sources, rows.Err()
 }
 
-// ListEmailSourcesByType retrieves email sources filtered by type
-func (d *DB) ListEmailSourcesByType(sourceType EmailSourceType) ([]*EmailSource, error) {
+// ListEmailSourcesByType retrieves email sources for a user filtered by type
+func (d *DB) ListEmailSourcesByType(userID int64, sourceType EmailSourceType) ([]*EmailSource, error) {
 	rows, err := d.Query(`
-		SELECT id, type, identifier, name, enabled, created_at, updated_at
-		FROM email_sources WHERE type = ? ORDER BY created_at DESC
-	`, sourceType)
+		SELECT id, user_id, type, identifier, name, enabled, created_at, updated_at
+		FROM email_sources WHERE user_id = ? AND type = ? ORDER BY created_at DESC
+	`, userID, sourceType)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list email sources by type: %w", err)
 	}
@@ -120,7 +121,7 @@ func (d *DB) ListEmailSourcesByType(sourceType EmailSourceType) ([]*EmailSource,
 	var sources []*EmailSource
 	for rows.Next() {
 		var source EmailSource
-		if err := rows.Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
+		if err := rows.Scan(&source.ID, &source.UserID, &source.Type, &source.Identifier, &source.Name,
 			&source.Enabled, &source.CreatedAt, &source.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email source: %w", err)
 		}
@@ -130,12 +131,12 @@ func (d *DB) ListEmailSourcesByType(sourceType EmailSourceType) ([]*EmailSource,
 	return sources, rows.Err()
 }
 
-// ListEnabledEmailSources retrieves all enabled email sources
-func (d *DB) ListEnabledEmailSources() ([]*EmailSource, error) {
+// ListEnabledEmailSources retrieves all enabled email sources for a user
+func (d *DB) ListEnabledEmailSources(userID int64) ([]*EmailSource, error) {
 	rows, err := d.Query(`
-		SELECT id, type, identifier, name, enabled, created_at, updated_at
-		FROM email_sources WHERE enabled = 1 ORDER BY created_at DESC
-	`)
+		SELECT id, user_id, type, identifier, name, enabled, created_at, updated_at
+		FROM email_sources WHERE user_id = ? AND enabled = 1 ORDER BY created_at DESC
+	`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list enabled email sources: %w", err)
 	}
@@ -144,7 +145,7 @@ func (d *DB) ListEnabledEmailSources() ([]*EmailSource, error) {
 	var sources []*EmailSource
 	for rows.Next() {
 		var source EmailSource
-		if err := rows.Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
+		if err := rows.Scan(&source.ID, &source.UserID, &source.Type, &source.Identifier, &source.Name,
 			&source.Enabled, &source.CreatedAt, &source.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan email source: %w", err)
 		}

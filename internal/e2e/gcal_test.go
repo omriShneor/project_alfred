@@ -150,11 +150,13 @@ func TestGCalEventSync(t *testing.T) {
 
 	// Create channel and event
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Sync Test Channel").
 		MustBuild(ts.DB)
 
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Event to Sync").
 		Pending().
 		MustBuild(ts.DB)

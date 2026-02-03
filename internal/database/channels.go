@@ -113,10 +113,14 @@ func (d *DB) UpdateChannel(id int64, name string, enabled bool) error {
 	return nil
 }
 
-func (d *DB) DeleteChannel(id int64) error {
-	_, err := d.Exec(`DELETE FROM channels WHERE id = ?`, id)
+func (d *DB) DeleteChannel(userID, id int64) error {
+	result, err := d.Exec(`DELETE FROM channels WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete channel: %w", err)
+	}
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return fmt.Errorf("channel not found")
 	}
 	return nil
 }

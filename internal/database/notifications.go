@@ -26,8 +26,26 @@ type UserNotificationPrefs struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
-// GetUserNotificationPrefs retrieves all notification preferences
-func (d *DB) GetUserNotificationPrefs() (*UserNotificationPrefs, error) {
+// EnsureNotificationPrefs creates default notification preferences for a user if they don't exist
+func (d *DB) EnsureNotificationPrefs(userID int64) error {
+	_, err := d.Exec(`
+		INSERT INTO user_notification_preferences (user_id)
+		VALUES (?)
+		ON CONFLICT(user_id) DO NOTHING
+	`, userID)
+	if err != nil {
+		return fmt.Errorf("failed to ensure notification prefs: %w", err)
+	}
+	return nil
+}
+
+// GetUserNotificationPrefs retrieves all notification preferences for a user
+func (d *DB) GetUserNotificationPrefs(userID int64) (*UserNotificationPrefs, error) {
+	// Ensure row exists first
+	if err := d.EnsureNotificationPrefs(userID); err != nil {
+		return nil, err
+	}
+
 	var prefs UserNotificationPrefs
 	err := d.QueryRow(`
 		SELECT
@@ -37,8 +55,8 @@ func (d *DB) GetUserNotificationPrefs() (*UserNotificationPrefs, error) {
 			webhook_enabled, COALESCE(webhook_url, ''),
 			updated_at
 		FROM user_notification_preferences
-		WHERE id = 1
-	`).Scan(
+		WHERE user_id = ?
+	`, userID).Scan(
 		&prefs.EmailEnabled, &prefs.EmailAddress,
 		&prefs.PushEnabled, &prefs.PushToken,
 		&prefs.SMSEnabled, &prefs.SMSPhone,
@@ -51,39 +69,54 @@ func (d *DB) GetUserNotificationPrefs() (*UserNotificationPrefs, error) {
 	return &prefs, nil
 }
 
-// UpdateEmailPrefs updates only email notification settings
-func (d *DB) UpdateEmailPrefs(enabled bool, address string) error {
+// UpdateEmailPrefs updates only email notification settings for a user
+func (d *DB) UpdateEmailPrefs(userID int64, enabled bool, address string) error {
+	// First ensure the row exists
+	if err := d.EnsureNotificationPrefs(userID); err != nil {
+		return err
+	}
+
 	_, err := d.Exec(`
 		UPDATE user_notification_preferences
 		SET email_enabled = ?, email_address = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = 1
-	`, enabled, address)
+		WHERE user_id = ?
+	`, enabled, address, userID)
 	if err != nil {
 		return fmt.Errorf("failed to update email prefs: %w", err)
 	}
 	return nil
 }
 
-// UpdatePushPrefs enables/disables push notifications
-func (d *DB) UpdatePushPrefs(enabled bool) error {
+// UpdatePushPrefs enables/disables push notifications for a user
+func (d *DB) UpdatePushPrefs(userID int64, enabled bool) error {
+	// First ensure the row exists
+	if err := d.EnsureNotificationPrefs(userID); err != nil {
+		return err
+	}
+
 	_, err := d.Exec(`
 		UPDATE user_notification_preferences
 		SET push_enabled = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = 1
-	`, enabled)
+		WHERE user_id = ?
+	`, enabled, userID)
 	if err != nil {
 		return fmt.Errorf("failed to update push prefs: %w", err)
 	}
 	return nil
 }
 
-// UpdatePushToken stores the Expo push token
-func (d *DB) UpdatePushToken(token string) error {
+// UpdatePushToken stores the Expo push token for a user
+func (d *DB) UpdatePushToken(userID int64, token string) error {
+	// First ensure the row exists
+	if err := d.EnsureNotificationPrefs(userID); err != nil {
+		return err
+	}
+
 	_, err := d.Exec(`
 		UPDATE user_notification_preferences
 		SET push_token = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = 1
-	`, token)
+		WHERE user_id = ?
+	`, token, userID)
 	if err != nil {
 		return fmt.Errorf("failed to update push token: %w", err)
 	}

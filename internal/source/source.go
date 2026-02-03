@@ -25,6 +25,7 @@ const (
 
 // Message represents a message from any source (WhatsApp, Telegram, Gmail)
 type Message struct {
+	UserID     int64      // User who owns this channel
 	SourceType SourceType
 	SourceID   int64  // Channel/source database ID
 	Identifier string // WhatsApp phone number / Telegram user ID / email address
@@ -38,6 +39,7 @@ type Message struct {
 // Channel represents a tracked source (contact, group, email sender)
 type Channel struct {
 	ID         int64
+	UserID     int64
 	SourceType SourceType
 	Type       ChannelType
 	Identifier string

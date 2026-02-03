@@ -20,7 +20,7 @@ const (
 type Processor struct {
 	db               *database.DB
 	gcalClient       *gcal.Client
-	analyzer         agent.Analyzer         // Event analyzer
+	eventAnalyzer    agent.EventAnalyzer    // Event analyzer
 	reminderAnalyzer agent.ReminderAnalyzer // Reminder analyzer
 	msgChan          <-chan source.Message
 	historySize      int
@@ -37,7 +37,7 @@ type Processor struct {
 func New(
 	db *database.DB,
 	gcalClient *gcal.Client,
-	analyzer agent.Analyzer,
+	eventAnalyzer agent.EventAnalyzer,
 	reminderAnalyzer agent.ReminderAnalyzer,
 	msgChan <-chan source.Message,
 	historySize int,
@@ -52,7 +52,7 @@ func New(
 	return &Processor{
 		db:               db,
 		gcalClient:       gcalClient,
-		analyzer:         analyzer,
+		eventAnalyzer:    eventAnalyzer,
 		reminderAnalyzer: reminderAnalyzer,
 		msgChan:          msgChan,
 		historySize:      historySize,
@@ -66,8 +66,8 @@ func New(
 
 // Start begins processing messages from the channel
 func (p *Processor) Start() error {
-	if p.analyzer == nil || !p.analyzer.IsConfigured() {
-		fmt.Println("Event processor: Analyzer not configured, processor disabled")
+	if p.eventAnalyzer == nil || !p.eventAnalyzer.IsConfigured() {
+		fmt.Println("Event processor: EventAnalyzer not configured, processor disabled")
 		return nil
 	}
 
@@ -143,7 +143,7 @@ func (p *Processor) processMessage(msg source.Message) error {
 	}
 
 	// Get existing active events (pending + synced) for this channel
-	existingEvents, err := p.db.GetActiveEventsForChannel(msg.SourceID)
+	existingEvents, err := p.db.GetActiveEventsForChannel(msg.UserID, msg.SourceID)
 	if err != nil {
 		fmt.Printf("Warning: failed to get existing events: %v\n", err)
 		existingEvents = []database.CalendarEvent{}
@@ -161,9 +161,9 @@ func (p *Processor) processMessage(msg source.Message) error {
 	newMessageRecord := convertSourceMessageToRecord(storedMsg)
 
 	// Run event analyzer (independent goroutine - fire and forget)
-	if p.analyzer != nil && p.analyzer.IsConfigured() {
+	if p.eventAnalyzer != nil && p.eventAnalyzer.IsConfigured() {
 		go func() {
-			analysis, err := p.analyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
+			analysis, err := p.eventAnalyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
 			if err != nil {
 				fmt.Printf("Event analysis error: %v\n", err)
 				return

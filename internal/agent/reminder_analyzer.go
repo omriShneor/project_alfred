@@ -7,7 +7,7 @@ import (
 )
 
 // ReminderAnalyzer is the interface for reminder detection
-// It runs independently from the event Analyzer
+// It runs independently from the EventAnalyzer
 type ReminderAnalyzer interface {
 	// AnalyzeMessages analyzes chat messages for reminders
 	AnalyzeMessages(

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/auth"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/gmail"
@@ -27,15 +28,17 @@ type Server struct {
 	onboardingState  *sse.State
 	state            *sse.State // Alias for onboardingState (for consistency)
 	notifyService    *notify.Service
-	analyzer         agent.Analyzer
+	eventAnalyzer    agent.EventAnalyzer
 	reminderAnalyzer agent.ReminderAnalyzer
 	httpSrv          *http.Server
 	port             int
-	resendAPIKey     string      // For checking email availability
-	oauthCodeChan    chan string // Channel to receive OAuth code from callback
-	// Gmail worker config
-	gmailPollInterval int
-	gmailMaxEmails    int
+	resendAPIKey      string      // For checking email availability
+	oauthCodeChan     chan string // Channel to receive OAuth code from callback
+	gmailPollInterval int         // Gmail worker poll interval in minutes
+	gmailMaxEmails    int         // Gmail worker max emails per poll
+	// Authentication
+	authService    *auth.Service
+	authMiddleware *auth.Middleware
 }
 
 // ServerConfig holds configuration for initial server creation (onboarding-capable)
@@ -44,6 +47,12 @@ type ServerConfig struct {
 	OnboardingState *sse.State
 	Port            int
 	ResendAPIKey    string
+	// Auth configuration (optional - auth disabled if not provided)
+	CredentialsFile string // Path to Google OAuth credentials file
+	CredentialsJSON string // Google OAuth credentials as JSON string
+	// Gmail worker configuration
+	GmailPollInterval int // Minutes between Gmail polls (default: 1)
+	GmailMaxEmails    int // Max emails per poll (default: 10)
 }
 
 // ClientsConfig holds configuration for completing initialization after onboarding
@@ -54,20 +63,39 @@ type ClientsConfig struct {
 	GmailClient      *gmail.Client
 	GmailWorker      *gmail.Worker
 	NotifyService    *notify.Service
-	Analyzer         agent.Analyzer
+	EventAnalyzer    agent.EventAnalyzer
 	ReminderAnalyzer agent.ReminderAnalyzer
-	// Gmail worker config
-	GmailPollInterval int
-	GmailMaxEmails    int
 }
 
 func New(cfg ServerConfig) *Server {
+	// Apply defaults for Gmail config
+	gmailPollInterval := cfg.GmailPollInterval
+	if gmailPollInterval <= 0 {
+		gmailPollInterval = 1 // Default: 1 minute
+	}
+	gmailMaxEmails := cfg.GmailMaxEmails
+	if gmailMaxEmails <= 0 {
+		gmailMaxEmails = 10 // Default: 10 emails
+	}
+
 	s := &Server{
-		db:              cfg.DB,
-		onboardingState: cfg.OnboardingState,
-		state:           cfg.OnboardingState, // Alias for consistency
-		port:            cfg.Port,
-		resendAPIKey:    cfg.ResendAPIKey,
+		db:                cfg.DB,
+		onboardingState:   cfg.OnboardingState,
+		state:             cfg.OnboardingState, // Alias for consistency
+		port:              cfg.Port,
+		resendAPIKey:      cfg.ResendAPIKey,
+		gmailPollInterval: gmailPollInterval,
+		gmailMaxEmails:    gmailMaxEmails,
+	}
+
+	// Initialize authentication if credentials are available
+	authCfg := AuthConfig{
+		CredentialsFile: cfg.CredentialsFile,
+		CredentialsJSON: cfg.CredentialsJSON,
+	}
+	if err := s.initAuth(authCfg); err != nil {
+		// Auth initialization is optional - log warning but continue
+		fmt.Printf("Warning: authentication not configured: %v\n", err)
 	}
 
 	mux := http.NewServeMux()
@@ -92,10 +120,8 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.gmailClient = cfg.GmailClient
 	s.gmailWorker = cfg.GmailWorker
 	s.notifyService = cfg.NotifyService
-	s.analyzer = cfg.Analyzer
+	s.eventAnalyzer = cfg.EventAnalyzer
 	s.reminderAnalyzer = cfg.ReminderAnalyzer
-	s.gmailPollInterval = cfg.GmailPollInterval
-	s.gmailMaxEmails = cfg.GmailMaxEmails
 }
 
 // SetGCalClient sets the gcal client (used during onboarding before full initialization)
@@ -116,6 +142,12 @@ func (s *Server) SetTGClient(client *telegram.Client) {
 func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Health check
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
+
+	// Authentication API (public routes)
+	mux.HandleFunc("GET /api/auth/google", s.handleAuthGoogle)
+	mux.HandleFunc("POST /api/auth/google/callback", s.handleAuthGoogleCallback)
+	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 
 	// Onboarding API
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
@@ -267,19 +299,11 @@ func (s *Server) initializeGmailClient() error {
 	fmt.Println("Gmail client initialized after OAuth")
 
 	// Create and start Gmail worker if we have the required dependencies
-	if s.db != nil && s.analyzer != nil && s.notifyService != nil {
-		emailProc := processor.NewEmailProcessor(s.db, s.analyzer, s.reminderAnalyzer, s.notifyService)
-		pollInterval := s.gmailPollInterval
-		if pollInterval <= 0 {
-			pollInterval = 1 // Default to 1 minute
-		}
-		maxEmails := s.gmailMaxEmails
-		if maxEmails <= 0 {
-			maxEmails = 10 // Default to 10
-		}
+	if s.db != nil && s.eventAnalyzer != nil && s.notifyService != nil {
+		emailProc := processor.NewEmailProcessor(s.db, s.eventAnalyzer, s.reminderAnalyzer, s.notifyService)
 		s.gmailWorker = gmail.NewWorker(gmailClient, s.db, emailProc, gmail.WorkerConfig{
-			PollIntervalMinutes: pollInterval,
-			MaxEmailsPerPoll:    maxEmails,
+			PollIntervalMinutes: s.gmailPollInterval,
+			MaxEmailsPerPoll:    s.gmailMaxEmails,
 		})
 		if err := s.gmailWorker.Start(); err != nil {
 			fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)

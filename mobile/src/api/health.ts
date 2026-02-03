@@ -7,5 +7,6 @@ export interface HealthStatus {
 }
 
 export async function getHealth(): Promise<HealthStatus> {
-  return apiClient.get<HealthStatus>('/health');
+  // Health check is a public endpoint, skip auth
+  return apiClient.get<HealthStatus>('/health', { skipAuth: true });
 }

@@ -11,6 +11,7 @@ import (
 // SourceChannel represents a tracked channel with source type information
 type SourceChannel struct {
 	ID                int64              `json:"id"`
+	UserID            int64              `json:"user_id"`
 	SourceType        source.SourceType  `json:"source_type"`
 	Type              source.ChannelType `json:"type"`
 	Identifier        string             `json:"identifier"`
@@ -25,6 +26,7 @@ type SourceChannel struct {
 func (sc *SourceChannel) ToSourceChannel() source.Channel {
 	return source.Channel{
 		ID:         sc.ID,
+		UserID:     sc.UserID,
 		SourceType: sc.SourceType,
 		Type:       sc.Type,
 		Identifier: sc.Identifier,
@@ -34,11 +36,11 @@ func (sc *SourceChannel) ToSourceChannel() source.Channel {
 	}
 }
 
-// CreateSourceChannel creates a channel for any source type
-func (d *DB) CreateSourceChannel(sourceType source.SourceType, channelType source.ChannelType, identifier, name string) (*SourceChannel, error) {
+// CreateSourceChannel creates a channel for any source type for a user
+func (d *DB) CreateSourceChannel(userID int64, sourceType source.SourceType, channelType source.ChannelType, identifier, name string) (*SourceChannel, error) {
 	result, err := d.Exec(
-		`INSERT INTO channels (source_type, type, identifier, name) VALUES (?, ?, ?, ?)`,
-		sourceType, channelType, identifier, name,
+		`INSERT INTO channels (user_id, source_type, type, identifier, name) VALUES (?, ?, ?, ?, ?)`,
+		userID, sourceType, channelType, identifier, name,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create source channel: %w", err)
@@ -55,7 +57,7 @@ func (d *DB) CreateSourceChannel(sourceType source.SourceType, channelType sourc
 // GetSourceChannelByID retrieves a channel by ID
 func (d *DB) GetSourceChannelByID(id int64) (*SourceChannel, error) {
 	row := d.QueryRow(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
+		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE id = ?`,
 		id,
 	)
@@ -65,7 +67,7 @@ func (d *DB) GetSourceChannelByID(id int64) (*SourceChannel, error) {
 // GetSourceChannelByIdentifier retrieves a channel by source type and identifier
 func (d *DB) GetSourceChannelByIdentifier(sourceType source.SourceType, identifier string) (*SourceChannel, error) {
 	row := d.QueryRow(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
+		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE source_type = ? AND identifier = ?`,
 		sourceType, identifier,
 	)
@@ -75,7 +77,7 @@ func (d *DB) GetSourceChannelByIdentifier(sourceType source.SourceType, identifi
 // ListSourceChannels lists all channels for a given source type
 func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
+		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE source_type = ? ORDER BY created_at DESC`,
 		sourceType,
 	)
@@ -99,7 +101,7 @@ func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel,
 // ListEnabledSourceChannels lists all enabled channels for a source type
 func (d *DB) ListEnabledSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(
-		`SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
+		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
 		 FROM channels WHERE source_type = ? AND enabled = 1 ORDER BY created_at DESC`,
 		sourceType,
 	)
@@ -177,7 +179,7 @@ func (d *DB) UpdateChannelStats(id int64, totalMessageCount int, lastMessageAt *
 // This uses total_message_count which is populated during HistorySync with accurate counts
 func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit int) ([]*SourceChannel, error) {
 	rows, err := d.Query(`
-		SELECT id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled,
+		SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled,
 		       total_message_count, last_message_at, created_at
 		FROM channels
 		WHERE source_type = ? AND total_message_count > 1
@@ -193,7 +195,7 @@ func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit in
 	for rows.Next() {
 		var c SourceChannel
 		var lastMsgAt sql.NullTime
-		if err := rows.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name,
+		if err := rows.Scan(&c.ID, &c.UserID, &c.SourceType, &c.Type, &c.Identifier, &c.Name,
 			&c.Enabled, &c.TotalMessageCount, &lastMsgAt, &c.CreatedAt); err != nil {
 			continue
 		}
@@ -208,7 +210,7 @@ func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit in
 
 func scanSourceChannel(row *sql.Row) (*SourceChannel, error) {
 	var c SourceChannel
-	err := row.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
+	err := row.Scan(&c.ID, &c.UserID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -220,7 +222,7 @@ func scanSourceChannel(row *sql.Row) (*SourceChannel, error) {
 
 func scanSourceChannelRows(rows *sql.Rows) (*SourceChannel, error) {
 	var c SourceChannel
-	err := rows.Scan(&c.ID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
+	err := rows.Scan(&c.ID, &c.UserID, &c.SourceType, &c.Type, &c.Identifier, &c.Name, &c.Enabled, &c.CreatedAt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to scan source channel: %w", err)
 	}

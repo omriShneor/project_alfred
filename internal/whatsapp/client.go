@@ -15,6 +15,7 @@ import (
 )
 
 type Client struct {
+	UserID        int64 // User who owns this client (for multi-user support)
 	WAClient      *whatsmeow.Client
 	handler       *Handler
 	container     *sqlstore.Container
@@ -158,7 +159,7 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 				}
 				time.Sleep(5 * time.Second) // Wait 5 seconds for the App UI to complete.
 				if c.notifyService != nil {
-					c.notifyService.NotifyWhatsAppConnected(context.Background())
+					c.notifyService.NotifyWhatsAppConnected(context.Background(), c.UserID)
 				}
 				return
 			case "timeout":

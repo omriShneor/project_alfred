@@ -6,9 +6,9 @@ import (
 	"github.com/omriShneor/project_alfred/internal/database"
 )
 
-// Analyzer is the interface for event analysis, providing backward compatibility
+// EventAnalyzer is the interface for event analysis, providing backward compatibility
 // between the old claude.Client and the new tool-calling agent
-type Analyzer interface {
+type EventAnalyzer interface {
 	// AnalyzeMessages analyzes chat messages (WhatsApp, Telegram) for calendar events
 	AnalyzeMessages(
 		ctx context.Context,

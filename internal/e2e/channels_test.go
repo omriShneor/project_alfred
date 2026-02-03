@@ -75,6 +75,7 @@ func TestChannelCRUD(t *testing.T) {
 
 	// Create a channel first
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Test Contact").
 		WithIdentifier("test@s.whatsapp.net").
@@ -126,6 +127,7 @@ func TestChannelWithEvents(t *testing.T) {
 
 	// Create channel with events
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("Event Channel").
 		MustBuild(ts.DB)
@@ -133,6 +135,7 @@ func TestChannelWithEvents(t *testing.T) {
 	// Create some events for this channel
 	for i := 1; i <= 3; i++ {
 		testutil.NewEventBuilder(channel.ID).
+			WithUserID(ts.TestUser.ID).
 			WithTitle(fmt.Sprintf("Event %d", i)).
 			Pending().
 			MustBuild(ts.DB)
@@ -161,6 +164,7 @@ func TestMultipleChannelSources(t *testing.T) {
 
 	// Create WhatsApp channel
 	waChannel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		WhatsApp().
 		WithName("WhatsApp Contact").
 		WithIdentifier("wa@s.whatsapp.net").
@@ -168,6 +172,7 @@ func TestMultipleChannelSources(t *testing.T) {
 
 	// Create Telegram channel
 	tgChannel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		Telegram().
 		WithName("Telegram Contact").
 		WithIdentifier("tg_user_456").

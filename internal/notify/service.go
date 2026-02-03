@@ -26,9 +26,9 @@ func NewService(db *database.DB, emailNotifier Notifier, pushNotifier Notifier) 
 // NotifyPendingEvent sends notifications for a new pending event
 // based on user preferences. Errors are logged but don't fail the operation.
 func (s *Service) NotifyPendingEvent(ctx context.Context, event *database.CalendarEvent) {
-	fmt.Printf("Notification: Processing event %d (%s)\n", event.ID, event.Title)
+	fmt.Printf("Notification: Processing event %d (%s) for user %d\n", event.ID, event.Title, event.UserID)
 
-	prefs, err := s.db.GetUserNotificationPrefs()
+	prefs, err := s.db.GetUserNotificationPrefs(event.UserID)
 	if err != nil {
 		fmt.Printf("Notification: Failed to get prefs: %v\n", err)
 		return
@@ -89,9 +89,9 @@ func (s *Service) IsPushAvailable() bool {
 // NotifyPendingReminder sends notifications for a new pending reminder
 // based on user preferences. Errors are logged but don't fail the operation.
 func (s *Service) NotifyPendingReminder(ctx context.Context, reminder *database.Reminder) {
-	fmt.Printf("Notification: Processing reminder %d (%s)\n", reminder.ID, reminder.Title)
+	fmt.Printf("Notification: Processing reminder %d (%s) for user %d\n", reminder.ID, reminder.Title, reminder.UserID)
 
-	prefs, err := s.db.GetUserNotificationPrefs()
+	prefs, err := s.db.GetUserNotificationPrefs(reminder.UserID)
 	if err != nil {
 		fmt.Printf("Notification: Failed to get prefs: %v\n", err)
 		return
@@ -121,10 +121,10 @@ func (s *Service) NotifyPendingReminder(ctx context.Context, reminder *database.
 	}
 }
 
-func (s *Service) NotifyWhatsAppConnected(ctx context.Context) {
-	fmt.Println("Notification: WhatsApp connected, checking push preferences")
+func (s *Service) NotifyWhatsAppConnected(ctx context.Context, userID int64) {
+	fmt.Printf("Notification: WhatsApp connected for user %d, checking push preferences\n", userID)
 
-	prefs, err := s.db.GetUserNotificationPrefs()
+	prefs, err := s.db.GetUserNotificationPrefs(userID)
 	if err != nil {
 		fmt.Printf("Notification: Failed to get prefs: %v\n", err)
 		return

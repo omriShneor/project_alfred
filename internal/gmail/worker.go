@@ -13,14 +13,14 @@ import (
 type DBInterface interface {
 	IsEmailProcessed(emailID string) (bool, error)
 	MarkEmailProcessed(emailID string) error
-	GetGmailSettings() (*database.GmailSettings, error)
-	UpdateGmailLastPoll() error
-	ListEnabledEmailSources() ([]*database.EmailSource, error)
+	GetGmailSettings(userID int64) (*database.GmailSettings, error)
+	UpdateGmailLastPoll(userID int64) error
+	ListEnabledEmailSources(userID int64) ([]*database.EmailSource, error)
 	// Top contacts caching
-	GetTopContacts(limit int) ([]database.TopContact, error)
-	ReplaceTopContacts(contacts []database.TopContact) error
-	GetTopContactsComputedAt() (*time.Time, error)
-	SetTopContactsComputedAt(t time.Time) error
+	GetTopContacts(userID int64, limit int) ([]database.TopContact, error)
+	ReplaceTopContacts(userID int64, contacts []database.TopContact) error
+	GetTopContactsComputedAt(userID int64) (*time.Time, error)
+	SetTopContactsComputedAt(userID int64, t time.Time) error
 }
 
 // EmailProcessor interface for processing emails
@@ -34,6 +34,7 @@ type Worker struct {
 	scanner      *Scanner
 	db           DBInterface
 	processor    EmailProcessor
+	userID       int64 // User this worker is processing for
 	pollInterval time.Duration
 	maxEmails    int64
 
@@ -45,11 +46,12 @@ type Worker struct {
 
 // WorkerConfig contains configuration for the email worker
 type WorkerConfig struct {
+	UserID              int64
 	PollIntervalMinutes int
 	MaxEmailsPerPoll    int
 }
 
-// NewWorker creates a new Gmail worker
+// NewWorker creates a new Gmail worker for a specific user
 func NewWorker(client *Client, db DBInterface, processor EmailProcessor, config WorkerConfig) *Worker {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -68,6 +70,7 @@ func NewWorker(client *Client, db DBInterface, processor EmailProcessor, config 
 		scanner:      NewScanner(client),
 		db:           db,
 		processor:    processor,
+		userID:       config.UserID,
 		pollInterval: pollInterval,
 		maxEmails:    maxEmails,
 		ctx:          ctx,
@@ -147,7 +150,7 @@ func (w *Worker) poll() {
 	}
 
 	// Check if Gmail is enabled in settings
-	settings, err := w.db.GetGmailSettings()
+	settings, err := w.db.GetGmailSettings(w.userID)
 	if err != nil {
 		fmt.Printf("Gmail worker: failed to get settings: %v\n", err)
 		return
@@ -157,7 +160,7 @@ func (w *Worker) poll() {
 	}
 
 	// Get enabled sources from database
-	dbSources, err := w.db.ListEnabledEmailSources()
+	dbSources, err := w.db.ListEnabledEmailSources(w.userID)
 	if err != nil {
 		fmt.Printf("Gmail worker: failed to get sources: %v\n", err)
 		return
@@ -200,7 +203,7 @@ func (w *Worker) poll() {
 	}
 
 	if len(results) == 0 {
-		if err := w.db.UpdateGmailLastPoll(); err != nil {
+		if err := w.db.UpdateGmailLastPoll(w.userID); err != nil {
 			fmt.Printf("Gmail worker: failed to update last poll: %v\n", err)
 		}
 		return
@@ -249,7 +252,7 @@ func (w *Worker) poll() {
 	fmt.Printf("Gmail worker: processed %d new emails\n", processedCount)
 
 	// Update last poll time
-	if err := w.db.UpdateGmailLastPoll(); err != nil {
+	if err := w.db.UpdateGmailLastPoll(w.userID); err != nil {
 		fmt.Printf("Gmail worker: failed to update last poll: %v\n", err)
 	}
 }
@@ -261,7 +264,7 @@ func (w *Worker) PollNow() {
 
 // maybeRefreshTopContacts checks if top contacts need refreshing (every 3 days)
 func (w *Worker) maybeRefreshTopContacts() {
-	lastComputed, err := w.db.GetTopContactsComputedAt()
+	lastComputed, err := w.db.GetTopContactsComputedAt(w.userID)
 	if err != nil {
 		fmt.Printf("Gmail worker: failed to get top contacts computed at: %v\n", err)
 		return
@@ -308,12 +311,12 @@ func (w *Worker) refreshTopContacts() {
 		}
 	}
 
-	if err := w.db.ReplaceTopContacts(dbContacts); err != nil {
+	if err := w.db.ReplaceTopContacts(w.userID, dbContacts); err != nil {
 		fmt.Printf("Gmail worker: failed to replace top contacts: %v\n", err)
 		return
 	}
 
-	if err := w.db.SetTopContactsComputedAt(time.Now()); err != nil {
+	if err := w.db.SetTopContactsComputedAt(w.userID, time.Now()); err != nil {
 		fmt.Printf("Gmail worker: failed to set top contacts computed at: %v\n", err)
 		return
 	}

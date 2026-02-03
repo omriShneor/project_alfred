@@ -12,6 +12,7 @@ import (
 
 // Handler processes incoming Telegram messages (contacts only)
 type Handler struct {
+	UserID           int64 // User who owns this handler (for multi-user support)
 	db               *database.DB
 	debugAllMessages bool
 	messageChan      chan source.Message
@@ -22,10 +23,23 @@ type Handler struct {
 // NewHandler creates a new Telegram message handler
 func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
 	return &Handler{
+		UserID:           0, // Will be set by ClientManager in multi-user mode
 		db:               db,
 		debugAllMessages: debugAllMessages,
 		messageChan:      make(chan source.Message, 100),
 		state:            state,
+		users:            make(map[int64]*tg.User),
+	}
+}
+
+// NewHandlerForUser creates a handler for a specific user (multi-user mode)
+func NewHandlerForUser(userID int64, db *database.DB) *Handler {
+	return &Handler{
+		UserID:           userID,
+		db:               db,
+		debugAllMessages: false,
+		messageChan:      make(chan source.Message, 100),
+		state:            nil,
 		users:            make(map[int64]*tg.User),
 	}
 }

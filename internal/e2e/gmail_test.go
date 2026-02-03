@@ -106,16 +106,18 @@ func TestGmailSourceManagement(t *testing.T) {
 
 func TestGmailSourceCRUD(t *testing.T) {
 	ts := testutil.NewTestServer(t)
+	userID := ts.TestUser.ID
 
 	// Create a Gmail source first
 	channel := testutil.NewChannelBuilder().
 		Gmail().
+		WithUserID(userID).
 		WithName("Gmail Source").
 		WithIdentifier("test@gmail.com").
 		MustBuild(ts.DB)
 
 	// Get the corresponding email source
-	sources, err := ts.DB.ListEmailSources()
+	sources, err := ts.DB.ListEmailSources(userID)
 	require.NoError(t, err)
 
 	var sourceID int64
@@ -130,7 +132,7 @@ func TestGmailSourceCRUD(t *testing.T) {
 	// (the channel builder creates in channels table, not email_sources)
 	if sourceID == 0 {
 		// Create directly in email_sources
-		source, err := ts.DB.CreateEmailSource("sender", "direct@gmail.com", "Direct Source")
+		source, err := ts.DB.CreateEmailSource(userID, database.EmailSourceTypeSender, "direct@gmail.com", "Direct Source")
 		require.NoError(t, err)
 		sourceID = source.ID
 	}
@@ -256,6 +258,7 @@ func TestGmailEventsFromSource(t *testing.T) {
 
 	// Create Gmail channel (for event association)
 	channel := testutil.NewChannelBuilder().
+		WithUserID(ts.TestUser.ID).
 		Gmail().
 		WithName("Gmail Event Source").
 		WithIdentifier("events@company.com").
@@ -263,6 +266,7 @@ func TestGmailEventsFromSource(t *testing.T) {
 
 	// Create event for this channel
 	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(ts.TestUser.ID).
 		WithTitle("Email Event").
 		WithDescription("Meeting request from email").
 		Pending().

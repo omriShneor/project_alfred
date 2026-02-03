@@ -13,6 +13,8 @@ import (
 // Gmail Status API
 
 func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	status := map[string]interface{}{
 		"connected":  false,
 		"enabled":    false,
@@ -33,7 +35,7 @@ func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get settings
-	settings, err := s.db.GetGmailSettings()
+	settings, err := s.db.GetGmailSettings(userID)
 	if err == nil && settings != nil {
 		status["enabled"] = settings.Enabled
 		status["poll_interval_minutes"] = settings.PollIntervalMinutes
@@ -48,15 +50,16 @@ func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
 // Email Sources API (similar to WhatsApp channels)
 
 func (s *Server) handleListEmailSources(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	typeFilter := r.URL.Query().Get("type")
 
 	var sources []*database.EmailSource
 	var err error
 
 	if typeFilter != "" {
-		sources, err = s.db.ListEmailSourcesByType(database.EmailSourceType(typeFilter))
+		sources, err = s.db.ListEmailSourcesByType(userID, database.EmailSourceType(typeFilter))
 	} else {
-		sources, err = s.db.ListEmailSources()
+		sources, err = s.db.ListEmailSources(userID)
 	}
 
 	if err != nil {
@@ -82,6 +85,8 @@ func (s *Server) handleListEmailSources(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	var req struct {
 		Type       string `json:"type"`       // "category", "sender", "domain"
 		Identifier string `json:"identifier"` // e.g., "CATEGORY_PRIMARY", "user@example.com", "example.com"
@@ -114,7 +119,7 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	source, err := s.db.CreateEmailSource(sourceType, req.Identifier, req.Name)
+	source, err := s.db.CreateEmailSource(userID, sourceType, req.Identifier, req.Name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -175,7 +180,9 @@ type topContactResponse struct {
 }
 
 func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
-	contacts, err := s.db.GetTopContacts(8)
+	userID := getUserID(r)
+
+	contacts, err := s.db.GetTopContacts(userID, 8)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -186,11 +193,11 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 	if len(contacts) == 0 && s.gmailWorker != nil {
 		s.gmailWorker.RefreshTopContactsNow()
 		time.Sleep(3 * time.Second)
-		contacts, _ = s.db.GetTopContacts(8)
+		contacts, _ = s.db.GetTopContacts(userID, 8)
 	}
 
 	// Get tracked sender sources to mark which contacts are already tracked
-	senderSources, _ := s.db.ListEmailSourcesByType(database.EmailSourceTypeSender)
+	senderSources, _ := s.db.ListEmailSourcesByType(userID, database.EmailSourceTypeSender)
 	trackedEmails := make(map[string]int64)
 	for _, src := range senderSources {
 		trackedEmails[src.Identifier] = src.ID
@@ -213,6 +220,8 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 // Custom Source API - validates and creates a custom email or domain source
 
 func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	var req struct {
 		Value string `json:"value"` // Email address or domain
 	}
@@ -254,7 +263,7 @@ func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Create source
-	source, err := s.db.CreateEmailSource(sourceType, identifier, name)
+	source, err := s.db.CreateEmailSource(userID, sourceType, identifier, name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

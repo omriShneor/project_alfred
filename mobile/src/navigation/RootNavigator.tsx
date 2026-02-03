@@ -2,27 +2,47 @@ import React, { useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, Linking } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
 import { useExchangeOAuthCode, useHealth, useAppStatus } from '../hooks';
+import { useAuth } from '../auth';
+import { onAuthError } from '../api/client';
 import { MainNavigator } from './MainNavigator';
 import { OnboardingNavigator } from './OnboardingNavigator';
+import { LoginScreen } from '../screens/LoginScreen';
 import { colors } from '../theme/colors';
 import { LoadingSpinner } from '../components/common';
 
 export function RootNavigator() {
+  const { isAuthenticated, isLoading: authLoading, login, logout } = useAuth();
   const { isLoading: healthLoading, isError: healthError } = useHealth();
-  const { data: appStatus, isLoading: statusLoading } = useAppStatus();
+  const { data: appStatus, isLoading: statusLoading, refetch: refetchAppStatus } = useAppStatus();
   const exchangeCode = useExchangeOAuthCode();
 
-  // Handle OAuth callback deep link globally
+  // Listen for auth errors (401 responses) to handle session expiry
+  useEffect(() => {
+    const unsubscribe = onAuthError(() => {
+      // Auth error occurred, user will be logged out automatically
+      // The auth context will update isAuthenticated to false
+    });
+    return unsubscribe;
+  }, []);
+
+  // Handle OAuth callback deep link globally (for Google Calendar OAuth)
   const handleOAuthCallback = useCallback(
     async (code: string) => {
       const redirectUri = ExpoLinking.createURL('oauth/callback');
       try {
-        await exchangeCode.mutateAsync({ code, redirectUri });
+        // If this is a Google sign-in callback, use the auth login
+        // Otherwise, it might be a Google Calendar OAuth callback
+        if (!isAuthenticated) {
+          await login(code, redirectUri);
+        } else {
+          // User already authenticated, this is likely a Google Calendar OAuth
+          await exchangeCode.mutateAsync({ code, redirectUri });
+        }
       } catch (error) {
-        console.error('Failed to exchange OAuth code:', error);
+        console.error('Failed to handle OAuth callback:', error);
       }
     },
-    [exchangeCode]
+    [exchangeCode, isAuthenticated, login]
   );
 
   // Listen for deep links
@@ -44,8 +64,15 @@ export function RootNavigator() {
     return () => subscription.remove();
   }, [handleOAuthCallback]);
 
-  // Show loading state while checking backend health and app status
-  if (healthLoading || statusLoading) {
+  // Refetch app status when authentication changes
+  useEffect(() => {
+    if (isAuthenticated) {
+      refetchAppStatus();
+    }
+  }, [isAuthenticated, refetchAppStatus]);
+
+  // Show loading state while checking auth and backend health
+  if (authLoading || healthLoading) {
     return (
       <View style={styles.loadingContainer}>
         <LoadingSpinner />
@@ -63,6 +90,21 @@ export function RootNavigator() {
         <Text style={styles.errorText}>
           Cannot connect to Alfred backend. Make sure the server is running.
         </Text>
+      </View>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!isAuthenticated) {
+    return <LoginScreen />;
+  }
+
+  // Show loading while fetching app status after authentication
+  if (statusLoading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <LoadingSpinner />
+        <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
   }

@@ -1,12 +1,15 @@
 export const colors = {
   background: '#f5f5f5',
   card: '#ffffff',
+  surface: '#ffffff',
   primary: '#3498db',
   success: '#27ae60',
   warning: '#f39c12',
   danger: '#e74c3c',
+  dangerBackground: '#fdecea',
   text: '#333333',
   textSecondary: '#7f8c8d',
+  textMuted: '#bdc3c7',
   border: '#e0e0e0',
 };
 

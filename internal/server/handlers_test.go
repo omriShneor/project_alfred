@@ -53,9 +53,11 @@ func TestHandleHealthCheck(t *testing.T) {
 
 func TestHandleListChannels(t *testing.T) {
 	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
 
 	// Create some channels
 	_, err := s.db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"channel1@s.whatsapp.net",
@@ -64,6 +66,7 @@ func TestHandleListChannels(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = s.db.CreateSourceChannel(
+		user.ID,
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		"channel2@s.whatsapp.net",
@@ -285,15 +288,15 @@ func TestHandleDeleteChannel(t *testing.T) {
 		assert.Nil(t, deleted)
 	})
 
-	t.Run("delete non-existent channel returns OK (idempotent)", func(t *testing.T) {
+	t.Run("delete non-existent channel returns 404", func(t *testing.T) {
 		req := httptest.NewRequest("DELETE", "/api/channel/999999", nil)
 		req.SetPathValue("id", "999999")
 		w := httptest.NewRecorder()
 
 		s.handleDeleteChannel(w, req)
 
-		// DELETE in SQL doesn't fail if no rows match, handler returns OK
-		assert.Equal(t, http.StatusOK, w.Code)
+		// Returns 404 when channel doesn't exist or doesn't belong to user
+		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
 	t.Run("invalid channel id", func(t *testing.T) {

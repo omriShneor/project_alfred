@@ -372,6 +372,17 @@ func respondError(w http.ResponseWriter, status int, message string) {
 
 // Google Calendar API
 
+// handleClearGoogleTokens clears Google tokens for debugging (development only)
+func (s *Server) handleClearGoogleTokens(w http.ResponseWriter, r *http.Request) {
+	_, err := s.db.Exec("DELETE FROM google_tokens")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to clear tokens: "+err.Error())
+		return
+	}
+	fmt.Printf("[Clear Tokens] Cleared all Google tokens\n")
+	respondJSON(w, http.StatusOK, map[string]string{"status": "tokens_cleared"})
+}
+
 func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 	fmt.Printf("[GCal Status] Checking status for user %d\n", userID)

@@ -33,14 +33,11 @@ func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
 	if !hasGmailScope {
 		// User hasn't granted Gmail access yet
 		status["message"] = "Gmail access not authorized. Please connect Gmail to scan emails."
-	} else if s.gmailClient != nil && s.gmailClient.IsAuthenticated() {
-		// User has scope and Gmail client is ready
+	} else {
+		// User has scope - in multi-user mode, we consider this "connected"
+		// Per-user Gmail clients are created on-demand by the worker
 		status["connected"] = true
 		status["message"] = "Connected"
-	} else {
-		// User has scope but Gmail client not initialized yet
-		status["connected"] = false
-		status["message"] = "Gmail configured but not connected"
 	}
 
 	// Get settings
@@ -209,7 +206,10 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 	senderSources, _ := s.db.ListEmailSourcesByType(userID, database.EmailSourceTypeSender)
 	trackedEmails := make(map[string]int64)
 	for _, src := range senderSources {
-		trackedEmails[src.Identifier] = src.ID
+		// Only include enabled sources
+		if src.Enabled {
+			trackedEmails[src.Identifier] = src.ID
+		}
 	}
 
 	response := make([]topContactResponse, len(contacts))

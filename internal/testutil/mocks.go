@@ -354,6 +354,12 @@ func (m *MockClientManager) CleanupUser(userID int64) error {
 	return nil
 }
 
+// ResetUserSessions performs full logout for a user (deletes sessions)
+func (m *MockClientManager) ResetUserSessions(userID int64) error {
+	// For the mock, this is the same as CleanupUser
+	return m.CleanupUser(userID)
+}
+
 // MessageChan returns the shared message channel
 func (m *MockClientManager) MessageChan() <-chan source.Message {
 	return m.msgChan

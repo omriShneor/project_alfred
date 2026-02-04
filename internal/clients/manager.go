@@ -326,6 +326,29 @@ func (m *ClientManager) CleanupUser(userID int64) error {
 	return nil
 }
 
+// ResetUserSessions performs a full logout for a user (deletes session files)
+// Used for onboarding reset and similar scenarios where complete cleanup is needed
+func (m *ClientManager) ResetUserSessions(userID int64) error {
+	fmt.Printf("ClientManager: Resetting all sessions for user %d\n", userID)
+
+	var errs []error
+
+	if err := m.LogoutWhatsApp(userID); err != nil {
+		errs = append(errs, fmt.Errorf("WhatsApp reset failed: %w", err))
+	}
+
+	if err := m.LogoutTelegram(userID); err != nil {
+		errs = append(errs, fmt.Errorf("Telegram reset failed: %w", err))
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("reset errors for user %d: %v", userID, errs)
+	}
+
+	fmt.Printf("ClientManager: All sessions reset for user %d\n", userID)
+	return nil
+}
+
 // RestoreUserSessions restores sessions for all users on server startup
 func (m *ClientManager) RestoreUserSessions(ctx context.Context) error {
 	fmt.Println("ClientManager: Restoring user sessions...")

@@ -33,8 +33,8 @@ export async function exchangeOAuthCode(code: string): Promise<void> {
   await apiClient.post('/api/gcal/callback', { code });
 }
 
-export async function disconnectGCal(): Promise<void> {
-  await apiClient.post('/api/gcal/disconnect');
+export async function disconnectGScope(scope?: 'gmail' | 'calendar'): Promise<void> {
+  await apiClient.post('/api/gcal/disconnect', scope ? { scope } : {});
 }
 
 // Global Google Calendar Settings

@@ -1,7 +1,6 @@
 import { apiClient } from './client';
 import type {
   Channel,
-  DiscoverableChannel,
   CreateChannelRequest,
   UpdateChannelRequest,
   SourceTopContact,
@@ -25,12 +24,6 @@ export async function updateChannel(
 
 export async function deleteChannel(id: number): Promise<void> {
   await apiClient.delete(`/api/channel/${id}`);
-}
-
-export async function discoverChannels(): Promise<DiscoverableChannel[]> {
-  return apiClient.get<DiscoverableChannel[]>(
-    '/api/discovery/channels'
-  );
 }
 
 // WhatsApp Top Contacts API

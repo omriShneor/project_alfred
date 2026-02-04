@@ -2,12 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Text, StyleSheet, ScrollView, TouchableOpacity, View, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
+import * as ExpoLinking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Button, LoadingSpinner } from '../components/common';
 import { colors } from '../theme/colors';
+import { API_BASE_URL } from '../config/api';
 import {
   useWhatsAppStatus,
   useGCalStatus,
@@ -19,8 +21,9 @@ import {
   useSendTelegramCode,
   useVerifyTelegramCode,
   useDisconnectTelegram,
+  useGmailStatus,
 } from '../hooks';
-import { disconnectGCal } from '../api';
+import { disconnectGScope, requestAdditionalScopes, exchangeAddScopesCode } from '../api';
 import type { MainStackParamList } from '../navigation/MainNavigator';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
@@ -60,12 +63,14 @@ export function PreferencesScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { data: waStatus, isLoading: waLoading, refetch: refetchWaStatus } = useWhatsAppStatus();
   const { data: gcalStatus, isLoading: gcalLoading, refetch: refetchGcalStatus } = useGCalStatus();
+  const { data: gmailStatus, isLoading: gmailLoading, refetch: refetchGmailStatus } = useGmailStatus();
   const { data: gcalSettings } = useGCalSettings();
   const disconnectWhatsApp = useDisconnectWhatsApp();
   const getOAuthURL = useGetOAuthURL();
   const generatePairingCode = useGeneratePairingCode();
 
-  const [disconnectingGoogle, setDisconnectingGoogle] = useState(false);
+  const [disconnectingGmail, setDisconnectingGmail] = useState(false);
+  const [disconnectingGCal, setDisconnectingGCal] = useState(false);
   const [showWhatsAppConnect, setShowWhatsAppConnect] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -83,11 +88,14 @@ export function PreferencesScreen() {
 
 
   // Check if any query is doing its initial load (no cached data yet)
-  const isInitialLoading = (waLoading && !waStatus) || (gcalLoading && !gcalStatus) || (telegramLoading && !telegramStatus);
+  const isInitialLoading = (waLoading && !waStatus) || (gcalLoading && !gcalStatus) || (telegramLoading && !telegramStatus) || (gmailLoading && !gmailStatus);
 
   const whatsappConnected = waStatus?.connected ?? false;
   const telegramConnected = telegramStatus?.connected ?? false;
-  const gmailConnected = gcalStatus?.connected ?? false; // Gmail uses same Google OAuth
+  // Check if Gmail has scopes (not just connected)
+  const gmailHasScopes = gmailStatus?.has_scopes ?? false;
+  // Check if Google Calendar has scopes (not just connected)
+  const gcalHasScopes = gcalStatus?.has_scopes ?? false;
 
   // Reset WhatsApp connect UI when connected
   useEffect(() => {
@@ -146,37 +154,91 @@ export function PreferencesScreen() {
     );
   };
 
-  const handleDisconnectGoogle = () => {
+  const handleDisconnectGmail = () => {
     Alert.alert(
-      'Disconnect Google',
-      'Are you sure you want to disconnect your Google account?',
+      'Disconnect Gmail',
+      'This will revoke Gmail access. You can reconnect anytime.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Disconnect',
           style: 'destructive',
           onPress: async () => {
-            setDisconnectingGoogle(true);
+            setDisconnectingGmail(true);
             try {
-              await disconnectGCal();
-              refetchGcalStatus();
+              await disconnectGScope('gmail');
+              refetchGmailStatus();
             } catch (error) {
-              Alert.alert('Error', 'Failed to disconnect Google');
+              Alert.alert('Error', 'Failed to disconnect Gmail');
             }
-            setDisconnectingGoogle(false);
+            setDisconnectingGmail(false);
           },
         },
       ]
     );
   };
 
-  const handleConnectGoogle = async () => {
+  const handleDisconnectGCal = () => {
+    Alert.alert(
+      'Disconnect Google Calendar',
+      'This will revoke Calendar access. You can reconnect anytime.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            setDisconnectingGCal(true);
+            try {
+              await disconnectGScope('calendar');
+              refetchGcalStatus();
+            } catch (error) {
+              Alert.alert('Error', 'Failed to disconnect Google Calendar');
+            }
+            setDisconnectingGCal(false);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleConnectGmail = async () => {
     try {
-      const response = await getOAuthURL.mutateAsync(undefined);
-      await WebBrowser.openAuthSessionAsync(response.auth_url, 'alfred://oauth/callback');
-      refetchGcalStatus();
+      const backendCallbackUri = `${API_BASE_URL}/api/auth/callback`;
+      const appDeepLink = ExpoLinking.createURL('oauth/callback');
+      const response = await requestAdditionalScopes(['gmail'], backendCallbackUri);
+      const result = await WebBrowser.openAuthSessionAsync(response.auth_url, appDeepLink);
+
+      if (result.type === 'success' && result.url) {
+        const parsed = ExpoLinking.parse(result.url);
+        const code = parsed.queryParams?.code as string | undefined;
+        if (code) {
+          await exchangeAddScopesCode(code, ['gmail'], backendCallbackUri);
+          refetchGmailStatus();
+        }
+      }
     } catch (error: any) {
-      Alert.alert('Error', error.response?.data?.error || 'Failed to start Google authorization');
+      Alert.alert('Error', error.message || 'Failed to connect Gmail');
+    }
+  };
+
+  const handleConnectGCal = async () => {
+    try {
+      const backendCallbackUri = `${API_BASE_URL}/api/auth/callback`;
+      const appDeepLink = ExpoLinking.createURL('oauth/callback');
+      const response = await requestAdditionalScopes(['calendar'], backendCallbackUri);
+      const result = await WebBrowser.openAuthSessionAsync(response.auth_url, appDeepLink);
+
+      if (result.type === 'success' && result.url) {
+        const parsed = ExpoLinking.parse(result.url);
+        const code = parsed.queryParams?.code as string | undefined;
+        if (code) {
+          await exchangeAddScopesCode(code, ['calendar'], backendCallbackUri);
+          refetchGcalStatus();
+        }
+      }
+    } catch (error: any) {
+      Alert.alert('Error', error.message || 'Failed to connect Google Calendar');
     }
   };
 
@@ -303,9 +365,8 @@ export function PreferencesScreen() {
           keyboardShouldPersistTaps="handled"
         >
         {/* Sources Section */}
-        <Text style={styles.sectionLabel}>Sources</Text>
         <Text style={styles.sectionDescription}>
-            Select where Alfred should look for event suggestions.
+            Select where Alfred should look for event, reminder and task suggestions.
         </Text>
 
         {whatsappConnected && (
@@ -328,29 +389,29 @@ export function PreferencesScreen() {
           />
         )}
 
-        {gmailConnected && (
+        {gmailHasScopes && (
           <PreferenceCard
             title="Gmail"
             description="Manage tracked senders and domains"
             icon="mail-outline"
-            connected={gmailConnected}
+            connected={gmailHasScopes}
             onPress={() => navigation.navigate('GmailPreferences')}
           />
         )}
 
-        {gmailConnected && (
+        {gcalHasScopes && (
           <PreferenceCard
             title="Google Calendar"
             description={gcalSettings?.sync_enabled
               ? `Syncing to ${gcalSettings.selected_calendar_name}`
-              : "Manage calenders to sync with"}
+              : "Manage calender to sync with"}
             icon="calendar-outline"
-            connected={gmailConnected}
+            connected={gcalHasScopes}
             onPress={() => navigation.navigate('GoogleCalendarPreferences')}
           />
         )}
 
-        {!whatsappConnected && !telegramConnected && !gmailConnected && (
+        {!whatsappConnected && !telegramConnected && !gmailHasScopes && !gcalHasScopes && (
           <Card style={styles.emptyCard}>
             <Text style={styles.emptyText}>
               No connected sources
@@ -369,7 +430,8 @@ export function PreferencesScreen() {
             const accounts = [
               { id: 'whatsapp', connected: whatsappConnected },
               { id: 'telegram', connected: telegramConnected },
-              { id: 'google', connected: gmailConnected },
+              { id: 'gmail', connected: gmailHasScopes },
+              { id: 'gcal', connected: gcalHasScopes },
             ].sort((a, b) => {
               if (!a.connected && b.connected) return -1;
               if (a.connected && !b.connected) return 1;
@@ -562,32 +624,64 @@ export function PreferencesScreen() {
                 );
               }
 
-              if (account.id === 'google') {
+              if (account.id === 'gmail') {
                 return (
-                  <View key="google" style={needsBorder ? styles.accountRowBorder : undefined}>
+                  <View key="gmail" style={needsBorder ? styles.accountRowBorder : undefined}>
                     <View style={styles.accountRow}>
                       <View style={styles.accountInfo}>
-                        <Ionicons name="logo-google" size={20} color={colors.text} />
+                        <Ionicons name="mail-outline" size={20} color={colors.text} />
                         <View style={styles.accountText}>
-                          <Text style={styles.accountName}>Google Account</Text>
+                          <Text style={styles.accountName}>Gmail</Text>
                           <Text style={styles.accountStatus}>
-                            {gmailConnected ? 'Connected' : 'Not connected'}
+                            {gmailHasScopes ? 'Connected' : 'Not connected'}
                           </Text>
                         </View>
                       </View>
-                      {gmailConnected ? (
+                      {gmailHasScopes ? (
                         <Button
                           title="Disconnect"
                           variant="outline"
-                          onPress={handleDisconnectGoogle}
-                          loading={disconnectingGoogle}
+                          onPress={handleDisconnectGmail}
+                          loading={disconnectingGmail}
                           style={styles.disconnectButton}
                         />
                       ) : (
                         <Button
                           title="Connect"
-                          onPress={handleConnectGoogle}
-                          loading={getOAuthURL.isPending}
+                          onPress={handleConnectGmail}
+                          style={styles.connectButton}
+                        />
+                      )}
+                    </View>
+                  </View>
+                );
+              }
+
+              if (account.id === 'gcal') {
+                return (
+                  <View key="gcal" style={needsBorder ? styles.accountRowBorder : undefined}>
+                    <View style={styles.accountRow}>
+                      <View style={styles.accountInfo}>
+                        <Ionicons name="calendar-outline" size={20} color={colors.text} />
+                        <View style={styles.accountText}>
+                          <Text style={styles.accountName}>Google Calendar</Text>
+                          <Text style={styles.accountStatus}>
+                            {gcalHasScopes ? 'Connected' : 'Not connected'}
+                          </Text>
+                        </View>
+                      </View>
+                      {gcalHasScopes ? (
+                        <Button
+                          title="Disconnect"
+                          variant="outline"
+                          onPress={handleDisconnectGCal}
+                          loading={disconnectingGCal}
+                          style={styles.disconnectButton}
+                        />
+                      ) : (
+                        <Button
+                          title="Connect"
+                          onPress={handleConnectGCal}
                           style={styles.connectButton}
                         />
                       )}

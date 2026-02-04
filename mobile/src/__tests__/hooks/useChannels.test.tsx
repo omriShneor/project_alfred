@@ -3,7 +3,6 @@ import { renderHook, waitFor, act } from '@testing-library/react-native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   useChannels,
-  useDiscoverableChannels,
   useCreateChannel,
   useUpdateChannel,
   useDeleteChannel,
@@ -11,7 +10,7 @@ import {
   useAddWhatsAppCustomSource,
 } from '../../hooks/useChannels';
 import * as channelsApi from '../../api/channels';
-import type { Channel, DiscoverableChannel, SourceTopContact } from '../../types/channel';
+import type { Channel, SourceTopContact } from '../../types/channel';
 
 // Mock the API module
 jest.mock('../../api/channels');
@@ -48,18 +47,12 @@ describe('useChannels hooks', () => {
     created_at: '2024-01-14T10:00:00Z',
   };
 
-  const mockDiscoverableChannel: DiscoverableChannel = {
-    jid: '0987654321@s.whatsapp.net',
-    name: 'Jane Doe',
-    type: 'sender',
-    message_count: 15,
-  };
-
   const mockTopContact: SourceTopContact = {
     identifier: '1234567890@s.whatsapp.net',
     name: 'John Doe',
     message_count: 50,
-    source_type: 'whatsapp',
+    is_tracked: false,
+    type: 'sender',
   };
 
   beforeEach(() => {
@@ -128,45 +121,6 @@ describe('useChannels hooks', () => {
       });
 
       expect(result.current.data).toEqual([]);
-    });
-  });
-
-  describe('useDiscoverableChannels', () => {
-    it('fetches discoverable channels when enabled', async () => {
-      mockChannelsApi.discoverChannels.mockResolvedValueOnce([mockDiscoverableChannel]);
-
-      const { result } = renderHook(() => useDiscoverableChannels(), {
-        wrapper: createWrapper(),
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(result.current.data).toEqual([mockDiscoverableChannel]);
-    });
-
-    it('does not fetch when disabled', async () => {
-      const { result } = renderHook(() => useDiscoverableChannels({ enabled: false }), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current.fetchStatus).toBe('idle');
-      expect(mockChannelsApi.discoverChannels).not.toHaveBeenCalled();
-    });
-
-    it('enabled by default', async () => {
-      mockChannelsApi.discoverChannels.mockResolvedValueOnce([]);
-
-      const { result } = renderHook(() => useDiscoverableChannels(), {
-        wrapper: createWrapper(),
-      });
-
-      await waitFor(() => {
-        expect(result.current.isSuccess).toBe(true);
-      });
-
-      expect(mockChannelsApi.discoverChannels).toHaveBeenCalled();
     });
   });
 

@@ -180,6 +180,87 @@ func (d *DB) DeleteGoogleToken(userID int64) error {
 	return nil
 }
 
+// RemoveGoogleTokenScope removes a specific scope from a user's token
+// If removing the scope results in only profile scopes remaining, the entire token is deleted
+func (d *DB) RemoveGoogleTokenScope(userID int64, scopeToRemove string) error {
+	// Get current token info
+	tokenInfo, err := d.GetGoogleTokenInfo(userID)
+	if err != nil {
+		return fmt.Errorf("failed to get token info: %w", err)
+	}
+
+	if !tokenInfo.HasToken {
+		return nil // No token to remove scope from
+	}
+
+	// Map scope names to full URLs
+	scopeURLs := map[string]string{
+		"gmail":    "https://www.googleapis.com/auth/gmail.readonly",
+		"calendar": "https://www.googleapis.com/auth/calendar",
+		"profile": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+	}
+
+	scopeURL, ok := scopeURLs[scopeToRemove]
+	if !ok {
+		return fmt.Errorf("unknown scope: %s", scopeToRemove)
+	}
+
+	// Filter out the scope to remove
+	var newScopes []string
+	scopeURLsToRemove := make(map[string]bool)
+	for _, url := range strings.Fields(scopeURL) {
+		scopeURLsToRemove[url] = true
+	}
+
+	for _, scope := range tokenInfo.Scopes {
+		if !scopeURLsToRemove[scope] {
+			newScopes = append(newScopes, scope)
+		}
+	}
+
+	// Check if only profile scopes remain
+	profileScopes := []string{
+		"openid",
+		"https://www.googleapis.com/auth/userinfo.email",
+		"https://www.googleapis.com/auth/userinfo.profile",
+	}
+
+	hasNonProfileScope := false
+	for _, scope := range newScopes {
+		isProfileScope := false
+		for _, ps := range profileScopes {
+			if scope == ps {
+				isProfileScope = true
+				break
+			}
+		}
+		if !isProfileScope {
+			hasNonProfileScope = true
+			break
+		}
+	}
+
+	// If only profile scopes remain, delete the entire token
+	if !hasNonProfileScope {
+		return d.DeleteGoogleToken(userID)
+	}
+
+	// Otherwise, update the scopes
+	scopesJSON, err := json.Marshal(newScopes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scopes: %w", err)
+	}
+
+	_, err = d.Exec(`
+		UPDATE google_tokens SET scopes = ? WHERE user_id = ?
+	`, string(scopesJSON), userID)
+	if err != nil {
+		return fmt.Errorf("failed to update scopes: %w", err)
+	}
+
+	return nil
+}
+
 // UpdateGoogleToken updates just the access token and expiry (used after token refresh)
 func (d *DB) UpdateGoogleToken(userID int64, token *oauth2.Token) error {
 	accessTokenEnc, err := encryptToken(token.AccessToken)

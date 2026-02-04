@@ -54,54 +54,6 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, status)
 }
 
-// WhatsApp Discovery API
-
-func (s *Server) handleDiscoverChannels(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
-	if s.clientManager == nil {
-		respondError(w, http.StatusServiceUnavailable, "Client manager not initialized")
-		return
-	}
-
-	// Get per-user WhatsApp client
-	waClient, err := s.clientManager.GetWhatsAppClient(userID)
-	if err != nil || waClient.WAClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "WhatsApp not connected")
-		return
-	}
-
-	// Get all discoverable channels from WhatsApp
-	channels, err := waClient.GetDiscoverableChannels()
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	// Enrich with tracking status from database
-	for i := range channels {
-		channel, err := s.db.GetChannelByIdentifier(channels[i].Identifier)
-		if err == nil && channel != nil {
-			channels[i].IsTracked = true
-			channels[i].ChannelID = &channel.ID
-			channels[i].Enabled = &channel.Enabled
-		}
-	}
-
-	// Optional: filter by type if query parameter is provided
-	typeFilter := r.URL.Query().Get("type")
-	if typeFilter != "" && (typeFilter == "sender" || typeFilter == "group") {
-		filtered := make([]whatsapp.DiscoverableChannel, 0)
-		for _, ch := range channels {
-			if ch.Type == typeFilter {
-				filtered = append(filtered, ch)
-			}
-		}
-		channels = filtered
-	}
-
-	respondJSON(w, http.StatusOK, channels)
-}
-
 // WhatsApp Top Contacts API
 
 // TopContactResponse represents a top contact for the Add Source modal
@@ -154,10 +106,10 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 						Name:           ch.Name,
 						SecondaryLabel: "+" + phone,
 						MessageCount:   0, // No message count from discovery
-						IsTracked:      existingChannel != nil,
+						IsTracked:      existingChannel != nil && existingChannel.Enabled,
 						Type:           ch.Type,
 					}
-					if existingChannel != nil {
+					if existingChannel != nil && existingChannel.Enabled {
 						response[i].ChannelID = &existingChannel.ID
 					}
 				}
@@ -576,7 +528,8 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, events)
 }
 
-// handleGCalDisconnect disconnects Google Calendar and clears token
+// handleGCalDisconnect disconnects Google services (Calendar, Gmail, or both)
+// Accepts optional "scope" parameter in request body to selectively disconnect
 func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 	if userID == 0 {
@@ -584,24 +537,61 @@ func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userGCalClient := s.getGCalClientForUser(userID)
-	if userGCalClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured")
+	// Parse request body for scope parameter
+	var req struct {
+		Scope string `json:"scope"` // "gmail", "calendar", or empty for all
+	}
+
+	// Try to parse JSON body, but don't fail if it's empty (backwards compatibility)
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req)
+	}
+
+	// If no specific scope provided, disconnect everything (backwards compatible)
+	if req.Scope == "" {
+		userGCalClient := s.getGCalClientForUser(userID)
+		if userGCalClient == nil {
+			respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured")
+			return
+		}
+
+		if err := userGCalClient.Disconnect(); err != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		if s.onboardingState != nil {
+			s.onboardingState.SetGCalStatus("disconnected")
+		}
+
+		respondJSON(w, http.StatusOK, map[string]string{
+			"status": "disconnected",
+			"scope":  "all",
+		})
 		return
 	}
 
-	if err := userGCalClient.Disconnect(); err != nil {
+	// Selective scope removal
+	if req.Scope != "gmail" && req.Scope != "calendar" {
+		respondError(w, http.StatusBadRequest, "scope must be 'gmail' or 'calendar'")
+		return
+	}
+
+	if err := s.db.RemoveGoogleTokenScope(userID, req.Scope); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	if s.onboardingState != nil {
-		s.onboardingState.SetGCalStatus("disconnected")
+	// Clear client cache to force reinitialization with new scopes
+	if req.Scope == "calendar" {
+		if s.onboardingState != nil {
+			s.onboardingState.SetGCalStatus("disconnected")
+		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{
-		"status":  "disconnected",
-		"message": "Google Calendar disconnected",
+		"status": "disconnected",
+		"scope":  req.Scope,
 	})
 }
 

@@ -1,7 +1,6 @@
 export { useHealth } from './useHealth';
 export {
   useChannels,
-  useDiscoverableChannels,
   useCreateChannel,
   useUpdateChannel,
   useDeleteChannel,

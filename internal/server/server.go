@@ -246,9 +246,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/telegram/top-contacts", s.requireAuth(s.handleTelegramTopContacts))
 	mux.HandleFunc("POST /api/telegram/sources/custom", s.requireAuth(s.handleTelegramCustomSource))
 
-	// Discovery API
-	mux.HandleFunc("GET /api/discovery/channels", s.requireAuth(s.handleDiscoverChannels))
-
 	// WhatsApp Channel Registry API
 	mux.HandleFunc("GET /api/channel", s.requireAuth(s.handleListChannels))
 	mux.HandleFunc("POST /api/channel", s.requireAuth(s.handleCreateChannel))

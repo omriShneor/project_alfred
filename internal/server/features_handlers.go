@@ -126,14 +126,19 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 
-	// Cleanup all client sessions for this user
+	// Reset all client sessions for this user (full logout with session deletion)
 	if s.clientManager != nil {
-		if err := s.clientManager.CleanupUser(userID); err != nil {
-			fmt.Printf("Warning: Failed to cleanup user clients: %v\n", err)
+		if err := s.clientManager.ResetUserSessions(userID); err != nil {
+			fmt.Printf("Warning: Failed to reset user sessions: %v\n", err)
 		}
 	}
 
-	// Reset database state
+	// Stop user services (Gmail workers, etc.)
+	if s.userServiceManager != nil {
+		s.userServiceManager.StopServicesForUser(userID)
+	}
+
+	// Reset database state (deletes Google tokens, WhatsApp/Telegram session records)
 	if err := s.db.ResetOnboarding(userID); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

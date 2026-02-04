@@ -37,14 +37,13 @@ func main() {
 	notifyService := initNotifyService(db, cfg)
 
 	srv := server.New(server.ServerConfig{
-		DB:                db,
-		OnboardingState:   state,
-		Port:              cfg.HTTPPort,
-		ResendAPIKey:      cfg.ResendAPIKey,
-		CredentialsFile:   cfg.GoogleCredentialsFile,
-		CredentialsJSON:   cfg.GoogleCredentialsJSON,
-		GmailPollInterval: cfg.GmailPollInterval,
-		GmailMaxEmails:    cfg.GmailMaxEmails,
+		DB:              db,
+		OnboardingState: state,
+		Port:            cfg.HTTPPort,
+		ResendAPIKey:    cfg.ResendAPIKey,
+		DevMode:         cfg.DevMode,
+		CredentialsFile: cfg.GoogleCredentialsFile,
+		CredentialsJSON: cfg.GoogleCredentialsJSON,
 	})
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {

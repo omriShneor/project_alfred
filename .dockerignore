@@ -1,0 +1,33 @@
+# Credentials and secrets
+credentials.json
+token.json
+*.db
+whatsapp.db
+telegram.db
+
+# Development files
+.git
+.gitignore
+.env
+.env.local
+
+# Build artifacts
+alfred
+
+# Documentation
+*.md
+docs/
+
+# Test files
+*_test.go
+testdata/
+
+# IDE
+.vscode/
+.idea/
+
+# Mac
+.DS_Store
+
+# Logs
+*.log

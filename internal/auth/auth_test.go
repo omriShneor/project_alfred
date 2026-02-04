@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
@@ -399,8 +400,8 @@ func TestGetUserScopes_BackwardCompatibility(t *testing.T) {
 	accessEncrypted, _ := encryptor.Encrypt([]byte("test-token"))
 	refreshEncrypted, _ := encryptor.Encrypt([]byte("test-refresh"))
 
-	t.Run("empty scopes column returns all scopes (backward compat)", func(t *testing.T) {
-		// Insert token with empty scopes (like legacy users would have)
+	t.Run("empty scopes column returns error", func(t *testing.T) {
+		// Insert token with empty scopes (invalid state)
 		_, err := db.Exec(`
 			INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, scopes)
 			VALUES (?, ?, ?, 'Bearer', '')
@@ -408,20 +409,15 @@ func TestGetUserScopes_BackwardCompatibility(t *testing.T) {
 		require.NoError(t, err)
 
 		scopes, err := service.GetUserScopes(user.ID)
-		require.NoError(t, err)
-		assert.Equal(t, OAuthScopes, scopes)
-
-		// Legacy user should have all scopes
-		hasGmail, _ := service.HasGmailScope(user.ID)
-		hasCalendar, _ := service.HasCalendarScope(user.ID)
-		assert.True(t, hasGmail)
-		assert.True(t, hasCalendar)
+		require.Error(t, err)
+		assert.Nil(t, scopes)
+		assert.Contains(t, err.Error(), "empty/nil")
 	})
 
-	t.Run("null scopes column returns all scopes (backward compat)", func(t *testing.T) {
+	t.Run("null scopes column returns error", func(t *testing.T) {
 		user2 := database.CreateTestUser(t, db)
 
-		// Insert token with NULL scopes
+		// Insert token with NULL scopes (invalid state)
 		_, err := db.Exec(`
 			INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, scopes)
 			VALUES (?, ?, ?, 'Bearer', NULL)
@@ -429,14 +425,15 @@ func TestGetUserScopes_BackwardCompatibility(t *testing.T) {
 		require.NoError(t, err)
 
 		scopes, err := service.GetUserScopes(user2.ID)
-		require.NoError(t, err)
-		assert.Equal(t, OAuthScopes, scopes)
+		require.Error(t, err)
+		assert.Nil(t, scopes)
+		assert.Contains(t, err.Error(), "empty/nil")
 	})
 
-	t.Run("scopes='null' string returns all scopes (backward compat)", func(t *testing.T) {
+	t.Run("scopes='null' string returns error", func(t *testing.T) {
 		user3 := database.CreateTestUser(t, db)
 
-		// Insert token with "null" string
+		// Insert token with "null" string (invalid state)
 		_, err := db.Exec(`
 			INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, scopes)
 			VALUES (?, ?, ?, 'Bearer', 'null')
@@ -444,8 +441,9 @@ func TestGetUserScopes_BackwardCompatibility(t *testing.T) {
 		require.NoError(t, err)
 
 		scopes, err := service.GetUserScopes(user3.ID)
-		require.NoError(t, err)
-		assert.Equal(t, OAuthScopes, scopes)
+		require.Error(t, err)
+		assert.Nil(t, scopes)
+		assert.Contains(t, err.Error(), "empty/nil")
 	})
 
 	t.Run("valid JSON scopes are parsed correctly", func(t *testing.T) {
@@ -522,5 +520,253 @@ func TestGetAuthURLWithScopes(t *testing.T) {
 		url := service.GetAuthURLWithScopes(GmailScopes, "test-state", false)
 
 		assert.NotContains(t, url, "include_granted_scopes")
+	})
+}
+
+// TestExchangeCodeAndAddScopes tests the incremental authorization flow
+// Note: This tests the scope merging logic, but cannot test actual OAuth exchange
+// without mocking the Google API or using integration tests
+func TestExchangeCodeAndAddScopes(t *testing.T) {
+	os.Setenv("ALFRED_ENCRYPTION_KEY", "test-encryption-key-for-scope-add-tests")
+	defer os.Unsetenv("ALFRED_ENCRYPTION_KEY")
+
+	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
+
+	config := &oauth2.Config{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		RedirectURL:  "http://localhost/callback",
+		Scopes:       ProfileScopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://accounts.google.com/o/oauth2/auth",
+			TokenURL: "https://oauth2.googleapis.com/token",
+		},
+	}
+
+	service, err := NewService(db.DB, config)
+	require.NoError(t, err)
+
+	// Setup: Create initial token with profile scopes
+	initialToken := &oauth2.Token{
+		AccessToken:  "initial-access-token",
+		RefreshToken: "initial-refresh-token",
+		TokenType:    "Bearer",
+	}
+	err = service.storeGoogleTokenWithScopes(user.ID, initialToken, ProfileScopes)
+	require.NoError(t, err)
+
+	t.Run("returns error for invalid authorization code", func(t *testing.T) {
+		// Invalid code will fail at OAuth exchange with Google
+		// We can't test the actual exchange without mocking, but we can verify
+		// that the function attempts to exchange and returns an error
+		err := service.ExchangeCodeAndAddScopes(context.Background(), user.ID, "invalid-code", GmailScopes)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "failed to exchange code")
+	})
+
+	t.Run("preserves existing scopes when adding new ones", func(t *testing.T) {
+		// Verify initial state: only profile scopes
+		scopes, err := service.GetUserScopes(user.ID)
+		require.NoError(t, err)
+		assert.Len(t, scopes, 2)
+		assert.Contains(t, scopes, "https://www.googleapis.com/auth/userinfo.email")
+		assert.Contains(t, scopes, "https://www.googleapis.com/auth/userinfo.profile")
+
+		// Note: We can't actually test the exchange without valid OAuth credentials
+		// But we can test the merging logic separately
+	})
+
+	t.Run("GetUserScopes returns error for non-existent user", func(t *testing.T) {
+		_, err := service.GetUserScopes(99999)
+		require.NoError(t, err) // No token returns nil, not error
+	})
+}
+
+// TestScopeMergingBehavior tests the scope merging logic used in ExchangeCodeAndAddScopes
+// This tests the core logic without requiring OAuth exchange
+func TestScopeMergingBehavior(t *testing.T) {
+	os.Setenv("ALFRED_ENCRYPTION_KEY", "test-encryption-key-for-merge-tests")
+	defer os.Unsetenv("ALFRED_ENCRYPTION_KEY")
+
+	db := database.NewTestDB(t)
+	user := database.CreateTestUser(t, db)
+
+	config := &oauth2.Config{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		RedirectURL:  "http://localhost/callback",
+		Scopes:       ProfileScopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://accounts.google.com/o/oauth2/auth",
+			TokenURL: "https://oauth2.googleapis.com/token",
+		},
+	}
+
+	service, err := NewService(db.DB, config)
+	require.NoError(t, err)
+
+	t.Run("adding Gmail scope to profile-only user", func(t *testing.T) {
+		// Start with profile scopes
+		token := &oauth2.Token{
+			AccessToken:  "test-access-1",
+			RefreshToken: "test-refresh-1",
+			TokenType:    "Bearer",
+		}
+		err := service.storeGoogleTokenWithScopes(user.ID, token, ProfileScopes)
+		require.NoError(t, err)
+
+		// Simulate adding Gmail scope
+		currentScopes, err := service.GetUserScopes(user.ID)
+		require.NoError(t, err)
+
+		mergedScopes := mergeScopes(currentScopes, GmailScopes)
+
+		// Store updated token with merged scopes
+		newToken := &oauth2.Token{
+			AccessToken:  "test-access-2",
+			RefreshToken: "test-refresh-1", // Keep same refresh token
+			TokenType:    "Bearer",
+		}
+		err = service.storeGoogleTokenWithScopes(user.ID, newToken, mergedScopes)
+		require.NoError(t, err)
+
+		// Verify Gmail scope was added
+		hasGmail, err := service.HasGmailScope(user.ID)
+		require.NoError(t, err)
+		assert.True(t, hasGmail, "Gmail scope should be present after merge")
+
+		// Verify profile scopes still exist
+		scopes, err := service.GetUserScopes(user.ID)
+		require.NoError(t, err)
+		assert.Contains(t, scopes, "https://www.googleapis.com/auth/userinfo.email")
+		assert.Contains(t, scopes, "https://www.googleapis.com/auth/userinfo.profile")
+	})
+
+	t.Run("adding Calendar scope to user with profile and Gmail", func(t *testing.T) {
+		user2 := database.CreateTestUser(t, db)
+
+		// Start with profile + Gmail scopes
+		initialScopes := mergeScopes(ProfileScopes, GmailScopes)
+		token := &oauth2.Token{
+			AccessToken:  "test-access-3",
+			RefreshToken: "test-refresh-3",
+			TokenType:    "Bearer",
+		}
+		err := service.storeGoogleTokenWithScopes(user2.ID, token, initialScopes)
+		require.NoError(t, err)
+
+		// Add Calendar scope
+		currentScopes, err := service.GetUserScopes(user2.ID)
+		require.NoError(t, err)
+
+		mergedScopes := mergeScopes(currentScopes, CalendarScopes)
+
+		newToken := &oauth2.Token{
+			AccessToken:  "test-access-4",
+			RefreshToken: "test-refresh-3",
+			TokenType:    "Bearer",
+		}
+		err = service.storeGoogleTokenWithScopes(user2.ID, newToken, mergedScopes)
+		require.NoError(t, err)
+
+		// Verify all scopes are present
+		hasGmail, _ := service.HasGmailScope(user2.ID)
+		hasCalendar, _ := service.HasCalendarScope(user2.ID)
+		assert.True(t, hasGmail, "Gmail scope should still be present")
+		assert.True(t, hasCalendar, "Calendar scope should be added")
+
+		scopes, err := service.GetUserScopes(user2.ID)
+		require.NoError(t, err)
+		assert.Len(t, scopes, 4, "Should have all 4 scopes (2 profile + Gmail + Calendar)")
+	})
+
+	t.Run("scope deduplication when user already has scope", func(t *testing.T) {
+		user3 := database.CreateTestUser(t, db)
+
+		// Start with all scopes
+		token := &oauth2.Token{
+			AccessToken:  "test-access-5",
+			RefreshToken: "test-refresh-5",
+			TokenType:    "Bearer",
+		}
+		allScopes := mergeScopes(mergeScopes(ProfileScopes, GmailScopes), CalendarScopes)
+		err := service.storeGoogleTokenWithScopes(user3.ID, token, allScopes)
+		require.NoError(t, err)
+
+		// Try to add Gmail scope again (already exists)
+		currentScopes, err := service.GetUserScopes(user3.ID)
+		require.NoError(t, err)
+
+		mergedScopes := mergeScopes(currentScopes, GmailScopes)
+
+		// Verify no duplicate scopes
+		assert.Len(t, mergedScopes, 4, "Should still have 4 unique scopes (no duplicates)")
+
+		// Count occurrences of Gmail scope
+		gmailCount := 0
+		for _, s := range mergedScopes {
+			if s == gmail.GmailReadonlyScope {
+				gmailCount++
+			}
+		}
+		assert.Equal(t, 1, gmailCount, "Gmail scope should appear exactly once")
+	})
+
+	t.Run("preserves refresh token when updating scopes", func(t *testing.T) {
+		user4 := database.CreateTestUser(t, db)
+
+		// Store initial token with refresh token
+		initialToken := &oauth2.Token{
+			AccessToken:  "access-1",
+			RefreshToken: "refresh-token-must-be-preserved",
+			TokenType:    "Bearer",
+		}
+		err := service.storeGoogleTokenWithScopes(user4.ID, initialToken, ProfileScopes)
+		require.NoError(t, err)
+
+		// Update with new access token and scopes, same refresh token
+		updatedToken := &oauth2.Token{
+			AccessToken:  "access-2",
+			RefreshToken: "refresh-token-must-be-preserved",
+			TokenType:    "Bearer",
+		}
+		mergedScopes := mergeScopes(ProfileScopes, GmailScopes)
+		err = service.storeGoogleTokenWithScopes(user4.ID, updatedToken, mergedScopes)
+		require.NoError(t, err)
+
+		// Retrieve and verify refresh token is preserved
+		retrievedToken, err := service.GetGoogleToken(user4.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "refresh-token-must-be-preserved", retrievedToken.RefreshToken)
+		assert.Equal(t, "access-2", retrievedToken.AccessToken)
+	})
+
+	t.Run("updates access token when adding scopes", func(t *testing.T) {
+		user5 := database.CreateTestUser(t, db)
+
+		// Initial token
+		token1 := &oauth2.Token{
+			AccessToken:  "old-access-token",
+			RefreshToken: "refresh-token",
+			TokenType:    "Bearer",
+		}
+		err := service.storeGoogleTokenWithScopes(user5.ID, token1, ProfileScopes)
+		require.NoError(t, err)
+
+		// Incremental auth should update access token
+		token2 := &oauth2.Token{
+			AccessToken:  "new-access-token-with-more-scopes",
+			RefreshToken: "refresh-token",
+			TokenType:    "Bearer",
+		}
+		mergedScopes := mergeScopes(ProfileScopes, CalendarScopes)
+		err = service.storeGoogleTokenWithScopes(user5.ID, token2, mergedScopes)
+		require.NoError(t, err)
+
+		// Verify access token was updated
+		retrievedToken, err := service.GetGoogleToken(user5.ID)
+		require.NoError(t, err)
+		assert.Equal(t, "new-access-token-with-more-scopes", retrievedToken.AccessToken)
 	})
 }

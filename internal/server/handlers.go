@@ -361,9 +361,7 @@ func (s *Server) handleDeleteChannel(w http.ResponseWriter, r *http.Request) {
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		fmt.Printf("Error encoding JSON response: %v\n", err)
-	}
+	_ = json.NewEncoder(w).Encode(data)
 }
 
 func respondError(w http.ResponseWriter, status int, message string) {
@@ -374,7 +372,6 @@ func respondError(w http.ResponseWriter, status int, message string) {
 
 func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
-	fmt.Printf("[GCal Status] Checking status for user %d\n", userID)
 
 	status := map[string]interface{}{
 		"connected":  false,
@@ -396,18 +393,15 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 
 	// Get per-user gcal client
 	userGCalClient := s.getGCalClientForUser(userID)
-	fmt.Printf("[GCal Status] Client retrieved: %v\n", userGCalClient != nil)
 
 	// Check if client is authenticated (has token) AND has Calendar scopes
 	if userGCalClient != nil {
 		isAuth := userGCalClient.IsAuthenticated()
-		fmt.Printf("[GCal Status] IsAuthenticated: %v\n", isAuth)
 
 		if isAuth {
 			// Check if token has Calendar scopes (not just ProfileScopes)
 			tokenInfo, err := s.db.GetGoogleTokenInfo(userID)
 			if err != nil {
-				fmt.Printf("[GCal Status] ERROR: Failed to get token info: %v\n", err)
 				status["message"] = "Error checking token scopes"
 			} else if tokenInfo != nil && tokenInfo.HasToken {
 				hasCalendarScope := false
@@ -417,8 +411,6 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 				}
-				fmt.Printf("[GCal Status] Token scopes: %v\n", tokenInfo.Scopes)
-				fmt.Printf("[GCal Status] Has Calendar scope: %v\n", hasCalendarScope)
 
 				if hasCalendarScope {
 					status["connected"] = true
@@ -426,7 +418,6 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 					status["has_scopes"] = true
 				} else {
 					status["message"] = "Calendar access not authorized. Please connect Google Calendar."
-					fmt.Printf("[GCal Status] Token exists but missing Calendar scope\n")
 				}
 			} else {
 				status["message"] = "Calendar access not authorized. Please connect Google Calendar."
@@ -435,7 +426,6 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 			status["message"] = "Calendar access not authorized. Please connect Google Calendar."
 		}
 	} else {
-		fmt.Printf("[GCal Status] Client is nil\n")
 		status["message"] = "Calendar access not authorized. Please connect Google Calendar."
 	}
 
@@ -517,8 +507,7 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	// 1. Always get Alfred Calendar events (local database)
 	alfredEvents, err := s.db.GetTodayEvents(userID)
 	if err != nil {
-		// Log error but don't fail - Alfred events are best-effort
-		fmt.Printf("Warning: failed to get Alfred events: %v\n", err)
+		// Ignore error - Alfred events are best-effort
 		alfredEvents = nil
 	}
 
@@ -551,10 +540,7 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	userGCalClient := s.getGCalClientForUser(userID)
 	if settings.GoogleCalendarEnabled && userGCalClient != nil && userGCalClient.IsAuthenticated() {
 		gcalEvents, err := userGCalClient.ListTodayEvents("primary")
-		if err != nil {
-			// Log error but don't fail - Google events are best-effort
-			fmt.Printf("Warning: failed to get Google Calendar events: %v\n", err)
-		} else {
+		if err == nil {
 			for _, ge := range gcalEvents {
 				// Skip if already seen (synced from Alfred)
 				if seenGoogleIDs[ge.ID] {
@@ -1215,7 +1201,6 @@ func (s *Server) handleRegisterPushToken(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fmt.Printf("Push token registered: %s...\n", req.Token[:min(20, len(req.Token))])
 	respondJSON(w, http.StatusOK, map[string]string{"status": "registered"})
 }
 

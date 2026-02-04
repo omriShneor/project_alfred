@@ -25,7 +25,7 @@ type Config struct {
 	ClaudeModel        string
 	ClaudeTemperature  float64
 	MessageHistorySize int
-	DevMode            bool
+	DevMode            bool // Enables dev features like unauthenticated reset endpoint
 
 	// Notification server config (API keys only - user prefs in database)
 	ResendAPIKey string
@@ -63,7 +63,7 @@ func LoadFromEnv() *Config {
 		EmailFrom:    getEnvOrDefault("ALFRED_EMAIL_FROM", "Alfred <onboarding@resend.dev>"),
 
 		// Gmail integration config (enable/disable is in database settings)
-		GmailPollInterval: 1, // Hardcoded to 1 minute for near-real-time scanning
+		GmailPollInterval: getEnvAsIntOrDefault("ALFRED_GMAIL_POLL_INTERVAL", 1),
 		GmailMaxEmails:    getEnvAsIntOrDefault("ALFRED_GMAIL_MAX_EMAILS", 10),
 
 		// Telegram integration config

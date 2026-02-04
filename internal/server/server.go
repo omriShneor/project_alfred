@@ -12,29 +12,27 @@ import (
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
-	"github.com/omriShneor/project_alfred/internal/processor"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/omriShneor/project_alfred/internal/telegram"
 	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 type Server struct {
-	db                *database.DB
-	waClient          *whatsapp.Client
-	tgClient          *telegram.Client
-	gmailClient       *gmail.Client
-	gmailWorker       *gmail.Worker
-	onboardingState   *sse.State
-	state             *sse.State // Alias for onboardingState (for consistency)
-	notifyService     *notify.Service
-	eventAnalyzer     agent.EventAnalyzer
-	reminderAnalyzer  agent.ReminderAnalyzer
-	httpSrv           *http.Server
-	port              int
-	resendAPIKey      string // For checking email availability
-	gmailPollInterval int    // Gmail worker poll interval in minutes
-	gmailMaxEmails    int         // Gmail worker max emails per poll
-	credentialsFile   string      // Path to Google OAuth credentials file (for per-user gcal clients)
+	db               *database.DB
+	waClient         *whatsapp.Client
+	tgClient         *telegram.Client
+	gmailClient      *gmail.Client
+	gmailWorker      *gmail.Worker
+	onboardingState  *sse.State
+	state            *sse.State // Alias for onboardingState (for consistency)
+	notifyService    *notify.Service
+	eventAnalyzer    agent.EventAnalyzer
+	reminderAnalyzer agent.ReminderAnalyzer
+	httpSrv         *http.Server
+	port            int
+	resendAPIKey    string // For checking email availability
+	credentialsFile string // Path to Google OAuth credentials file (for per-user gcal clients)
+	devMode         bool   // Enable development features
 	// Authentication
 	authService    *auth.Service
 	authMiddleware *auth.Middleware
@@ -48,12 +46,10 @@ type ServerConfig struct {
 	OnboardingState *sse.State
 	Port            int
 	ResendAPIKey    string
+	DevMode         bool // Enable development features (e.g., unauthenticated reset)
 	// Auth configuration (optional - auth disabled if not provided)
 	CredentialsFile string // Path to Google OAuth credentials file
 	CredentialsJSON string // Google OAuth credentials as JSON string
-	// Gmail worker configuration
-	GmailPollInterval int // Minutes between Gmail polls (default: 1)
-	GmailMaxEmails    int // Max emails per poll (default: 10)
 }
 
 // ClientsConfig holds configuration for completing initialization after onboarding
@@ -68,25 +64,18 @@ type ClientsConfig struct {
 }
 
 func New(cfg ServerConfig) *Server {
-	// Apply defaults for Gmail config
-	gmailPollInterval := cfg.GmailPollInterval
-	if gmailPollInterval <= 0 {
-		gmailPollInterval = 1 // Default: 1 minute
-	}
-	gmailMaxEmails := cfg.GmailMaxEmails
-	if gmailMaxEmails <= 0 {
-		gmailMaxEmails = 10 // Default: 10 emails
+	s := &Server{
+		db:              cfg.DB,
+		onboardingState: cfg.OnboardingState,
+		state:           cfg.OnboardingState, // Alias for consistency
+		port:            cfg.Port,
+		resendAPIKey:    cfg.ResendAPIKey,
+		credentialsFile: cfg.CredentialsFile,
+		devMode:         cfg.DevMode,
 	}
 
-	s := &Server{
-		db:                cfg.DB,
-		onboardingState:   cfg.OnboardingState,
-		state:             cfg.OnboardingState, // Alias for consistency
-		port:              cfg.Port,
-		resendAPIKey:      cfg.ResendAPIKey,
-		gmailPollInterval: gmailPollInterval,
-		gmailMaxEmails:    gmailMaxEmails,
-		credentialsFile:   cfg.CredentialsFile,
+	if cfg.DevMode {
+		fmt.Println("Development mode enabled - some endpoints will bypass authentication")
 	}
 
 	// Initialize authentication if credentials are available
@@ -167,6 +156,28 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		s.authMiddleware.RequireAuth(http.HandlerFunc(handler)).ServeHTTP(w, r)
+	}
+}
+
+// requireAuthUnlessDevMode wraps a handler to require auth in production but allow in dev mode
+func (s *Server) requireAuthUnlessDevMode(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// In dev mode, bypass auth and inject a default test user
+		if s.devMode {
+			fmt.Printf("Dev mode enabled - bypassing auth for %s\n", r.URL.Path)
+			// Inject a default user with ID 1 for dev mode
+			user := &auth.User{
+				ID:    1,
+				Email: "dev@localhost",
+				Name:  "Dev User",
+			}
+			ctx := auth.SetUserInContext(r.Context(), user)
+			handler(w, r.WithContext(ctx))
+			return
+		}
+		fmt.Printf("Dev mode disabled - requiring auth for %s\n", r.URL.Path)
+		// Otherwise use normal auth
+		s.requireAuth(handler)(w, r)
 	}
 }
 
@@ -294,7 +305,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Onboarding completion (requires auth - user must be logged in)
 	mux.HandleFunc("POST /api/onboarding/complete", s.requireAuth(s.handleCompleteOnboarding))
-	mux.HandleFunc("POST /api/onboarding/reset", s.requireAuth(s.handleResetOnboarding))
+	// Reset endpoint - requires auth in production, but allows unauthenticated access in dev mode
+	mux.HandleFunc("POST /api/onboarding/reset", s.requireAuthUnlessDevMode(s.handleResetOnboarding))
 }
 
 func (s *Server) Start() error {
@@ -326,57 +338,4 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
-}
-
-// initializeGmailClient creates and initializes the Gmail client after OAuth authentication.
-// This should be called after gcalClient.ExchangeCode() succeeds.
-func (s *Server) initializeGmailClient() error {
-	// For single-user mode, use userID = 1
-	userID := int64(1)
-	userGCalClient := s.getGCalClientForUser(userID)
-	if userGCalClient == nil || !userGCalClient.IsAuthenticated() {
-		return fmt.Errorf("Google Calendar client not authenticated for user %d", userID)
-	}
-
-	// Stop existing Gmail worker if running
-	if s.gmailWorker != nil {
-		s.gmailWorker.Stop()
-		s.gmailWorker = nil
-	}
-
-	oauthConfig := userGCalClient.GetOAuthConfig()
-	oauthToken := userGCalClient.GetToken()
-	if oauthConfig == nil || oauthToken == nil {
-		return fmt.Errorf("OAuth config or token not available")
-	}
-
-	gmailClient, err := gmail.NewClient(oauthConfig, oauthToken)
-	if err != nil {
-		return fmt.Errorf("failed to create Gmail client: %w", err)
-	}
-
-	if !gmailClient.IsAuthenticated() {
-		return fmt.Errorf("Gmail client created but not authenticated")
-	}
-
-	s.gmailClient = gmailClient
-	fmt.Println("Gmail client initialized after OAuth")
-
-	// Create and start Gmail worker if we have the required dependencies
-	if s.db != nil && s.eventAnalyzer != nil && s.notifyService != nil {
-		emailProc := processor.NewEmailProcessor(s.db, s.eventAnalyzer, s.reminderAnalyzer, s.notifyService)
-		s.gmailWorker = gmail.NewWorker(gmailClient, s.db, emailProc, gmail.WorkerConfig{
-			PollIntervalMinutes: s.gmailPollInterval,
-			MaxEmailsPerPoll:    s.gmailMaxEmails,
-		})
-		if err := s.gmailWorker.Start(); err != nil {
-			fmt.Printf("Warning: Gmail worker failed to start: %v\n", err)
-		} else {
-			fmt.Println("Gmail worker started")
-			// Force refresh top contacts on re-authentication
-			s.gmailWorker.RefreshTopContactsNow()
-		}
-	}
-
-	return nil
 }

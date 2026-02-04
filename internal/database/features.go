@@ -2,6 +2,7 @@ package database
 
 import (
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -153,6 +154,19 @@ func (d *DB) ResetOnboarding(userID int64) error {
 		return err
 	}
 
+	// Best-effort cleanup of authentication tokens
+	// Log errors but continue - tokens may not exist
+	if err := d.DeleteGoogleToken(userID); err != nil {
+		log.Printf("Warning: failed to delete Google token during reset: %v", err)
+	}
+	if err := d.DeleteWhatsAppSession(userID); err != nil {
+		log.Printf("Warning: failed to delete WhatsApp session during reset: %v", err)
+	}
+	if err := d.DeleteTelegramSession(userID); err != nil {
+		log.Printf("Warning: failed to delete Telegram session during reset: %v", err)
+	}
+
+	// Reset onboarding flags (critical operation)
 	_, err = d.Exec(`
 		UPDATE feature_settings SET
 			onboarding_complete = 0,

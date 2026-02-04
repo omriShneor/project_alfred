@@ -9,6 +9,7 @@ import (
 	"github.com/omriShneor/project_alfred/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/oauth2"
 )
 
 func TestOnboardingFlow(t *testing.T) {
@@ -77,6 +78,112 @@ func TestOnboardingFlow(t *testing.T) {
 
 		var status map[string]interface{}
 		err = json.NewDecoder(resp2.Body).Decode(&status)
+		require.NoError(t, err)
+
+		assert.Equal(t, false, status["onboarding_complete"])
+	})
+}
+
+func TestOnboardingResetCleansAllTokens(t *testing.T) {
+	ts := testutil.NewTestServer(t)
+	userID := ts.TestUser.ID
+
+	t.Run("setup - create tokens and sessions", func(t *testing.T) {
+		// Create Google OAuth token
+		token := &oauth2.Token{
+			AccessToken:  "test-access-token",
+			RefreshToken: "test-refresh-token",
+			TokenType:    "Bearer",
+		}
+		err := ts.DB.SaveGoogleToken(userID, token, "test@example.com")
+		require.NoError(t, err)
+
+		// Create WhatsApp session
+		err = ts.DB.SaveWhatsAppSession(userID, "+1234567890", "test-device-jid", true)
+		require.NoError(t, err)
+
+		// Create Telegram session
+		err = ts.DB.SaveTelegramSession(userID, "+1234567890", true)
+		require.NoError(t, err)
+
+		// Verify tokens exist
+		googleToken, err := ts.DB.GetGoogleToken(userID)
+		require.NoError(t, err)
+		assert.NotNil(t, googleToken, "Google token should exist before reset")
+
+		waSession, err := ts.DB.GetWhatsAppSession(userID)
+		require.NoError(t, err)
+		assert.NotNil(t, waSession, "WhatsApp session should exist before reset")
+
+		tgSession, err := ts.DB.GetTelegramSession(userID)
+		require.NoError(t, err)
+		assert.NotNil(t, tgSession, "Telegram session should exist before reset")
+	})
+
+	t.Run("reset onboarding", func(t *testing.T) {
+		req, err := http.NewRequest("POST", ts.BaseURL()+"/api/onboarding/reset", nil)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("verify all tokens are deleted", func(t *testing.T) {
+		// Verify Google token is deleted
+		googleToken, err := ts.DB.GetGoogleToken(userID)
+		require.NoError(t, err)
+		assert.Nil(t, googleToken, "Google token should be deleted after reset")
+
+		// Verify WhatsApp session is deleted
+		waSession, err := ts.DB.GetWhatsAppSession(userID)
+		require.NoError(t, err)
+		assert.Nil(t, waSession, "WhatsApp session should be deleted after reset")
+
+		// Verify Telegram session is deleted
+		tgSession, err := ts.DB.GetTelegramSession(userID)
+		require.NoError(t, err)
+		assert.Nil(t, tgSession, "Telegram session should be deleted after reset")
+	})
+
+	t.Run("verify onboarding flags are reset", func(t *testing.T) {
+		resp, err := http.Get(ts.BaseURL() + "/api/app/status")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		var status map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&status)
+		require.NoError(t, err)
+
+		assert.Equal(t, false, status["onboarding_complete"])
+	})
+}
+
+func TestOnboardingResetWithoutTokens(t *testing.T) {
+	ts := testutil.NewTestServer(t)
+
+	t.Run("reset onboarding when no tokens exist", func(t *testing.T) {
+		// Reset without creating any tokens first
+		req, err := http.NewRequest("POST", ts.BaseURL()+"/api/onboarding/reset", nil)
+		require.NoError(t, err)
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Should succeed even if no tokens exist
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+	})
+
+	t.Run("verify onboarding is reset", func(t *testing.T) {
+		resp, err := http.Get(ts.BaseURL() + "/api/app/status")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		var status map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&status)
 		require.NoError(t, err)
 
 		assert.Equal(t, false, status["onboarding_complete"])

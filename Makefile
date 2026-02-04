@@ -35,7 +35,7 @@ PROD_URL := https://alfred-production-d2c9.up.railway.app
 # Phony Targets
 # ----------------------------------------------------------------------------
 .PHONY: help \
-        dev dev-mobile dev-mobile-ios dev-mobile-android dev-all dev-stop \
+        dev dev-mobile dev-mobile-ios dev-mobile-android dev-mobile-device dev-all dev-stop \
         test test-unit test-e2e test-mobile test-mobile-watch test-mobile-coverage \
         test-mobile-e2e test-mobile-e2e-onboarding test-mobile-e2e-events \
         test-mobile-e2e-settings test-mobile-e2e-navigation test-all test-server \
@@ -58,7 +58,7 @@ help: ## Show this help message
 	@echo "Project Alfred Makefile"
 	@echo ""
 	@echo "Development:"
-	@grep -E '^(dev|dev-mobile|dev-mobile-ios|dev-mobile-android|dev-all|dev-stop):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-28s %s\n", $$1, $$2}'
+	@grep -E '^(dev|dev-mobile|dev-mobile-ios|dev-mobile-android|dev-mobile-device|dev-all|dev-stop):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-28s %s\n", $$1, $$2}'
 	@echo ""
 	@echo "Testing:"
 	@grep -E '^(test|test-unit|test-e2e|test-mobile|test-mobile-watch|test-mobile-coverage|test-mobile-e2e|test-all|test-server):.*##' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*## "}; {printf "  %-28s %s\n", $$1, $$2}'
@@ -93,6 +93,10 @@ dev-mobile-ios: ## Run mobile app on iOS simulator
 dev-mobile-android: ## Run mobile app on Android emulator
 	@echo "Starting mobile app on Android..."
 	cd $(MOBILE_DIR) && npm run android
+
+dev-mobile-device: ## Run mobile app on physical iOS device
+	@echo "Starting mobile app on physical iOS device..."
+	cd $(MOBILE_DIR) && npx expo run:ios --device
 
 dev-all: ## Run both backend and mobile (background)
 	@echo "Starting backend and mobile in background..."

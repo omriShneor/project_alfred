@@ -30,6 +30,8 @@ import {
   useSendTelegramCode,
   useVerifyTelegramCode,
 } from '../../hooks';
+import { useRequestAdditionalScopes, useExchangeAddScopesCode } from '../../hooks/useIncrementalAuth';
+import { ScopeType } from '../../api/auth';
 import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
 
 type RouteProps = RouteProp<OnboardingParamList, 'Connection'>;
@@ -61,6 +63,8 @@ function getStatusLabel(status: IntegrationStatusType) {
   }
 }
 
+// Official Google "G" logo as PNG data URI (follows Google's branding guidelines)
+
 function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading?: boolean }) {
   return (
     <TouchableOpacity
@@ -70,7 +74,7 @@ function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading
       activeOpacity={0.7}
     >
       <Image
-        source={{ uri: 'https://developers.google.com/identity/images/g-logo.png' }}
+        source={require('../../../assets/google-logo.png')}
         style={styles.googleLogo}
       />
       <Text style={styles.googleButtonText}>
@@ -105,6 +109,8 @@ export function ConnectionScreen() {
   const completeOnboarding = useCompleteOnboarding();
   const sendTelegramCode = useSendTelegramCode();
   const verifyTelegramCode = useVerifyTelegramCode();
+  const requestAdditionalScopes = useRequestAdditionalScopes();
+  const exchangeAddScopesCode = useExchangeAddScopesCode();
 
   // Determine statuses
   const googleStatus: IntegrationStatusType = gcalStatus?.connected ? 'available' : 'pending';
@@ -163,9 +169,47 @@ export function ConnectionScreen() {
 
   const handleConnectGoogle = async () => {
     try {
-      const response = await getOAuthURL.mutateAsync(undefined);
-      await WebBrowser.openAuthSessionAsync(response.auth_url, 'alfred://oauth/callback');
+      console.log('[ConnectionScreen] Starting Google OAuth for Gmail and Calendar...');
+
+      // Request both Gmail and Calendar scopes together
+      const response = await requestAdditionalScopes.mutateAsync({
+        scopes: ['gmail' as ScopeType, 'calendar' as ScopeType],
+        redirectUri: undefined // Use default HTTPS callback (will be /api/auth/callback)
+      });
+
+      console.log('[ConnectionScreen] Got auth URL, opening browser...');
+      // Don't specify redirect URL - let the OAuth flow complete naturally through the backend
+      const result = await WebBrowser.openAuthSessionAsync(response.auth_url);
+      console.log('[ConnectionScreen] Browser session completed:', result);
+
+      // Handle the OAuth callback directly since WebBrowser captures the deep link
+      if (result.type === 'success' && result.url) {
+        const url = result.url;
+        console.log('[ConnectionScreen] Got success URL:', url);
+
+        // Extract code from URL
+        const codeMatch = url.match(/[?&]code=([^&]+)/);
+        if (codeMatch && codeMatch[1]) {
+          const code = decodeURIComponent(codeMatch[1]);
+          console.log('[ConnectionScreen] Extracted code, exchanging for token...');
+
+          try {
+            await exchangeAddScopesCode.mutateAsync({
+              code,
+              scopes: ['gmail' as ScopeType, 'calendar' as ScopeType],
+              redirectUri: undefined
+            });
+            console.log('[ConnectionScreen] Successfully added Gmail and Calendar scopes!');
+          } catch (error: any) {
+            console.error('[ConnectionScreen] Failed to exchange code:', error);
+            Alert.alert('Error', 'Failed to connect Google account. Please try again.');
+          }
+        } else {
+          console.error('[ConnectionScreen] No code found in URL');
+        }
+      }
     } catch (error: any) {
+      console.error('[ConnectionScreen] OAuth error:', error);
       Alert.alert('Error', error.response?.data?.error || 'Failed to start Google authorization');
     }
   };
@@ -255,7 +299,7 @@ export function ConnectionScreen() {
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
                   <Text style={styles.integrationName}>Google Account</Text>
-                  <Text style={styles.integrationDescription}>For Gmail access</Text>
+                  <Text style={styles.integrationDescription}>For Gmail and Calendar access</Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(googleStatus) }]} />

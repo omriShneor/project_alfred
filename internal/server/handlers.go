@@ -383,6 +383,17 @@ func (s *Server) handleClearGoogleTokens(w http.ResponseWriter, r *http.Request)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "tokens_cleared"})
 }
 
+// handleResetOnboardingDebug resets onboarding for all users (development only)
+func (s *Server) handleResetOnboardingDebug(w http.ResponseWriter, r *http.Request) {
+	_, err := s.db.Exec("UPDATE feature_settings SET onboarding_complete = 0")
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to reset onboarding: "+err.Error())
+		return
+	}
+	fmt.Printf("[Reset Onboarding] Reset onboarding for all users\n")
+	respondJSON(w, http.StatusOK, map[string]string{"status": "onboarding_reset"})
+}
+
 func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 	fmt.Printf("[GCal Status] Checking status for user %d\n", userID)

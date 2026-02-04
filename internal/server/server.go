@@ -255,7 +255,8 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Google Calendar API
 	mux.HandleFunc("GET /api/gcal/status", s.requireAuth(s.handleGCalStatus))
-	mux.HandleFunc("POST /api/gcal/clear-tokens", s.handleClearGoogleTokens) // Debug endpoint
+	mux.HandleFunc("POST /api/gcal/clear-tokens", s.handleClearGoogleTokens)         // Debug endpoint
+	mux.HandleFunc("POST /api/onboarding/reset-debug", s.handleResetOnboardingDebug) // Debug endpoint
 	mux.HandleFunc("GET /api/gcal/calendars", s.requireAuth(s.handleGCalListCalendars))
 	mux.HandleFunc("GET /api/gcal/settings", s.requireAuth(s.handleGetGCalSettings))
 	mux.HandleFunc("PUT /api/gcal/settings", s.requireAuth(s.handleUpdateGCalSettings))

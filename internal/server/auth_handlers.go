@@ -74,35 +74,42 @@ func (s *Server) initAuth(cfg AuthConfig) error {
 	return nil
 }
 
-// handleAuthGoogle initiates Google OAuth login
-// GET /api/auth/google?redirect_uri=...
-func (s *Server) handleAuthGoogle(w http.ResponseWriter, r *http.Request) {
+// handleAuthGoogleLogin initiates Google OAuth login with profile scopes
+// POST /api/auth/google/login
+// Body: { "redirect_uri": "..." } (optional)
+func (s *Server) handleAuthGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		respondError(w, http.StatusServiceUnavailable, "authentication not configured")
 		return
 	}
 
-	// Get optional redirect URI override from query params
-	redirectURI := r.URL.Query().Get("redirect_uri")
+	var req struct {
+		RedirectURI string `json:"redirect_uri"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
 
-	if redirectURI != "" {
-		// For mobile apps, allow specifying a custom redirect
-		// Create a modified OAuth config with the custom redirect and PROFILE scopes only
-		config := s.authService.GetOAuthConfig()
-		modifiedConfig := &oauth2.Config{
-			ClientID:     config.ClientID,
-			ClientSecret: config.ClientSecret,
-			Endpoint:     config.Endpoint,
-			RedirectURL:  redirectURI,
-			Scopes:       auth.ProfileScopes, // Only profile scopes for login
-		}
-		authURL := modifiedConfig.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-		respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
-		return
+	fmt.Printf("[Login] Generating OAuth URL for profile scopes\n")
+	fmt.Printf("[Login] Custom redirect URI: %s\n", req.RedirectURI)
+
+	// Create OAuth config with profile scopes only
+	config := s.authService.GetOAuthConfig()
+
+	redirectURI := req.RedirectURI
+	if redirectURI == "" {
+		redirectURI = config.RedirectURL
 	}
 
-	// Use default redirect URL with profile scopes only
-	authURL := s.authService.GetAuthURLWithScopes(auth.ProfileScopes, "state", false)
+	modifiedConfig := &oauth2.Config{
+		ClientID:     config.ClientID,
+		ClientSecret: config.ClientSecret,
+		Endpoint:     config.Endpoint,
+		RedirectURL:  redirectURI,
+		Scopes:       auth.ProfileScopes, // Only profile scopes for login
+	}
+
+	authURL := modifiedConfig.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
+	fmt.Printf("[Login] Generated auth URL: %s\n", authURL)
+
 	respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
 }
 

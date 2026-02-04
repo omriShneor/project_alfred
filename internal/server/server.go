@@ -192,7 +192,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /health", s.handleHealthCheck)
 
 	// Authentication API (must be public for login flow)
-	mux.HandleFunc("GET /api/auth/google", s.handleAuthGoogle)
+	mux.HandleFunc("POST /api/auth/google/login", s.handleAuthGoogleLogin)
 	mux.HandleFunc("POST /api/auth/google/callback", s.handleAuthGoogleCallback)
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
@@ -261,7 +261,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gcal/settings", s.requireAuth(s.handleGetGCalSettings))
 	mux.HandleFunc("PUT /api/gcal/settings", s.requireAuth(s.handleUpdateGCalSettings))
 	mux.HandleFunc("GET /api/gcal/events/today", s.requireAuth(s.handleListTodayEvents))
-	// Legacy endpoint removed - use /api/auth/google/add-scopes/callback instead
 	mux.HandleFunc("POST /api/gcal/disconnect", s.requireAuth(s.handleGCalDisconnect))
 
 	// Events API

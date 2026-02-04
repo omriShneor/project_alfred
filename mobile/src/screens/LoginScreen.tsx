@@ -1,13 +1,14 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
-import * as ExpoLinking from 'expo-linking';
 import { useAuth } from '../auth';
 import { colors } from '../theme/colors';
-import { API_BASE_URL } from '../config/api';
+import { requestLogin } from '../api/auth';
 
 // Warm up the browser for faster OAuth redirect
 WebBrowser.maybeCompleteAuthSession();
+
+// Official Google "G" logo as PNG data URI (follows Google's branding guidelines)
 
 export function LoginScreen() {
   const { login, isLoading } = useAuth();
@@ -19,48 +20,39 @@ export function LoginScreen() {
     setIsSigningIn(true);
 
     try {
-      // Use the backend callback URL as the OAuth redirect URI
-      // The backend will then redirect to our app's deep link (alfred://oauth/callback)
-      // This is needed because Google doesn't allow custom URL schemes as redirect URIs
-      const backendCallbackUri = `${API_BASE_URL}/api/auth/callback`;
+      console.log('[LoginScreen] Starting Google OAuth login...');
 
-      // The deep link URL that we expect the backend to redirect to
-      const appDeepLink = ExpoLinking.createURL('oauth/callback');
+      // Use the new unified login endpoint (profile scopes only)
+      const response = await requestLogin();
 
-      // Get the Google OAuth URL from our backend
-      const response = await fetch(
-        `${API_BASE_URL}/api/auth/google?redirect_uri=${encodeURIComponent(backendCallbackUri)}`
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Failed to get authentication URL (${response.status})`);
-      }
-
-      const { auth_url } = await response.json();
-
-      // Open the browser for Google sign-in
-      // The second param is the deep link that WebBrowser listens for (backend redirects here)
-      const result = await WebBrowser.openAuthSessionAsync(auth_url, appDeepLink);
+      console.log('[LoginScreen] Got auth URL, opening browser...');
+      const result = await WebBrowser.openAuthSessionAsync(response.auth_url);
+      console.log('[LoginScreen] Browser session completed:', result);
 
       if (result.type === 'success' && result.url) {
-        // Extract the code from the callback URL
-        const parsed = ExpoLinking.parse(result.url);
-        const code = parsed.queryParams?.code as string | undefined;
+        const url = result.url;
+        console.log('[LoginScreen] Got success URL:', url);
 
-        if (code) {
-          // Pass the backend callback URI for token exchange (must match what was used in auth URL)
-          await login(code, backendCallbackUri);
+        // Extract code from URL
+        const codeMatch = url.match(/[?&]code=([^&]+)/);
+        if (codeMatch && codeMatch[1]) {
+          const code = decodeURIComponent(codeMatch[1]);
+          console.log('[LoginScreen] Extracted code, logging in...');
+
+          // Exchange code and create session via the login callback
+          await login(code, '');
+          console.log('[LoginScreen] Login successful!');
         } else {
           throw new Error('No authorization code received');
         }
       } else if (result.type === 'cancel') {
         // User cancelled, no error
+        console.log('[LoginScreen] User cancelled OAuth');
       } else {
         throw new Error('Authentication was not completed');
       }
     } catch (err) {
-      console.error('Sign in error:', err);
+      console.error('[LoginScreen] Sign in error:', err);
       setError(err instanceof Error ? err.message : 'Sign in failed');
     } finally {
       setIsSigningIn(false);
@@ -97,9 +89,10 @@ export function LoginScreen() {
             <ActivityIndicator color={colors.text} />
           ) : (
             <>
-              <View style={styles.googleIcon}>
-                <Text style={styles.googleIconText}>G</Text>
-              </View>
+              <Image
+                source={require('../../assets/google-logo.png')}
+                style={styles.googleLogo}
+              />
               <Text style={styles.googleButtonText}>Sign in with Google</Text>
             </>
           )}
@@ -180,19 +173,10 @@ const styles = StyleSheet.create({
   googleButtonDisabled: {
     opacity: 0.6,
   },
-  googleIcon: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: colors.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
+  googleLogo: {
+    width: 20,
+    height: 20,
     marginRight: 12,
-  },
-  googleIconText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: 'bold',
   },
   googleButtonText: {
     fontSize: 16,

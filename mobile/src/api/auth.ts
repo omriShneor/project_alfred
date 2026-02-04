@@ -1,6 +1,6 @@
 import { apiClient } from './client';
 
-export type ScopeType = 'gmail' | 'calendar';
+export type ScopeType = 'profile' | 'gmail' | 'calendar';
 
 interface AddScopesRequest {
   scopes: ScopeType[];
@@ -19,6 +19,18 @@ interface AddScopesCallbackRequest {
 
 interface AddScopesCallbackResponse {
   status: string;
+}
+
+/**
+ * Request login with profile scopes
+ * Returns an OAuth URL for initial authentication
+ */
+export async function requestLogin(redirectUri?: string): Promise<AddScopesResponse> {
+  const body: any = {};
+  if (redirectUri) {
+    body.redirect_uri = redirectUri;
+  }
+  return apiClient.post<AddScopesResponse>('/api/auth/google/login', body);
 }
 
 /**

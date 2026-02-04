@@ -258,11 +258,19 @@ func (d *DB) GetGoogleTokenInfo(userID int64) (*GoogleTokenInfo, error) {
 	return info, nil
 }
 
-// splitScopes splits a space-separated scope string into a slice
+// splitScopes parses a JSON array of scopes into a slice
 func splitScopes(scopeStr string) []string {
 	if scopeStr == "" {
 		return nil
 	}
+
+	// Try to parse as JSON array first (current format)
+	var scopes []string
+	if err := json.Unmarshal([]byte(scopeStr), &scopes); err == nil {
+		return scopes
+	}
+
+	// Fallback to space-separated for backward compatibility
 	return strings.Fields(scopeStr)
 }
 

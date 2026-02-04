@@ -252,12 +252,7 @@ func (d *DB) GetGoogleTokenInfo(userID int64) (*GoogleTokenInfo, error) {
 	}
 
 	if scopes.Valid && scopes.String != "" {
-		fmt.Printf("[GetGoogleTokenInfo] Raw scopes string from DB: %s\n", scopes.String)
 		info.Scopes = splitScopes(scopes.String)
-		fmt.Printf("[GetGoogleTokenInfo] Parsed scopes: %v (len=%d)\n", info.Scopes, len(info.Scopes))
-		if len(info.Scopes) > 0 {
-			fmt.Printf("[GetGoogleTokenInfo] First scope: %s\n", info.Scopes[0])
-		}
 	}
 
 	return info, nil

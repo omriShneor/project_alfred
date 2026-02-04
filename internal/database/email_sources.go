@@ -49,9 +49,9 @@ func (d *DB) CreateEmailSource(userID int64, sourceType EmailSourceType, identif
 func (d *DB) GetEmailSourceByID(id int64) (*EmailSource, error) {
 	var source EmailSource
 	err := d.QueryRow(`
-		SELECT id, type, identifier, name, enabled, created_at, updated_at
+		SELECT id, user_id, type, identifier, name, enabled, created_at, updated_at
 		FROM email_sources WHERE id = ?
-	`, id).Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
+	`, id).Scan(&source.ID, &source.UserID, &source.Type, &source.Identifier, &source.Name,
 		&source.Enabled, &source.CreatedAt, &source.UpdatedAt)
 
 	if err == sql.ErrNoRows {

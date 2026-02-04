@@ -88,9 +88,6 @@ func (s *Server) handleAuthGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewDecoder(r.Body).Decode(&req) // Optional body
 
-	fmt.Printf("[Login] Generating OAuth URL for profile scopes\n")
-	fmt.Printf("[Login] Custom redirect URI: %s\n", req.RedirectURI)
-
 	// Create OAuth config with profile scopes only
 	config := s.authService.GetOAuthConfig()
 
@@ -108,7 +105,6 @@ func (s *Server) handleAuthGoogleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	authURL := modifiedConfig.AuthCodeURL("state", oauth2.AccessTypeOffline, oauth2.ApprovalForce)
-	fmt.Printf("[Login] Generated auth URL: %s\n", authURL)
 
 	respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
 }
@@ -219,9 +215,6 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 // This allows using a standard http(s) URL as the Google OAuth redirect URI
 // GET /api/auth/callback?code=...
 func (s *Server) handleAuthOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	fmt.Printf("[OAuth Callback] Received callback from Google\n")
-	fmt.Printf("[OAuth Callback] Query params: %v\n", r.URL.Query())
-
 	code := r.URL.Query().Get("code")
 	errorParam := r.URL.Query().Get("error")
 
@@ -231,7 +224,6 @@ func (s *Server) handleAuthOAuthCallback(w http.ResponseWriter, r *http.Request)
 	// Handle OAuth errors
 	if errorParam != "" {
 		errorDesc := r.URL.Query().Get("error_description")
-		fmt.Printf("[OAuth Callback] ERROR from Google: %s - %s\n", errorParam, errorDesc)
 		redirectURL := fmt.Sprintf("%s?error=%s&error_description=%s",
 			deepLinkBase, url.QueryEscape(errorParam), url.QueryEscape(errorDesc))
 		http.Redirect(w, r, redirectURL, http.StatusFound)
@@ -240,14 +232,12 @@ func (s *Server) handleAuthOAuthCallback(w http.ResponseWriter, r *http.Request)
 
 	// Handle missing code
 	if code == "" {
-		fmt.Printf("[OAuth Callback] ERROR: No code in callback\n")
 		http.Redirect(w, r, deepLinkBase+"?error=no_code", http.StatusFound)
 		return
 	}
 
 	// Redirect to mobile app with the auth code
 	redirectURL := fmt.Sprintf("%s?code=%s", deepLinkBase, url.QueryEscape(code))
-	fmt.Printf("[OAuth Callback] Redirecting to deep link: %s\n", redirectURL)
 
 	// Simple HTTP redirect - no HTML page needed
 	http.Redirect(w, r, redirectURL, http.StatusFound)
@@ -276,9 +266,6 @@ func (s *Server) handleRequestAdditionalScopes(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	fmt.Printf("[Incremental Auth] Received request for scopes: %v\n", req.Scopes)
-	fmt.Printf("[Incremental Auth] Custom redirect URI: %s\n", req.RedirectURI)
-
 	// Map scope names to actual OAuth scopes
 	var requestedScopes []string
 	for _, scope := range req.Scopes {
@@ -299,9 +286,6 @@ func (s *Server) handleRequestAdditionalScopes(w http.ResponseWriter, r *http.Re
 		redirectURI = s.authService.GetOAuthConfig().RedirectURL
 	}
 
-	fmt.Printf("[Incremental Auth] Using redirect URI: %s\n", redirectURI)
-	fmt.Printf("[Incremental Auth] Requested scopes: %v\n", requestedScopes)
-
 	// Create OAuth config with custom redirect and incremental scopes
 	config := s.authService.GetOAuthConfig()
 	modifiedConfig := &oauth2.Config{
@@ -318,8 +302,6 @@ func (s *Server) handleRequestAdditionalScopes(w http.ResponseWriter, r *http.Re
 		oauth2.ApprovalForce,
 		oauth2.SetAuthURLParam("include_granted_scopes", "true"),
 	)
-
-	fmt.Printf("[Incremental Auth] Generated auth URL: %s\n", authURL)
 
 	respondJSON(w, http.StatusOK, map[string]string{"auth_url": authURL})
 }
@@ -349,12 +331,6 @@ func (s *Server) handleAddScopesCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	fmt.Printf("[Add Scopes Callback] User %d exchanging code\n", userID)
-	fmt.Printf("[Add Scopes Callback] Scopes: %v\n", req.Scopes)
-	if len(req.Code) > 10 {
-		fmt.Printf("[Add Scopes Callback] Code (first 10 chars): %s...\n", req.Code[:10])
-	}
-
 	if req.Code == "" {
 		respondError(w, http.StatusBadRequest, "missing authorization code")
 		return
@@ -373,12 +349,10 @@ func (s *Server) handleAddScopesCallback(w http.ResponseWriter, r *http.Request)
 
 	// Exchange code and add scopes
 	if err := s.authService.ExchangeCodeAndAddScopes(r.Context(), userID, req.Code, newScopes); err != nil {
-		fmt.Printf("[Add Scopes Callback] ERROR: Failed to add scopes for user %d: %v\n", userID, err)
 		respondError(w, http.StatusBadRequest, "failed to add scopes: "+err.Error())
 		return
 	}
 
-	fmt.Printf("[Add Scopes Callback] SUCCESS: Scopes added for user %d\n", userID)
 	respondJSON(w, http.StatusOK, map[string]string{"status": "scopes_added"})
 }
 

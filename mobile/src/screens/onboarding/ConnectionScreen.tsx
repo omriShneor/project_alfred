@@ -169,29 +169,23 @@ export function ConnectionScreen() {
 
   const handleConnectGoogle = async () => {
     try {
-      console.log('[ConnectionScreen] Starting Google OAuth for Gmail and Calendar...');
-
       // Request both Gmail and Calendar scopes together
       const response = await requestAdditionalScopes.mutateAsync({
         scopes: ['gmail' as ScopeType, 'calendar' as ScopeType],
         redirectUri: undefined // Use default HTTPS callback (will be /api/auth/callback)
       });
 
-      console.log('[ConnectionScreen] Got auth URL, opening browser...');
       // Don't specify redirect URL - let the OAuth flow complete naturally through the backend
       const result = await WebBrowser.openAuthSessionAsync(response.auth_url);
-      console.log('[ConnectionScreen] Browser session completed:', result);
 
       // Handle the OAuth callback directly since WebBrowser captures the deep link
       if (result.type === 'success' && result.url) {
         const url = result.url;
-        console.log('[ConnectionScreen] Got success URL:', url);
 
         // Extract code from URL
         const codeMatch = url.match(/[?&]code=([^&]+)/);
         if (codeMatch && codeMatch[1]) {
           const code = decodeURIComponent(codeMatch[1]);
-          console.log('[ConnectionScreen] Extracted code, exchanging for token...');
 
           try {
             await exchangeAddScopesCode.mutateAsync({
@@ -199,17 +193,14 @@ export function ConnectionScreen() {
               scopes: ['gmail' as ScopeType, 'calendar' as ScopeType],
               redirectUri: undefined
             });
-            console.log('[ConnectionScreen] Successfully added Gmail and Calendar scopes!');
           } catch (error: any) {
-            console.error('[ConnectionScreen] Failed to exchange code:', error);
+            console.error('Failed to exchange OAuth code:', error);
             Alert.alert('Error', 'Failed to connect Google account. Please try again.');
           }
-        } else {
-          console.error('[ConnectionScreen] No code found in URL');
         }
       }
     } catch (error: any) {
-      console.error('[ConnectionScreen] OAuth error:', error);
+      console.error('OAuth authorization error:', error);
       Alert.alert('Error', error.response?.data?.error || 'Failed to start Google authorization');
     }
   };

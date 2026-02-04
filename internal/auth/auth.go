@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
 	"google.golang.org/api/gmail/v1"
 	goauth2 "google.golang.org/api/oauth2/v2"
@@ -39,15 +38,6 @@ var CalendarScopes = []string{
 	calendar.CalendarScope,
 }
 
-// OAuthScopes contains all OAuth scopes - kept for backward compatibility
-// Existing users may have all scopes granted
-var OAuthScopes = []string{
-	calendar.CalendarScope,
-	gmail.GmailReadonlyScope,
-	"https://www.googleapis.com/auth/userinfo.email",
-	"https://www.googleapis.com/auth/userinfo.profile",
-}
-
 // Service handles authentication operations
 type Service struct {
 	db        *sql.DB
@@ -67,17 +57,6 @@ func NewService(db *sql.DB, oauthConfig *oauth2.Config) (*Service, error) {
 		config:    oauthConfig,
 		encryptor: encryptor,
 	}, nil
-}
-
-// NewServiceWithCredentials creates an auth service loading OAuth config from credentials
-func NewServiceWithCredentials(db *sql.DB, credentialsJSON []byte, redirectURL string) (*Service, error) {
-	config, err := google.ConfigFromJSON(credentialsJSON, OAuthScopes...)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse credentials: %w", err)
-	}
-	config.RedirectURL = redirectURL
-
-	return NewService(db, config)
 }
 
 // GetAuthURL returns the Google OAuth authorization URL (with all scopes - for backward compatibility)
@@ -127,13 +106,13 @@ func (s *Service) GetUserScopes(userID int64) ([]string, error) {
 
 	// If scopes is empty/null, assume all scopes (backward compatibility)
 	if !scopesJSON.Valid || scopesJSON.String == "" || scopesJSON.String == "null" {
-		return OAuthScopes, nil
+		return nil, fmt.Errorf("Google scopes are empty/nil")
 	}
 
 	var scopes []string
 	if err := json.Unmarshal([]byte(scopesJSON.String), &scopes); err != nil {
 		// If parsing fails, assume all scopes
-		return OAuthScopes, nil
+		return nil, err
 	}
 
 	return scopes, nil
@@ -193,7 +172,7 @@ func (s *Service) ExchangeCodeAndAddScopes(ctx context.Context, userID int64, co
 	// Get existing scopes
 	existingScopes, err := s.GetUserScopes(userID)
 	if err != nil {
-		existingScopes = ProfileScopes // Default to profile scopes
+		return err
 	}
 
 	// Merge scopes

@@ -420,14 +420,39 @@ func (s *Server) handleGCalStatus(w http.ResponseWriter, r *http.Request) {
 	userGCalClient := s.getGCalClientForUser(userID)
 	fmt.Printf("[GCal Status] Client retrieved: %v\n", userGCalClient != nil)
 
-	// Check if client is authenticated (has token)
+	// Check if client is authenticated (has token) AND has Calendar scopes
 	if userGCalClient != nil {
 		isAuth := userGCalClient.IsAuthenticated()
 		fmt.Printf("[GCal Status] IsAuthenticated: %v\n", isAuth)
+
 		if isAuth {
-			status["connected"] = true
-			status["message"] = "Connected"
-			status["has_scopes"] = true
+			// Check if token has Calendar scopes (not just ProfileScopes)
+			tokenInfo, err := s.db.GetGoogleTokenInfo(userID)
+			if err != nil {
+				fmt.Printf("[GCal Status] ERROR: Failed to get token info: %v\n", err)
+				status["message"] = "Error checking token scopes"
+			} else if tokenInfo != nil && tokenInfo.HasToken {
+				hasCalendarScope := false
+				for _, scope := range tokenInfo.Scopes {
+					if scope == "https://www.googleapis.com/auth/calendar" {
+						hasCalendarScope = true
+						break
+					}
+				}
+				fmt.Printf("[GCal Status] Token scopes: %v\n", tokenInfo.Scopes)
+				fmt.Printf("[GCal Status] Has Calendar scope: %v\n", hasCalendarScope)
+
+				if hasCalendarScope {
+					status["connected"] = true
+					status["message"] = "Connected"
+					status["has_scopes"] = true
+				} else {
+					status["message"] = "Calendar access not authorized. Please connect Google Calendar."
+					fmt.Printf("[GCal Status] Token exists but missing Calendar scope\n")
+				}
+			} else {
+				status["message"] = "Calendar access not authorized. Please connect Google Calendar."
+			}
 		} else {
 			status["message"] = "Calendar access not authorized. Please connect Google Calendar."
 		}

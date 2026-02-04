@@ -290,7 +290,6 @@ export function ConnectionScreen() {
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
                   <Text style={styles.integrationName}>Google Account</Text>
-                  <Text style={styles.integrationDescription}>For Gmail and Calendar access</Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(googleStatus) }]} />
@@ -313,7 +312,6 @@ export function ConnectionScreen() {
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
                   <Text style={styles.integrationName}>WhatsApp</Text>
-                  <Text style={styles.integrationDescription}>For message scanning</Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(whatsappStatus) }]} />
@@ -387,7 +385,6 @@ export function ConnectionScreen() {
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
                   <Text style={styles.integrationName}>Telegram</Text>
-                  <Text style={styles.integrationDescription}>For message scanning</Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(telegramStatusType) }]} />
@@ -530,10 +527,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     marginBottom: 2,
-  },
-  integrationDescription: {
-    fontSize: 13,
-    color: colors.textSecondary,
   },
   integrationStatus: {
     flexDirection: 'row',

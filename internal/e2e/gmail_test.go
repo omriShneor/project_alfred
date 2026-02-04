@@ -287,3 +287,105 @@ func TestGmailEventsFromSource(t *testing.T) {
 		assert.Equal(t, float64(channel.ID), eventData["channel_id"])
 	})
 }
+
+// TestGmailSourceMultiUserIsolation verifies that different users can add the same email source
+func TestGmailSourceMultiUserIsolation(t *testing.T) {
+	ts1 := testutil.NewTestServer(t)
+	ts2 := testutil.NewTestServerWithUser(t, "user2@example.com")
+
+	// Both users should be able to add the same email address
+	sharedEmail := "boss@company.com"
+
+	t.Run("user1 creates source for shared email", func(t *testing.T) {
+		sourceData := map[string]string{
+			"type":       "sender",
+			"identifier": sharedEmail,
+			"name":       "User1's Boss",
+		}
+		body, _ := json.Marshal(sourceData)
+
+		resp, err := http.Post(ts1.BaseURL()+"/api/gmail/sources", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var source database.EmailSource
+		err = json.NewDecoder(resp.Body).Decode(&source)
+		require.NoError(t, err)
+
+		assert.Equal(t, sharedEmail, source.Identifier)
+		assert.Equal(t, ts1.TestUser.ID, source.UserID)
+	})
+
+	t.Run("user2 can also create source for same email", func(t *testing.T) {
+		sourceData := map[string]string{
+			"type":       "sender",
+			"identifier": sharedEmail,
+			"name":       "User2's Boss",
+		}
+		body, _ := json.Marshal(sourceData)
+
+		resp, err := http.Post(ts2.BaseURL()+"/api/gmail/sources", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Should succeed (201) not conflict (409)
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var source database.EmailSource
+		err = json.NewDecoder(resp.Body).Decode(&source)
+		require.NoError(t, err)
+
+		assert.Equal(t, sharedEmail, source.Identifier)
+		assert.Equal(t, ts2.TestUser.ID, source.UserID)
+	})
+
+	t.Run("user1 cannot create duplicate of their own source", func(t *testing.T) {
+		sourceData := map[string]string{
+			"type":       "sender",
+			"identifier": sharedEmail,
+			"name":       "Duplicate Boss",
+		}
+		body, _ := json.Marshal(sourceData)
+
+		resp, err := http.Post(ts1.BaseURL()+"/api/gmail/sources", "application/json", bytes.NewReader(body))
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		// Should get conflict (409) since user1 already has this source
+		assert.Equal(t, http.StatusConflict, resp.StatusCode)
+	})
+
+	t.Run("users only see their own sources", func(t *testing.T) {
+		// User1 lists sources
+		resp1, err := http.Get(ts1.BaseURL() + "/api/gmail/sources")
+		require.NoError(t, err)
+		defer resp1.Body.Close()
+
+		var result1 map[string]interface{}
+		err = json.NewDecoder(resp1.Body).Decode(&result1)
+		require.NoError(t, err)
+
+		sources1 := result1["sources"].([]interface{})
+		for _, s := range sources1 {
+			sourceMap := s.(map[string]interface{})
+			assert.Equal(t, float64(ts1.TestUser.ID), sourceMap["user_id"])
+		}
+
+		// User2 lists sources
+		resp2, err := http.Get(ts2.BaseURL() + "/api/gmail/sources")
+		require.NoError(t, err)
+		defer resp2.Body.Close()
+
+		var result2 map[string]interface{}
+		err = json.NewDecoder(resp2.Body).Decode(&result2)
+		require.NoError(t, err)
+
+		sources2 := result2["sources"].([]interface{})
+		for _, s := range sources2 {
+			sourceMap := s.(map[string]interface{})
+			assert.Equal(t, float64(ts2.TestUser.ID), sourceMap["user_id"])
+		}
+	})
+}

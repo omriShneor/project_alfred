@@ -26,11 +26,11 @@ type Server struct {
 	notifyService    *notify.Service
 	eventAnalyzer    agent.EventAnalyzer
 	reminderAnalyzer agent.ReminderAnalyzer
-	httpSrv         *http.Server
-	port            int
-	resendAPIKey    string // For checking email availability
-	credentialsFile string // Path to Google OAuth credentials file (for per-user gcal clients)
-	devMode         bool   // Enable development features
+	httpSrv          *http.Server
+	port             int
+	resendAPIKey     string // For checking email availability
+	credentialsFile  string // Path to Google OAuth credentials file (for per-user gcal clients)
+	devMode          bool   // Enable development features
 	// Authentication
 	authService    *auth.Service
 	authMiddleware *auth.Middleware
@@ -156,14 +156,15 @@ func (s *Server) requireAuth(handler http.HandlerFunc) http.HandlerFunc {
 // requireAuthUnlessDevMode wraps a handler to require auth in production but allow in dev mode
 func (s *Server) requireAuthUnlessDevMode(handler http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// In dev mode, bypass auth and inject a default test user
+		// In dev mode, bypass auth and inject the dev user
 		if s.devMode {
 			fmt.Printf("Dev mode enabled - bypassing auth for %s\n", r.URL.Path)
-			// Inject a default user with ID 1 for dev mode
+			// Inject dev user (ID 1) - matches the user created in main.go
 			user := &auth.User{
-				ID:    1,
-				Email: "dev@localhost",
-				Name:  "Dev User",
+				ID:       1,
+				GoogleID: "117916007686632359623",
+				Email:    "omrishneor@gmail.com",
+				Name:     "Omri Shneor",
 			}
 			ctx := auth.SetUserInContext(r.Context(), user)
 			handler(w, r.WithContext(ctx))

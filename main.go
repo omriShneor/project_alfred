@@ -63,6 +63,13 @@ func main() {
 	// Clean up legacy session files (one-time migration)
 	clientManager.CleanupLegacySessions()
 
+	// Create dev user if in dev mode (for unauthenticated testing)
+	if cfg.DevMode {
+		if err := ensureDevUser(db); err != nil {
+			fmt.Printf("Warning: Failed to create dev user: %v\n", err)
+		}
+	}
+
 	// Set ClientManager on server
 	srv.SetClientManager(clientManager)
 
@@ -143,6 +150,45 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
+
+// ensureDevUser creates the dev user (ID 1) if it doesn't exist
+// This runs on every startup in dev mode to ensure the user exists
+func ensureDevUser(db *database.DB) error {
+	const (
+		devUserID    = 1
+		devEmail     = "omrishneor@gmail.com"
+		devGoogleID  = "117916007686632359623"
+		devName      = "Omri Shneor"
+	)
+
+	// Check if user 1 already exists
+	var existingEmail string
+	err := db.QueryRow(`SELECT email FROM users WHERE id = ?`, devUserID).Scan(&existingEmail)
+
+	if err == nil {
+		// User exists
+		if existingEmail == devEmail {
+			fmt.Printf("✅ Dev user already exists (ID: %d, Email: %s)\n", devUserID, devEmail)
+			return nil
+		}
+		// User 1 exists but with different email - this is unexpected
+		fmt.Printf("⚠️  Warning: User ID 1 exists with different email (%s), not creating dev user\n", existingEmail)
+		return nil
+	}
+
+	// User doesn't exist - create it
+	_, err = db.Exec(`
+		INSERT INTO users (id, google_id, email, name, created_at, updated_at, last_login_at)
+		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+	`, devUserID, devGoogleID, devEmail, devName)
+
+	if err != nil {
+		return fmt.Errorf("failed to create dev user: %w", err)
+	}
+
+	fmt.Printf("✅ Dev user created (ID: %d, Email: %s)\n", devUserID, devEmail)
+	return nil
+}
 
 func fatal(context string, err error) {
 	fmt.Fprintf(os.Stderr, "Error %s: %v\n", context, err)

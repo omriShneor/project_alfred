@@ -343,7 +343,7 @@ export function PreferencesScreen() {
             title="Google Calendar"
             description={gcalSettings?.sync_enabled
               ? `Syncing to ${gcalSettings.selected_calendar_name}`
-              : "Events stored locally only"}
+              : "Manage calenders to sync with"}
             icon="calendar-outline"
             connected={gmailConnected}
             onPress={() => navigation.navigate('GoogleCalendarPreferences')}

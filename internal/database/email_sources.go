@@ -64,13 +64,13 @@ func (d *DB) GetEmailSourceByID(id int64) (*EmailSource, error) {
 	return &source, nil
 }
 
-// GetEmailSourceByIdentifier retrieves an email source by type and identifier
-func (d *DB) GetEmailSourceByIdentifier(sourceType EmailSourceType, identifier string) (*EmailSource, error) {
+// GetEmailSourceByIdentifier retrieves an email source by user, type and identifier
+func (d *DB) GetEmailSourceByIdentifier(userID int64, sourceType EmailSourceType, identifier string) (*EmailSource, error) {
 	var source EmailSource
 	err := d.QueryRow(`
-		SELECT id, type, identifier, name, enabled, created_at, updated_at
-		FROM email_sources WHERE type = ? AND identifier = ?
-	`, sourceType, identifier).Scan(&source.ID, &source.Type, &source.Identifier, &source.Name,
+		SELECT id, user_id, type, identifier, name, enabled, created_at, updated_at
+		FROM email_sources WHERE user_id = ? AND type = ? AND identifier = ?
+	`, userID, sourceType, identifier).Scan(&source.ID, &source.UserID, &source.Type, &source.Identifier, &source.Name,
 		&source.Enabled, &source.CreatedAt, &source.UpdatedAt)
 
 	if err == sql.ErrNoRows {

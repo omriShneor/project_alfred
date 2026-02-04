@@ -122,7 +122,7 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Check if already exists
-	existing, _ := s.db.GetEmailSourceByIdentifier(sourceType, req.Identifier)
+	existing, _ := s.db.GetEmailSourceByIdentifier(userID, sourceType, req.Identifier)
 	if existing != nil {
 		respondError(w, http.StatusConflict, "email source already exists")
 		return
@@ -265,7 +265,7 @@ func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if already exists
-	existing, _ := s.db.GetEmailSourceByIdentifier(sourceType, identifier)
+	existing, _ := s.db.GetEmailSourceByIdentifier(userID, sourceType, identifier)
 	if existing != nil {
 		respondError(w, http.StatusConflict, "Already tracking this source")
 		return

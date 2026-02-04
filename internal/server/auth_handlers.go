@@ -151,6 +151,9 @@ func (s *Server) handleAuthGoogleCallback(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Log user info for debugging
+	fmt.Printf("✅ User logged in - ID: %d, Email: %s, Google ID: %s\n", user.ID, user.Email, user.GoogleID)
+
 	// Check if returning user has sources configured - start services immediately
 	if s.userServiceManager != nil {
 		hasSources, _ := s.db.UserHasAnySources(user.ID)
@@ -218,6 +221,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"id":         user.ID,
+		"google_id":  user.GoogleID,
 		"email":      user.Email,
 		"name":       user.Name,
 		"avatar_url": user.AvatarURL,

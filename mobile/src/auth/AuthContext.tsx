@@ -133,7 +133,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       if (token) {
         // Notify server of logout
         try {
-          await fetch(`${API_BASE_URL}/api/auth/logout`, {
+          await fetch(`${API_BASE_URL}/api/auth/google/logout`, {
             method: 'POST',
             headers: {
               Authorization: `Bearer ${token}`,

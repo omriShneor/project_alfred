@@ -29,10 +29,8 @@ export async function getOAuthURL(redirectUri?: string): Promise<GCalConnectResp
   );
 }
 
-export async function exchangeOAuthCode(code: string, redirectUri?: string): Promise<void> {
-  await apiClient.post('/api/gcal/callback',
-    redirectUri ? { code, redirect_uri: redirectUri } : { code }
-  );
+export async function exchangeOAuthCode(code: string): Promise<void> {
+  await apiClient.post('/api/gcal/callback', { code });
 }
 
 export async function disconnectGCal(): Promise<void> {

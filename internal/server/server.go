@@ -194,7 +194,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	// Authentication API (must be public for login flow)
 	mux.HandleFunc("POST /api/auth/google/login", s.handleAuthGoogleLogin)
 	mux.HandleFunc("POST /api/auth/google/callback", s.handleAuthGoogleCallback)
-	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+	mux.HandleFunc("POST /api/auth/google/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.handleAuthMe)
 
 	// Incremental authorization (requires auth - user must be logged in to add scopes)

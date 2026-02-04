@@ -21,19 +21,19 @@ const inputOptions: InputOption[] = [
   {
     id: 'whatsapp',
     title: 'WhatsApp',
-    description: 'Suggest events, reminders and tasks from selected WhatsApp contacts',
+    description: 'Suggest events, reminders and tasks from selected contacts',
     icon: 'chatbubble-outline',
   },
   {
     id: 'telegram',
     title: 'Telegram',
-    description: 'Suggest events, reminders and tasks from selected Telegram users',
+    description: 'Suggest events, reminders and tasks from selected contacts',
     icon: 'paper-plane-outline',
   },
   {
     id: 'gmail',
     title: 'Gmail',
-    description: 'Suggest events, reminders and tasks from selected emails or domains',
+    description: 'Suggest events, reminders and tasks from selected email addresses',
     icon: 'mail-outline',
   },
 ];
@@ -207,6 +207,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingTop: 24,
+    paddingBottom: 50
   },
   button: {
     width: '100%',

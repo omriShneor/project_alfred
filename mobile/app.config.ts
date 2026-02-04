@@ -16,7 +16,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   ios: {
     supportsTablet: true,
-    bundleIdentifier: 'com.alfred.mobile',
+    bundleIdentifier: 'com.omrishneor.alfred',
     infoPlist: {
       CFBundleURLTypes: [
         {
@@ -30,7 +30,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#3498db',
     },
-    package: 'com.alfred.mobile',
+    package: 'com.omrishneor.alfred',
     intentFilters: [
       {
         action: 'VIEW',

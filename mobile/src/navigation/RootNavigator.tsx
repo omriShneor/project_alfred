@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, Linking } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
 import { useExchangeOAuthCode, useHealth, useAppStatus } from '../hooks';
 import { useAuth } from '../auth';
+import { useExchangeAddScopesCode } from '../hooks/useIncrementalAuth';
+import { ScopeType } from '../api/auth';
 import { onAuthError } from '../api/client';
 import { MainNavigator } from './MainNavigator';
 import { OnboardingNavigator } from './OnboardingNavigator';
@@ -15,6 +17,7 @@ export function RootNavigator() {
   const { isLoading: healthLoading, isError: healthError } = useHealth();
   const { data: appStatus, isLoading: statusLoading, refetch: refetchAppStatus } = useAppStatus();
   const exchangeCode = useExchangeOAuthCode();
+  const exchangeAddScopesCode = useExchangeAddScopesCode();
 
   // Listen for auth errors (401 responses) to handle session expiry
   useEffect(() => {
@@ -29,20 +32,38 @@ export function RootNavigator() {
   const handleOAuthCallback = useCallback(
     async (code: string) => {
       const redirectUri = ExpoLinking.createURL('oauth/callback');
+      console.log('[RootNavigator] OAuth callback received!');
+      console.log('[RootNavigator] Code (first 10 chars):', code.substring(0, 10) + '...');
+      console.log('[RootNavigator] Is authenticated:', isAuthenticated);
+
       try {
         // If this is a Google sign-in callback, use the auth login
-        // Otherwise, it might be a Google Calendar OAuth callback
+        // Otherwise, it's incremental auth for calendar/gmail scopes
         if (!isAuthenticated) {
+          console.log('[RootNavigator] Calling login...');
           await login(code, redirectUri);
+          console.log('[RootNavigator] Login successful!');
         } else {
-          // User already authenticated, this is likely a Google Calendar OAuth
-          await exchangeCode.mutateAsync({ code, redirectUri });
+          // Already authenticated - this is incremental auth for calendar/gmail
+          // Try calendar scopes first (most common in onboarding)
+          console.log('[RootNavigator] Calling exchangeAddScopesCode for calendar...');
+          await exchangeAddScopesCode.mutateAsync({
+            code,
+            scopes: ['calendar' as ScopeType],
+            redirectUri: undefined // Backend will use HTTPS callback
+          });
+          console.log('[RootNavigator] Scopes added successfully!');
         }
-      } catch (error) {
-        console.error('Failed to handle OAuth callback:', error);
+      } catch (error: any) {
+        console.error('[RootNavigator] OAuth callback failed:', error);
+        console.error('[RootNavigator] Error details:', {
+          message: error.message,
+          response: error.response?.data,
+          status: error.response?.status
+        });
       }
     },
-    [exchangeCode, isAuthenticated, login]
+    [exchangeAddScopesCode, isAuthenticated, login]
   );
 
   // Listen for deep links

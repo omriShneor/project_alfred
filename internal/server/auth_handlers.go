@@ -175,7 +175,7 @@ func (s *Server) handleAuthGoogleCallback(w http.ResponseWriter, r *http.Request
 }
 
 // handleAuthLogout invalidates the current session
-// POST /api/auth/logout
+// POST /api/auth/google/logout
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		respondError(w, http.StatusServiceUnavailable, "authentication not configured")

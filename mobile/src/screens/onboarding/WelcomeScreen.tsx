@@ -32,7 +32,7 @@ export function WelcomeScreen() {
           </View>
           <View style={styles.featureItem}>
             <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Apply changes in-app and sync with Google Calendar</Text>
+            <Text style={styles.featureText}>Apply changes in-app and sync with your Google Calendar</Text>
           </View>
         </View>
       </View>
@@ -97,6 +97,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingTop: 24,
+    paddingBottom: 50,
   },
   button: {
     width: '100%',

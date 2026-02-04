@@ -71,8 +71,7 @@ export function useExchangeOAuthCode() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ code, redirectUri }: { code: string; redirectUri?: string }) =>
-      exchangeOAuthCode(code, redirectUri),
+    mutationFn: (code: string) => exchangeOAuthCode(code),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['gcalStatus'] });
       queryClient.invalidateQueries({ queryKey: ['onboardingStatus'] });

@@ -7,26 +7,26 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		1242D8AEE19168C491F623D9 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0061573EAF2DC1F851154034 /* PrivacyInfo.xcprivacy */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
-		170F259B37FECFB16491A0E6 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C6C85504E9F8FC8C5EF4AA7 /* ExpoModulesProvider.swift */; };
 		3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */; };
-		5D6663707346BBCB11C0CFB9 /* libPods-Alfred.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 99F4F69F764490462B8498B8 /* libPods-Alfred.a */; };
+		4C38F6E819121B6E7A3E684F /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0857D3921E0EAEDE1B57FCE3 /* PrivacyInfo.xcprivacy */; };
+		55D832FEE27FF15BDD1C3216 /* libPods-Alfred.a in Frameworks */ = {isa = PBXBuildFile; fileRef = B65EBBE2B863D393832CDA5E /* libPods-Alfred.a */; };
 		BB2F792D24A3F905000567C9 /* Expo.plist in Resources */ = {isa = PBXBuildFile; fileRef = BB2F792C24A3F905000567C9 /* Expo.plist */; };
+		BC658409DCB264BC80096203 /* ExpoModulesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9F4DFD154ED0BB25A32FB71 /* ExpoModulesProvider.swift */; };
 		F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F11748412D0307B40044C1D9 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		0061573EAF2DC1F851154034 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Alfred/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		0857D3921E0EAEDE1B57FCE3 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xml; name = PrivacyInfo.xcprivacy; path = Alfred/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* Alfred.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Alfred.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = Alfred/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = Alfred/Info.plist; sourceTree = "<group>"; };
-		4C6C85504E9F8FC8C5EF4AA7 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Alfred/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
-		99F4F69F764490462B8498B8 /* libPods-Alfred.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Alfred.a"; sourceTree = BUILT_PRODUCTS_DIR; };
+		A3F02443408EAE16BC2C2F24 /* Pods-Alfred.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Alfred.release.xcconfig"; path = "Target Support Files/Pods-Alfred/Pods-Alfred.release.xcconfig"; sourceTree = "<group>"; };
+		A9F4DFD154ED0BB25A32FB71 /* ExpoModulesProvider.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = ExpoModulesProvider.swift; path = "Pods/Target Support Files/Pods-Alfred/ExpoModulesProvider.swift"; sourceTree = "<group>"; };
 		AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = SplashScreen.storyboard; path = Alfred/SplashScreen.storyboard; sourceTree = "<group>"; };
-		BA96D3ECB5E7DF9BD5E607EB /* Pods-Alfred.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Alfred.debug.xcconfig"; path = "Target Support Files/Pods-Alfred/Pods-Alfred.debug.xcconfig"; sourceTree = "<group>"; };
+		AE57037A73A0E76A5F8DC429 /* Pods-Alfred.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Alfred.debug.xcconfig"; path = "Target Support Files/Pods-Alfred/Pods-Alfred.debug.xcconfig"; sourceTree = "<group>"; };
+		B65EBBE2B863D393832CDA5E /* libPods-Alfred.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-Alfred.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BB2F792C24A3F905000567C9 /* Expo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; path = Expo.plist; sourceTree = "<group>"; };
-		CD0A0913B08245F95918A4C4 /* Pods-Alfred.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-Alfred.release.xcconfig"; path = "Target Support Files/Pods-Alfred/Pods-Alfred.release.xcconfig"; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
 		F11748412D0307B40044C1D9 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = Alfred/AppDelegate.swift; sourceTree = "<group>"; };
 		F11748442D0722820044C1D9 /* Alfred-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = "Alfred-Bridging-Header.h"; path = "Alfred/Alfred-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -37,13 +37,21 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				5D6663707346BBCB11C0CFB9 /* libPods-Alfred.a in Frameworks */,
+				55D832FEE27FF15BDD1C3216 /* libPods-Alfred.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0F07D16F3D6A7AB652557D3D /* Alfred */ = {
+			isa = PBXGroup;
+			children = (
+				A9F4DFD154ED0BB25A32FB71 /* ExpoModulesProvider.swift */,
+			);
+			name = Alfred;
+			sourceTree = "<group>";
+		};
 		13B07FAE1A68108700A75B9A /* Alfred */ = {
 			isa = PBXGroup;
 			children = (
@@ -53,16 +61,24 @@
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				AA286B85B6C04FC6940260E9 /* SplashScreen.storyboard */,
-				0061573EAF2DC1F851154034 /* PrivacyInfo.xcprivacy */,
+				0857D3921E0EAEDE1B57FCE3 /* PrivacyInfo.xcprivacy */,
 			);
 			name = Alfred;
+			sourceTree = "<group>";
+		};
+		2498519AC34A36AD0CA8BE38 /* ExpoModulesProviders */ = {
+			isa = PBXGroup;
+			children = (
+				0F07D16F3D6A7AB652557D3D /* Alfred */,
+			);
+			name = ExpoModulesProviders;
 			sourceTree = "<group>";
 		};
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
-				99F4F69F764490462B8498B8 /* libPods-Alfred.a */,
+				B65EBBE2B863D393832CDA5E /* libPods-Alfred.a */,
 			);
 			name = Frameworks;
 			sourceTree = "<group>";
@@ -81,8 +97,8 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
-				F34AD376B1F59E8AA3F65E57 /* Pods */,
-				D46042124B86E898F43F3C15 /* ExpoModulesProviders */,
+				F263EFCC3735A67D50625271 /* Pods */,
+				2498519AC34A36AD0CA8BE38 /* ExpoModulesProviders */,
 			);
 			indentWidth = 2;
 			sourceTree = "<group>";
@@ -97,14 +113,6 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
-		98DDAD02C17A9F3B1B9290E7 /* Alfred */ = {
-			isa = PBXGroup;
-			children = (
-				4C6C85504E9F8FC8C5EF4AA7 /* ExpoModulesProvider.swift */,
-			);
-			name = Alfred;
-			sourceTree = "<group>";
-		};
 		BB2F792B24A3F905000567C9 /* Supporting */ = {
 			isa = PBXGroup;
 			children = (
@@ -114,21 +122,12 @@
 			path = Alfred/Supporting;
 			sourceTree = "<group>";
 		};
-		D46042124B86E898F43F3C15 /* ExpoModulesProviders */ = {
+		F263EFCC3735A67D50625271 /* Pods */ = {
 			isa = PBXGroup;
 			children = (
-				98DDAD02C17A9F3B1B9290E7 /* Alfred */,
+				AE57037A73A0E76A5F8DC429 /* Pods-Alfred.debug.xcconfig */,
+				A3F02443408EAE16BC2C2F24 /* Pods-Alfred.release.xcconfig */,
 			);
-			name = ExpoModulesProviders;
-			sourceTree = "<group>";
-		};
-		F34AD376B1F59E8AA3F65E57 /* Pods */ = {
-			isa = PBXGroup;
-			children = (
-				BA96D3ECB5E7DF9BD5E607EB /* Pods-Alfred.debug.xcconfig */,
-				CD0A0913B08245F95918A4C4 /* Pods-Alfred.release.xcconfig */,
-			);
-			name = Pods;
 			path = Pods;
 			sourceTree = "<group>";
 		};
@@ -140,13 +139,13 @@
 			buildConfigurationList = 13B07F931A680F5B00A75B9A /* Build configuration list for PBXNativeTarget "Alfred" */;
 			buildPhases = (
 				08A4A3CD28434E44B6B9DE2E /* [CP] Check Pods Manifest.lock */,
-				A6052339EB58BCB96B43C84C /* [Expo] Configure project */,
+				9B27381E72B8D0D84966F067 /* [Expo] Configure project */,
 				13B07F871A680F5B00A75B9A /* Sources */,
 				13B07F8C1A680F5B00A75B9A /* Frameworks */,
 				13B07F8E1A680F5B00A75B9A /* Resources */,
 				00DD1BFF1BD5951E006B06BC /* Bundle React Native code and images */,
 				800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */,
-				911EAEDDAC30032C1057EEE2 /* [CP] Embed Pods Frameworks */,
+				7189D18E04AC126D0B3C1A60 /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
 			);
@@ -196,7 +195,7 @@
 				BB2F792D24A3F905000567C9 /* Expo.plist in Resources */,
 				13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */,
 				3E461D99554A48A4959DE609 /* SplashScreen.storyboard in Resources */,
-				1242D8AEE19168C491F623D9 /* PrivacyInfo.xcprivacy in Resources */,
+				4C38F6E819121B6E7A3E684F /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -242,6 +241,28 @@
 			shellScript = "diff \"${PODS_PODFILE_DIR_PATH}/Podfile.lock\" \"${PODS_ROOT}/Manifest.lock\" > /dev/null\nif [ $? != 0 ] ; then\n    # print error to STDERR\n    echo \"error: The sandbox is not in sync with the Podfile.lock. Run 'pod install' or update your CocoaPods installation.\" >&2\n    exit 1\nfi\n# This output is used by Xcode 'outputs' to avoid re-running this script phase.\necho \"SUCCESS\" > \"${SCRIPT_OUTPUT_FILE_0}\"\n";
 			showEnvVarsInLog = 0;
 		};
+		7189D18E04AC126D0B3C1A60 /* [CP] Embed Pods Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+				"${PODS_ROOT}/Target Support Files/Pods-Alfred/Pods-Alfred-frameworks.sh",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
+				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
+			);
+			name = "[CP] Embed Pods Frameworks";
+			outputPaths = (
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
+				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Alfred/Pods-Alfred-frameworks.sh\"\n";
+			showEnvVarsInLog = 0;
+		};
 		800E24972A6A228C8D4807E9 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -274,29 +295,7 @@
 			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Alfred/Pods-Alfred-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
-		911EAEDDAC30032C1057EEE2 /* [CP] Embed Pods Frameworks */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputPaths = (
-				"${PODS_ROOT}/Target Support Files/Pods-Alfred/Pods-Alfred-frameworks.sh",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/React-Core-prebuilt/React.framework/React",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/ReactNativeDependencies/ReactNativeDependencies.framework/ReactNativeDependencies",
-				"${PODS_XCFRAMEWORKS_BUILD_DIR}/hermes-engine/Pre-built/hermes.framework/hermes",
-			);
-			name = "[CP] Embed Pods Frameworks";
-			outputPaths = (
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/React.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/ReactNativeDependencies.framework",
-				"${TARGET_BUILD_DIR}/${FRAMEWORKS_FOLDER_PATH}/hermes.framework",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "\"${PODS_ROOT}/Target Support Files/Pods-Alfred/Pods-Alfred-frameworks.sh\"\n";
-			showEnvVarsInLog = 0;
-		};
-		A6052339EB58BCB96B43C84C /* [Expo] Configure project */ = {
+		9B27381E72B8D0D84966F067 /* [Expo] Configure project */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
 			buildActionMask = 2147483647;
@@ -328,7 +327,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				F11748422D0307B40044C1D9 /* AppDelegate.swift in Sources */,
-				170F259B37FECFB16491A0E6 /* ExpoModulesProvider.swift in Sources */,
+				BC658409DCB264BC80096203 /* ExpoModulesProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -337,12 +336,13 @@
 /* Begin XCBuildConfiguration section */
 		13B07F941A680F5B00A75B9A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = BA96D3ECB5E7DF9BD5E607EB /* Pods-Alfred.debug.xcconfig */;
+			baseConfigurationReference = AE57037A73A0E76A5F8DC429 /* Pods-Alfred.debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Alfred/Alfred.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 638V7Q7LSL;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -361,7 +361,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.alfred.mobile;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omrishneor.alfred;
 				PRODUCT_NAME = Alfred;
 				SWIFT_OBJC_BRIDGING_HEADER = "Alfred/Alfred-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -373,12 +373,13 @@
 		};
 		13B07F951A680F5B00A75B9A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = CD0A0913B08245F95918A4C4 /* Pods-Alfred.release.xcconfig */;
+			baseConfigurationReference = A3F02443408EAE16BC2C2F24 /* Pods-Alfred.release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = Alfred/Alfred.entitlements;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 638V7Q7LSL;
 				INFOPLIST_FILE = Alfred/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -392,7 +393,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.alfred.mobile;
+				PRODUCT_BUNDLE_IDENTIFIER = com.omrishneor.alfred;
 				PRODUCT_NAME = Alfred;
 				SWIFT_OBJC_BRIDGING_HEADER = "Alfred/Alfred-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;

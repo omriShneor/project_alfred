@@ -204,9 +204,6 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/onboarding/status", s.handleOnboardingStatus)
 	mux.HandleFunc("GET /api/onboarding/stream", s.handleOnboardingSSE)
 
-	// OAuth callback (browser redirect for Google Calendar)
-	mux.HandleFunc("GET /oauth/callback", s.handleOAuthCallback)
-
 	// OAuth callback for auth flow (browser redirect from Google, redirects to mobile deep link)
 	mux.HandleFunc("GET /api/auth/callback", s.handleAuthOAuthCallback)
 

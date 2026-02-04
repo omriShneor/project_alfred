@@ -585,30 +585,6 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, events)
 }
 
-// handleOAuthCallback handles the OAuth callback from Google (browser redirect)
-// This endpoint receives the callback from Google after user authorizes.
-// It redirects back to the mobile app via deep link with the authorization code.
-// The app receives the code and exchanges it via /api/auth/google/add-scopes/callback.
-func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
-	code := r.URL.Query().Get("code")
-	errorParam := r.URL.Query().Get("error")
-
-	// Build deep link with code or error
-	deepLink := "alfred://oauth/callback"
-	if errorParam != "" {
-		errorDesc := r.URL.Query().Get("error_description")
-		deepLink = fmt.Sprintf("%s?error=%s&error_description=%s", deepLink, errorParam, errorDesc)
-	} else if code != "" {
-		deepLink = fmt.Sprintf("%s?code=%s", deepLink, code)
-	} else {
-		deepLink = deepLink + "?error=no_code"
-	}
-
-	// Simple HTTP redirect - no HTML page needed
-	http.Redirect(w, r, deepLink, http.StatusFound)
-}
-
-
 // handleGCalDisconnect disconnects Google Calendar and clears token
 func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)

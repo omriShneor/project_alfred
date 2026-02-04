@@ -20,7 +20,7 @@ type DiscoverableChannel struct {
 }
 
 // GetDiscoverableChannels returns all contacts that can be tracked (no groups/channels)
-func (c *Client) GetDiscoverableChannels(ctx context.Context, db *database.DB) ([]DiscoverableChannel, error) {
+func (c *Client) GetDiscoverableChannels(ctx context.Context, userID int64, db *database.DB) ([]DiscoverableChannel, error) {
 	c.mu.RLock()
 	api := c.api
 	c.mu.RUnlock()
@@ -54,7 +54,7 @@ func (c *Client) GetDiscoverableChannels(ctx context.Context, db *database.DB) (
 				}
 
 				// Check if tracked
-				tracked, channelID, _, _ := db.IsSourceChannelTracked(source.SourceTypeTelegram, identifier)
+				tracked, channelID, _, _ := db.IsSourceChannelTracked(userID, source.SourceTypeTelegram, identifier)
 
 				ch := DiscoverableChannel{
 					Type:           "contact",

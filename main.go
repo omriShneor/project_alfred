@@ -12,14 +12,12 @@ import (
 	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/agent/event"
 	"github.com/omriShneor/project_alfred/internal/agent/reminder"
+	"github.com/omriShneor/project_alfred/internal/clients"
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/notify"
-	"github.com/omriShneor/project_alfred/internal/onboarding"
 	"github.com/omriShneor/project_alfred/internal/server"
 	"github.com/omriShneor/project_alfred/internal/sse"
-	"github.com/omriShneor/project_alfred/internal/telegram"
-	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 func main() {
@@ -52,25 +50,24 @@ func main() {
 	}()
 
 	ctx := context.Background()
-	clients, err := onboarding.Initialize(ctx, db, cfg, state, srv, notifyService)
-	if err != nil {
-		fatal("initialization", err)
-	}
+
+	// Create ClientManager for per-user WhatsApp/Telegram clients
+	clientManager := clients.NewClientManager(db, &clients.ManagerConfig{
+		WhatsAppDBBasePath: cfg.WhatsAppDBPath,
+		TelegramDBBasePath: cfg.TelegramDBPath,
+		TelegramAPIID:      cfg.TelegramAPIID,
+		TelegramAPIHash:    cfg.TelegramAPIHash,
+		DebugAllMessages:   cfg.DebugAllMessages,
+	}, notifyService, state)
+
+	// Clean up legacy session files (one-time migration)
+	clientManager.CleanupLegacySessions()
+
+	// Set ClientManager on server
+	srv.SetClientManager(clientManager)
 
 	eventAnalyzer := initEventAnalyzer(cfg)
 	reminderAnalyzer := initReminderAnalyzer(cfg)
-	tgClient := initTelegram(db, cfg, state)
-
-	// Initialize clients on server (but don't start workers yet - they start after user login)
-	srv.InitializeClients(server.ClientsConfig{
-		WAClient:         clients.WAClient,
-		TGClient:         tgClient,
-		GmailClient:      nil, // Created per-user after login
-		GmailWorker:      nil, // Created per-user after login
-		NotifyService:    notifyService,
-		EventAnalyzer:    eventAnalyzer,
-		ReminderAnalyzer: reminderAnalyzer,
-	})
 
 	// Create UserServiceManager for per-user service lifecycle
 	userServiceManager := server.NewUserServiceManager(server.UserServiceManagerConfig{
@@ -80,16 +77,19 @@ func main() {
 		NotifyService:    notifyService,
 		EventAnalyzer:    eventAnalyzer,
 		ReminderAnalyzer: reminderAnalyzer,
-		WAClient:         clients.WAClient,
-		TGClient:         tgClient,
-		MsgChan:          clients.MsgChan,
+		ClientManager:    clientManager,
 	})
 	srv.SetUserServiceManager(userServiceManager)
+
+	// Restore sessions for users who were previously connected
+	if err := clientManager.RestoreUserSessions(ctx); err != nil {
+		fmt.Printf("Warning: Failed to restore some user sessions: %v\n", err)
+	}
 
 	// NOTE: Workers and processors are NOT started here.
 	// They will be started by UserServiceManager after user login + onboarding.
 
-	waitForShutdown(srv, clients.WAClient, tgClient, userServiceManager)
+	waitForShutdown(srv, clientManager, userServiceManager)
 }
 
 func initDatabase(cfg *config.Config) (*database.DB, error) {
@@ -143,46 +143,13 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
-func initTelegram(db *database.DB, cfg *config.Config, state *sse.State) *telegram.Client {
-	if cfg.TelegramAPIID == 0 || cfg.TelegramAPIHash == "" {
-		fmt.Println("Telegram: Not configured (ALFRED_TELEGRAM_API_ID and ALFRED_TELEGRAM_API_HASH required)")
-		return nil
-	}
-
-	handler := telegram.NewHandler(db, cfg.DebugAllMessages, state)
-
-	tgClient, err := telegram.NewClient(telegram.ClientConfig{
-		APIID:       cfg.TelegramAPIID,
-		APIHash:     cfg.TelegramAPIHash,
-		SessionPath: cfg.TelegramDBPath,
-		Handler:     handler,
-	})
-	if err != nil {
-		fmt.Printf("Warning: Failed to create Telegram client: %v\n", err)
-		return nil
-	}
-
-	fmt.Println("Telegram client initialized")
-
-	// Auto-connect to restore session if exists
-	if err := tgClient.Connect(); err != nil {
-		fmt.Printf("Warning: Failed to auto-connect Telegram: %v\n", err)
-	} else if tgClient.IsConnected() {
-		fmt.Println("Telegram: Restored session - already authenticated")
-		state.SetTelegramStatus("connected")
-	} else {
-		fmt.Println("Telegram: Connected but not authenticated")
-	}
-
-	return tgClient
-}
 
 func fatal(context string, err error) {
 	fmt.Fprintf(os.Stderr, "Error %s: %v\n", context, err)
 	os.Exit(1)
 }
 
-func waitForShutdown(srv *server.Server, waClient *whatsapp.Client, tgClient *telegram.Client, userServiceManager *server.UserServiceManager) {
+func waitForShutdown(srv *server.Server, clientManager *clients.ClientManager, userServiceManager *server.UserServiceManager) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
@@ -196,11 +163,11 @@ func waitForShutdown(srv *server.Server, waClient *whatsapp.Client, tgClient *te
 	if userServiceManager != nil {
 		userServiceManager.StopAllServices()
 	}
-	if tgClient != nil {
-		tgClient.Disconnect()
+
+	// Shutdown all clients gracefully
+	if clientManager != nil {
+		clientManager.Shutdown(ctx)
 	}
+
 	srv.Shutdown(ctx)
-	if waClient != nil {
-		waClient.Disconnect()
-	}
 }

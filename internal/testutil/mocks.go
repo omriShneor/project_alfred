@@ -1,8 +1,11 @@
 package testutil
 
 import (
+	"fmt"
 	"sync"
 	"time"
+
+	"github.com/omriShneor/project_alfred/internal/source"
 )
 
 // MockGCalClient simulates Google Calendar API for testing
@@ -253,4 +256,161 @@ func (m *MockTelegramClient) ClearMessages() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.messages = nil
+}
+
+// MockClientManager simulates the ClientManager for multi-user testing
+type MockClientManager struct {
+	mu              sync.RWMutex
+	whatsappClients map[int64]*MockWhatsAppClient
+	telegramClients map[int64]*MockTelegramClient
+	msgChan         chan source.Message
+	bufferSize      int
+}
+
+// NewMockClientManager creates a new mock client manager
+func NewMockClientManager(bufferSize int) *MockClientManager {
+	if bufferSize == 0 {
+		bufferSize = 100 // Default buffer size
+	}
+	return &MockClientManager{
+		whatsappClients: make(map[int64]*MockWhatsAppClient),
+		telegramClients: make(map[int64]*MockTelegramClient),
+		msgChan:         make(chan source.Message, bufferSize),
+		bufferSize:      bufferSize,
+	}
+}
+
+// GetWhatsAppClient returns or creates a WhatsApp client for the given user
+func (m *MockClientManager) GetWhatsAppClient(userID int64) (*MockWhatsAppClient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if client, exists := m.whatsappClients[userID]; exists {
+		return client, nil
+	}
+
+	// Create new client for this user
+	client := NewMockWhatsAppClient()
+	m.whatsappClients[userID] = client
+	return client, nil
+}
+
+// GetTelegramClient returns or creates a Telegram client for the given user
+func (m *MockClientManager) GetTelegramClient(userID int64) (*MockTelegramClient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if client, exists := m.telegramClients[userID]; exists {
+		return client, nil
+	}
+
+	// Create new client for this user
+	client := NewMockTelegramClient()
+	m.telegramClients[userID] = client
+	return client, nil
+}
+
+// LogoutWhatsApp disconnects and removes the WhatsApp client for a user
+func (m *MockClientManager) LogoutWhatsApp(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if client, exists := m.whatsappClients[userID]; exists {
+		client.SetConnected(false)
+		delete(m.whatsappClients, userID)
+	}
+	return nil
+}
+
+// LogoutTelegram disconnects and removes the Telegram client for a user
+func (m *MockClientManager) LogoutTelegram(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if client, exists := m.telegramClients[userID]; exists {
+		client.SetConnected(false)
+		delete(m.telegramClients, userID)
+	}
+	return nil
+}
+
+// CleanupUser removes all clients for a user (called on logout)
+func (m *MockClientManager) CleanupUser(userID int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Disconnect and remove WhatsApp client
+	if client, exists := m.whatsappClients[userID]; exists {
+		client.SetConnected(false)
+		delete(m.whatsappClients, userID)
+	}
+
+	// Disconnect and remove Telegram client
+	if client, exists := m.telegramClients[userID]; exists {
+		client.SetConnected(false)
+		delete(m.telegramClients, userID)
+	}
+
+	return nil
+}
+
+// MessageChan returns the shared message channel
+func (m *MockClientManager) MessageChan() <-chan source.Message {
+	return m.msgChan
+}
+
+// SendMessage simulates sending a message to the channel (for testing)
+func (m *MockClientManager) SendMessage(msg source.Message) {
+	m.msgChan <- msg
+}
+
+// RestoreUserSessions simulates restoring user sessions on startup (no-op in mock)
+func (m *MockClientManager) RestoreUserSessions() error {
+	// No-op for mock - sessions are created on-demand in tests
+	return nil
+}
+
+// Shutdown closes the message channel
+func (m *MockClientManager) Shutdown() {
+	close(m.msgChan)
+}
+
+// GetWhatsAppClientCount returns the number of active WhatsApp clients (for testing)
+func (m *MockClientManager) GetWhatsAppClientCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.whatsappClients)
+}
+
+// GetTelegramClientCount returns the number of active Telegram clients (for testing)
+func (m *MockClientManager) GetTelegramClientCount() int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return len(m.telegramClients)
+}
+
+// SetWhatsAppConnected sets the connection state for a user's WhatsApp client
+func (m *MockClientManager) SetWhatsAppConnected(userID int64, connected bool) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	client, exists := m.whatsappClients[userID]
+	if !exists {
+		return fmt.Errorf("WhatsApp client not found for user %d", userID)
+	}
+	client.SetConnected(connected)
+	return nil
+}
+
+// SetTelegramConnected sets the connection state for a user's Telegram client
+func (m *MockClientManager) SetTelegramConnected(userID int64, connected bool) error {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	client, exists := m.telegramClients[userID]
+	if !exists {
+		return fmt.Errorf("Telegram client not found for user %d", userID)
+	}
+	client.SetConnected(connected)
+	return nil
 }

@@ -35,12 +35,24 @@ func (sm *SourceMessage) ToHistoryMessage() source.HistoryMessage {
 
 // StoreSourceMessage saves a message to the history with source type
 func (d *DB) StoreSourceMessage(sourceType source.SourceType, channelID int64, senderID, senderName, text, subject string, timestamp time.Time) (*SourceMessage, error) {
+	// user_id is derived from the channel's user_id via subquery
 	result, err := d.Exec(`
-		INSERT INTO message_history (source_type, channel_id, sender_jid, sender_name, message_text, subject, timestamp)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, sourceType, channelID, senderID, senderName, text, subject, timestamp)
+		INSERT INTO message_history (user_id, source_type, channel_id, sender_jid, sender_name, message_text, subject, timestamp)
+		SELECT user_id, ?, ?, ?, ?, ?, ?, ?
+		FROM channels
+		WHERE id = ?
+	`, sourceType, channelID, senderID, senderName, text, subject, timestamp, channelID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to store source message: %w", err)
+	}
+
+	// Check if any row was actually inserted (channel must exist)
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, fmt.Errorf("failed to check rows affected: %w", err)
+	}
+	if rowsAffected == 0 {
+		return nil, fmt.Errorf("channel %d does not exist", channelID)
 	}
 
 	id, err := result.LastInsertId()

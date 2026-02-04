@@ -100,20 +100,10 @@ func TestGCalListCalendars(t *testing.T) {
 	})
 }
 
+// TestGCalConnect is obsolete - the /api/gcal/connect endpoint no longer exists
+// OAuth flow now uses /api/auth/google/add-scopes for incremental authorization
 func TestGCalConnect(t *testing.T) {
-	ts := testutil.NewTestServer(t)
-
-	t.Run("connect returns error when no credentials configured", func(t *testing.T) {
-		req, err := http.NewRequest("POST", ts.BaseURL()+"/api/gcal/connect", nil)
-		require.NoError(t, err)
-
-		resp, err := ts.Client().Do(req)
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		// Should return error since no OAuth credentials are configured
-		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-	})
+	t.Skip("Endpoint /api/gcal/connect no longer exists - OAuth handled by /api/auth/google")
 }
 
 func TestGCalDisconnect(t *testing.T) {

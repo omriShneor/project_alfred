@@ -17,16 +17,27 @@ type TelegramStatusResponse struct {
 
 // handleTelegramStatus returns the current Telegram connection status
 func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil {
+	userID := getUserID(r)
+	if s.clientManager == nil {
 		respondJSON(w, http.StatusOK, TelegramStatusResponse{
 			Connected: false,
-			Message:   "Telegram not configured",
+			Message:   "Client manager not configured",
+		})
+		return
+	}
+
+	// Get per-user Telegram client
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil {
+		respondJSON(w, http.StatusOK, TelegramStatusResponse{
+			Connected: false,
+			Message:   fmt.Sprintf("Failed to get client: %v", err),
 		})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, TelegramStatusResponse{
-		Connected: s.tgClient.IsConnected(),
+		Connected: tgClient.IsConnected(),
 		Message:   "",
 	})
 }
@@ -38,8 +49,9 @@ type TelegramSendCodeRequest struct {
 
 // handleTelegramSendCode sends a verification code to the given phone number
 func (s *Server) handleTelegramSendCode(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "Telegram not configured")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
 	}
 
@@ -54,7 +66,15 @@ func (s *Server) handleTelegramSendCode(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := s.tgClient.SendCode(r.Context(), req.PhoneNumber); err != nil {
+	// Get per-user Telegram client
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil {
+		s.state.SetTelegramError(fmt.Sprintf("Failed to get Telegram client: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get Telegram client: %v", err))
+		return
+	}
+
+	if err := tgClient.SendCode(r.Context(), req.PhoneNumber); err != nil {
 		s.state.SetTelegramError(err.Error())
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to send code: %v", err))
 		return
@@ -74,8 +94,9 @@ type TelegramVerifyCodeRequest struct {
 
 // handleTelegramVerifyCode verifies the code and completes authentication
 func (s *Server) handleTelegramVerifyCode(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "Telegram not configured")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
 	}
 
@@ -90,7 +111,15 @@ func (s *Server) handleTelegramVerifyCode(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := s.tgClient.VerifyCode(r.Context(), req.Code); err != nil {
+	// Get per-user Telegram client
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil {
+		s.state.SetTelegramError(fmt.Sprintf("Failed to get Telegram client: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get Telegram client: %v", err))
+		return
+	}
+
+	if err := tgClient.VerifyCode(r.Context(), req.Code); err != nil {
 		s.state.SetTelegramError(err.Error())
 		respondError(w, http.StatusUnauthorized, fmt.Sprintf("Failed to verify code: %v", err))
 		return
@@ -105,12 +134,18 @@ func (s *Server) handleTelegramVerifyCode(w http.ResponseWriter, r *http.Request
 
 // handleTelegramDisconnect disconnects the Telegram client
 func (s *Server) handleTelegramDisconnect(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "Telegram not configured")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
 	}
 
-	s.tgClient.Disconnect()
+	// Logout via ClientManager (handles session cleanup)
+	if err := s.clientManager.LogoutTelegram(userID); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to disconnect: %v", err))
+		return
+	}
+
 	s.state.SetTelegramStatus("pending")
 
 	respondJSON(w, http.StatusOK, map[string]string{
@@ -120,18 +155,27 @@ func (s *Server) handleTelegramDisconnect(w http.ResponseWriter, r *http.Request
 
 // handleTelegramReconnect attempts to reconnect the Telegram client
 func (s *Server) handleTelegramReconnect(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "Telegram not configured")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
 	}
 
-	if err := s.tgClient.Connect(); err != nil {
+	// Get per-user Telegram client
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil {
+		s.state.SetTelegramError(fmt.Sprintf("Failed to get Telegram client: %v", err))
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get Telegram client: %v", err))
+		return
+	}
+
+	if err := tgClient.Connect(); err != nil {
 		s.state.SetTelegramError(err.Error())
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to reconnect: %v", err))
 		return
 	}
 
-	if s.tgClient.IsConnected() {
+	if tgClient.IsConnected() {
 		s.state.SetTelegramStatus("connected")
 		respondJSON(w, http.StatusOK, TelegramStatusResponse{
 			Connected: true,
@@ -148,17 +192,26 @@ func (s *Server) handleTelegramReconnect(w http.ResponseWriter, r *http.Request)
 
 // handleDiscoverTelegramChannels lists available Telegram chats
 func (s *Server) handleDiscoverTelegramChannels(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "Telegram not configured")
+	userID := getUserID(r)
+
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
 	}
 
-	if !s.tgClient.IsConnected() {
+	// Get per-user Telegram client
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil {
+		respondError(w, http.StatusServiceUnavailable, fmt.Sprintf("Failed to get Telegram client: %v", err))
+		return
+	}
+
+	if !tgClient.IsConnected() {
 		respondError(w, http.StatusServiceUnavailable, "Telegram not connected")
 		return
 	}
 
-	channels, err := s.tgClient.GetDiscoverableChannels(r.Context(), s.db)
+	channels, err := tgClient.GetDiscoverableChannels(r.Context(), userID, s.db)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to discover channels: %v", err))
 		return
@@ -169,7 +222,8 @@ func (s *Server) handleDiscoverTelegramChannels(w http.ResponseWriter, r *http.R
 
 // handleListTelegramChannels lists tracked Telegram channels
 func (s *Server) handleListTelegramChannels(w http.ResponseWriter, r *http.Request) {
-	channels, err := s.db.ListSourceChannels(source.SourceTypeTelegram)
+	userID := getUserID(r)
+	channels, err := s.db.ListSourceChannels(userID, source.SourceTypeTelegram)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list channels: %v", err))
 		return
@@ -277,13 +331,7 @@ type TelegramTopContactResponse struct {
 
 // handleTelegramTopContacts returns top contacts based on message history
 func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Request) {
-	if s.tgClient == nil || !s.tgClient.IsConnected() {
-		// Return empty contacts if Telegram not connected
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"contacts": []TelegramTopContactResponse{},
-		})
-		return
-	}
+	userID := getUserID(r)
 
 	// Get top contacts from message history
 	contacts, err := s.db.GetTopContactsBySourceType("telegram", 8)
@@ -293,34 +341,38 @@ func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Reques
 	}
 
 	// If no message history, fall back to discoverable channels (recent chats from Telegram)
-	if len(contacts) == 0 {
-		discoverableChannels, err := s.tgClient.GetDiscoverableChannels(r.Context(), s.db)
-		if err == nil && len(discoverableChannels) > 0 {
-			// Filter to contacts only and limit to 8
-			var response []TelegramTopContactResponse
-			for _, ch := range discoverableChannels {
-				if ch.Type == "contact" {
-					resp := TelegramTopContactResponse{
-						Identifier:     ch.Identifier,
-						Name:           ch.Name,
-						SecondaryLabel: ch.SecondaryLabel, // Already formatted in groups.go
-						MessageCount:   0,                 // No message count from discovery
-						IsTracked:      ch.IsTracked,
-						Type:           ch.Type,
-					}
-					if ch.IsTracked && ch.ChannelID != nil {
-						resp.ChannelID = ch.ChannelID
-					}
-					response = append(response, resp)
-					if len(response) >= 8 {
-						break
+	if len(contacts) == 0 && s.clientManager != nil {
+		// Get per-user Telegram client
+		tgClient, err := s.clientManager.GetTelegramClient(userID)
+		if err == nil && tgClient.IsConnected() {
+			discoverableChannels, err := tgClient.GetDiscoverableChannels(r.Context(), userID, s.db)
+			if err == nil && len(discoverableChannels) > 0 {
+				// Filter to contacts only and limit to 8
+				var response []TelegramTopContactResponse
+				for _, ch := range discoverableChannels {
+					if ch.Type == "contact" {
+						resp := TelegramTopContactResponse{
+							Identifier:     ch.Identifier,
+							Name:           ch.Name,
+							SecondaryLabel: ch.SecondaryLabel, // Already formatted in groups.go
+							MessageCount:   0,                 // No message count from discovery
+							IsTracked:      ch.IsTracked,
+							Type:           ch.Type,
+						}
+						if ch.IsTracked && ch.ChannelID != nil {
+							resp.ChannelID = ch.ChannelID
+						}
+						response = append(response, resp)
+						if len(response) >= 8 {
+							break
+						}
 					}
 				}
+				respondJSON(w, http.StatusOK, map[string]interface{}{
+					"contacts": response,
+				})
+				return
 			}
-			respondJSON(w, http.StatusOK, map[string]interface{}{
-				"contacts": response,
-			})
-			return
 		}
 	}
 
@@ -353,10 +405,8 @@ type TelegramCustomSourceRequest struct {
 // handleTelegramCustomSource creates a Telegram channel from a username
 func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
-	if s.tgClient == nil || !s.tgClient.IsConnected() {
-		respondError(w, http.StatusServiceUnavailable, "Telegram not connected")
-		return
-	}
+	// Note: This endpoint doesn't require Telegram to be connected
+	// It just creates a channel entry in the database
 
 	var req TelegramCustomSourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -389,7 +439,7 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 	identifier := username
 
 	// Check if already tracked
-	existing, err := s.db.GetSourceChannelByIdentifier(source.SourceTypeTelegram, identifier)
+	existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeTelegram, identifier)
 	if err == nil && existing != nil {
 		respondError(w, http.StatusConflict, "This username is already being tracked")
 		return

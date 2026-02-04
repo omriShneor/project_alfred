@@ -5,15 +5,13 @@ import (
 	"sync"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/clients"
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/processor"
-	"github.com/omriShneor/project_alfred/internal/source"
-	"github.com/omriShneor/project_alfred/internal/telegram"
-	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 // UserServices holds the active services for a single user
@@ -33,12 +31,8 @@ type UserServiceManager struct {
 	eventAnalyzer    agent.EventAnalyzer
 	reminderAnalyzer agent.ReminderAnalyzer
 
-	// Shared clients
-	waClient *whatsapp.Client
-	tgClient *telegram.Client
-
-	// Message channel for processor
-	msgChan <-chan source.Message
+	// ClientManager for per-user WhatsApp/Telegram clients
+	clientManager *clients.ClientManager
 
 	// Active services per user
 	mu           sync.RWMutex
@@ -53,9 +47,7 @@ type UserServiceManagerConfig struct {
 	NotifyService    *notify.Service
 	EventAnalyzer    agent.EventAnalyzer
 	ReminderAnalyzer agent.ReminderAnalyzer
-	WAClient         *whatsapp.Client
-	TGClient         *telegram.Client
-	MsgChan          <-chan source.Message
+	ClientManager    *clients.ClientManager
 }
 
 // NewUserServiceManager creates a new UserServiceManager
@@ -67,21 +59,11 @@ func NewUserServiceManager(cfg UserServiceManagerConfig) *UserServiceManager {
 		notifyService:    cfg.NotifyService,
 		eventAnalyzer:    cfg.EventAnalyzer,
 		reminderAnalyzer: cfg.ReminderAnalyzer,
-		waClient:         cfg.WAClient,
-		tgClient:         cfg.TGClient,
-		msgChan:          cfg.MsgChan,
+		clientManager:    cfg.ClientManager,
 		userServices:     make(map[int64]*UserServices),
 	}
 }
 
-// SetClients updates the shared clients (used after OAuth completion)
-func (m *UserServiceManager) SetClients(waClient *whatsapp.Client, tgClient *telegram.Client, msgChan <-chan source.Message) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.waClient = waClient
-	m.tgClient = tgClient
-	m.msgChan = msgChan
-}
 
 // StartServicesForUser initializes and starts services for a specific user
 func (m *UserServiceManager) StartServicesForUser(userID int64) error {
@@ -100,17 +82,9 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 		UserID: userID,
 	}
 
-	// Set userID on WhatsApp handler
-	if m.waClient != nil {
-		m.waClient.SetUserID(userID)
-		fmt.Printf("  - WhatsApp handler userID set to %d\n", userID)
-	}
-
-	// Set userID on Telegram handler
-	if m.tgClient != nil {
-		m.tgClient.SetUserID(userID)
-		fmt.Printf("  - Telegram handler userID set to %d\n", userID)
-	}
+	// Note: Per-user WhatsApp/Telegram clients are managed by ClientManager
+	// They are created on-demand when handlers need them
+	// No need to set userID on handlers - already done during client creation
 
 	// Start Gmail worker if user has authenticated Google Calendar (for Gmail access)
 	gmailWorker, err := m.createGmailWorker(userID)
@@ -122,12 +96,14 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 	}
 
 	// Start processor
-	if m.msgChan != nil && m.eventAnalyzer != nil {
+	if m.clientManager != nil && m.eventAnalyzer != nil {
+		// Get message channel from ClientManager
+		msgChan := m.clientManager.MessageChan()
 		proc := processor.New(
 			m.db,
 			m.eventAnalyzer,
 			m.reminderAnalyzer,
-			m.msgChan,
+			msgChan,
 			m.cfg.MessageHistorySize,
 			m.notifyService,
 		)
@@ -164,6 +140,15 @@ func (m *UserServiceManager) StopServicesForUser(userID int64) {
 
 	if services.Processor != nil {
 		services.Processor.Stop()
+	}
+
+	// Cleanup WhatsApp/Telegram clients for this user
+	if m.clientManager != nil {
+		if err := m.clientManager.CleanupUser(userID); err != nil {
+			fmt.Printf("  - Warning: Failed to cleanup clients for user %d: %v\n", userID, err)
+		} else {
+			fmt.Printf("  - Clients cleaned up for user %d\n", userID)
+		}
 	}
 
 	services.running = false

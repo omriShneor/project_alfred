@@ -174,6 +174,7 @@ func TestGetSourceChannelByIdentifier(t *testing.T) {
 
 	t.Run("find whatsapp channel", func(t *testing.T) {
 		channel, err := db.GetSourceChannelByIdentifier(
+			user.ID,
 			source.SourceTypeWhatsApp,
 			"1234567890@s.whatsapp.net",
 		)
@@ -184,6 +185,7 @@ func TestGetSourceChannelByIdentifier(t *testing.T) {
 
 	t.Run("find gmail channel", func(t *testing.T) {
 		channel, err := db.GetSourceChannelByIdentifier(
+			user.ID,
 			source.SourceTypeGmail,
 			"test@example.com",
 		)
@@ -194,6 +196,7 @@ func TestGetSourceChannelByIdentifier(t *testing.T) {
 
 	t.Run("not found returns nil", func(t *testing.T) {
 		channel, err := db.GetSourceChannelByIdentifier(
+			user.ID,
 			source.SourceTypeWhatsApp,
 			"nonexistent@s.whatsapp.net",
 		)
@@ -204,6 +207,7 @@ func TestGetSourceChannelByIdentifier(t *testing.T) {
 	t.Run("wrong source type returns nil", func(t *testing.T) {
 		// The identifier exists but for a different source type
 		channel, err := db.GetSourceChannelByIdentifier(
+			user.ID,
 			source.SourceTypeTelegram,
 			"1234567890@s.whatsapp.net",
 		)
@@ -227,7 +231,7 @@ func TestListSourceChannels(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("list whatsapp channels", func(t *testing.T) {
-		channels, err := db.ListSourceChannels(source.SourceTypeWhatsApp)
+		channels, err := db.ListSourceChannels(user.ID, source.SourceTypeWhatsApp)
 		require.NoError(t, err)
 		assert.Len(t, channels, 2)
 
@@ -237,21 +241,22 @@ func TestListSourceChannels(t *testing.T) {
 	})
 
 	t.Run("list telegram channels", func(t *testing.T) {
-		channels, err := db.ListSourceChannels(source.SourceTypeTelegram)
+		channels, err := db.ListSourceChannels(user.ID, source.SourceTypeTelegram)
 		require.NoError(t, err)
 		assert.Len(t, channels, 1)
 		assert.Equal(t, "TG 1", channels[0].Name)
 	})
 
 	t.Run("list gmail channels", func(t *testing.T) {
-		channels, err := db.ListSourceChannels(source.SourceTypeGmail)
+		channels, err := db.ListSourceChannels(user.ID, source.SourceTypeGmail)
 		require.NoError(t, err)
 		assert.Len(t, channels, 1)
 	})
 
 	t.Run("empty list for source with no channels", func(t *testing.T) {
 		db2 := NewTestDB(t)
-		channels, err := db2.ListSourceChannels(source.SourceTypeWhatsApp)
+		user2 := CreateTestUser(t, db2)
+		channels, err := db2.ListSourceChannels(user2.ID, source.SourceTypeWhatsApp)
 		require.NoError(t, err)
 		assert.Len(t, channels, 0)
 	})
@@ -274,7 +279,7 @@ func TestListEnabledSourceChannels(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("returns only enabled channels", func(t *testing.T) {
-		channels, err := db.ListEnabledSourceChannels(source.SourceTypeWhatsApp)
+		channels, err := db.ListEnabledSourceChannels(user.ID, source.SourceTypeWhatsApp)
 		require.NoError(t, err)
 		assert.Len(t, channels, 2)
 
@@ -289,7 +294,7 @@ func TestListEnabledSourceChannels(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("includes re-enabled channels", func(t *testing.T) {
-		channels, err := db.ListEnabledSourceChannels(source.SourceTypeWhatsApp)
+		channels, err := db.ListEnabledSourceChannels(user.ID, source.SourceTypeWhatsApp)
 		require.NoError(t, err)
 		assert.Len(t, channels, 3)
 	})
@@ -398,6 +403,7 @@ func TestIsSourceChannelTracked(t *testing.T) {
 
 	t.Run("tracked and enabled", func(t *testing.T) {
 		isTracked, channelID, channelType, err := db.IsSourceChannelTracked(
+			user.ID,
 			source.SourceTypeWhatsApp,
 			"enabled@s.whatsapp.net",
 		)
@@ -409,6 +415,7 @@ func TestIsSourceChannelTracked(t *testing.T) {
 
 	t.Run("tracked but disabled returns not tracked", func(t *testing.T) {
 		isTracked, channelID, channelType, err := db.IsSourceChannelTracked(
+			user.ID,
 			source.SourceTypeWhatsApp,
 			"disabled@s.whatsapp.net",
 		)
@@ -420,6 +427,7 @@ func TestIsSourceChannelTracked(t *testing.T) {
 
 	t.Run("not tracked at all", func(t *testing.T) {
 		isTracked, channelID, channelType, err := db.IsSourceChannelTracked(
+			user.ID,
 			source.SourceTypeWhatsApp,
 			"nonexistent@s.whatsapp.net",
 		)
@@ -431,6 +439,7 @@ func TestIsSourceChannelTracked(t *testing.T) {
 
 	t.Run("wrong source type", func(t *testing.T) {
 		isTracked, _, _, err := db.IsSourceChannelTracked(
+			user.ID,
 			source.SourceTypeTelegram, // Wrong source
 			"enabled@s.whatsapp.net",
 		)

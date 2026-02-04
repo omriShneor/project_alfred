@@ -22,9 +22,13 @@ type TestServer struct {
 	t          *testing.T
 
 	// Mock clients
-	GCalMock     *MockGCalClient
-	GmailMock    *MockGmailClient
+	GCalMock      *MockGCalClient
+	GmailMock     *MockGmailClient
+	ClientManager *MockClientManager
+
+	// Deprecated: Use ClientManager.GetWhatsAppClient(userID) instead
 	WhatsAppMock *MockWhatsAppClient
+	// Deprecated: Use ClientManager.GetTelegramClient(userID) instead
 	TelegramMock *MockTelegramClient
 }
 
@@ -65,6 +69,14 @@ func NewTestServer(t *testing.T, opts ...TestServerOption) *TestServer {
 
 	ts.Server = server.New(cfg)
 
+	// Always create MockClientManager for multi-user support
+	// Tests can use GetWhatsAppClient(userID) or GetTelegramClient(userID) on the manager
+	ts.ClientManager = NewMockClientManager(100)
+
+	// Note: Server.SetClientManager expects *clients.ClientManager
+	// Tests that need WhatsApp/Telegram should use ts.ClientManager directly
+	// or call GetWhatsAppClient/GetTelegramClient to auto-create per-user clients
+
 	// Create HTTP test server using the server's handler wrapped with test auth
 	// This injects the test user into the request context for all requests
 	testAuthMiddleware := createTestAuthMiddleware(testUser)
@@ -88,6 +100,32 @@ func (ts *TestServer) Client() *http.Client {
 	return ts.HTTPServer.Client()
 }
 
+// GetWhatsAppClient returns or creates a WhatsApp mock client for the given user
+func (ts *TestServer) GetWhatsAppClient(userID int64) (*MockWhatsAppClient, error) {
+	if ts.ClientManager == nil {
+		ts.ClientManager = NewMockClientManager(100)
+	}
+	return ts.ClientManager.GetWhatsAppClient(userID)
+}
+
+// GetTelegramClient returns or creates a Telegram mock client for the given user
+func (ts *TestServer) GetTelegramClient(userID int64) (*MockTelegramClient, error) {
+	if ts.ClientManager == nil {
+		ts.ClientManager = NewMockClientManager(100)
+	}
+	return ts.ClientManager.GetTelegramClient(userID)
+}
+
+// GetTestUserWhatsAppClient is a convenience method to get WhatsApp client for the test user
+func (ts *TestServer) GetTestUserWhatsAppClient() (*MockWhatsAppClient, error) {
+	return ts.GetWhatsAppClient(ts.TestUser.ID)
+}
+
+// GetTestUserTelegramClient is a convenience method to get Telegram client for the test user
+func (ts *TestServer) GetTestUserTelegramClient() (*MockTelegramClient, error) {
+	return ts.GetTelegramClient(ts.TestUser.ID)
+}
+
 // WithMockGCal enables Google Calendar mocking
 func WithMockGCal() TestServerOption {
 	return func(ts *TestServer) {
@@ -102,17 +140,27 @@ func WithMockGmail() TestServerOption {
 	}
 }
 
-// WithMockWhatsApp enables WhatsApp mocking
+// WithMockWhatsApp enables WhatsApp mocking (deprecated - use ClientManager)
+// Creates a WhatsApp client for the test user automatically
 func WithMockWhatsApp() TestServerOption {
 	return func(ts *TestServer) {
-		ts.WhatsAppMock = NewMockWhatsAppClient()
+		// Create client for test user via ClientManager
+		if ts.ClientManager != nil && ts.TestUser != nil {
+			client, _ := ts.ClientManager.GetWhatsAppClient(ts.TestUser.ID)
+			ts.WhatsAppMock = client
+		}
 	}
 }
 
-// WithMockTelegram enables Telegram mocking
+// WithMockTelegram enables Telegram mocking (deprecated - use ClientManager)
+// Creates a Telegram client for the test user automatically
 func WithMockTelegram() TestServerOption {
 	return func(ts *TestServer) {
-		ts.TelegramMock = NewMockTelegramClient()
+		// Create client for test user via ClientManager
+		if ts.ClientManager != nil && ts.TestUser != nil {
+			client, _ := ts.ClientManager.GetTelegramClient(ts.TestUser.ID)
+			ts.TelegramMock = client
+		}
 	}
 }
 
@@ -121,8 +169,7 @@ func WithAllMocks() TestServerOption {
 	return func(ts *TestServer) {
 		ts.GCalMock = NewMockGCalClient()
 		ts.GmailMock = NewMockGmailClient()
-		ts.WhatsAppMock = NewMockWhatsAppClient()
-		ts.TelegramMock = NewMockTelegramClient()
+		// WhatsApp and Telegram clients are created via ClientManager on demand
 	}
 }
 
@@ -172,6 +219,9 @@ func NewTestServerWithUser(t *testing.T, email string) *TestServer {
 	}
 
 	ts.Server = server.New(cfg)
+
+	// Always create MockClientManager for multi-user support
+	ts.ClientManager = NewMockClientManager(100)
 
 	// Create HTTP test server with auth middleware for this user
 	testAuthMiddleware := createTestAuthMiddleware(testUser)

@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 )
 
@@ -25,8 +26,15 @@ type ConnectionStatus struct {
 func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 
-	// Check actual connection status (available regardless of user login)
-	whatsappConnected := s.waClient != nil && s.waClient.IsLoggedIn()
+	// Check actual connection status
+	// For WhatsApp/Telegram in multi-user mode, we check if ClientManager is available
+	whatsappConnected := false
+	if s.clientManager != nil && userID > 0 {
+		if waClient, err := s.clientManager.GetWhatsAppClient(userID); err == nil {
+			whatsappConnected = waClient.IsLoggedIn()
+		}
+	}
+
 	gmailConnected := s.gmailClient != nil && s.gmailClient.IsAuthenticated()
 	userGCalClient := s.getGCalClientForUser(userID)
 	googleCalConnected := userGCalClient != nil && userGCalClient.IsAuthenticated()
@@ -118,9 +126,24 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
 	userID := getUserID(r)
 
+	// Cleanup all client sessions for this user
+	if s.clientManager != nil {
+		if err := s.clientManager.CleanupUser(userID); err != nil {
+			fmt.Printf("Warning: Failed to cleanup user clients: %v\n", err)
+		}
+	}
+
+	// Reset database state
 	if err := s.db.ResetOnboarding(userID); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Reset SSE state
+	if s.state != nil {
+		s.state.SetTelegramStatus("pending")
+		s.state.SetWhatsAppStatus("pending")
+		s.state.SetGCalStatus("pending")
 	}
 
 	// Return updated status

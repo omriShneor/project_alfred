@@ -173,6 +173,8 @@ func (s *Server) handleAuthGoogleCallback(w http.ResponseWriter, r *http.Request
 // handleAuthLogout invalidates the current session
 // POST /api/auth/google/logout
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
+
 	if s.authService == nil {
 		respondError(w, http.StatusServiceUnavailable, "authentication not configured")
 		return
@@ -183,6 +185,18 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if token == "" {
 		respondError(w, http.StatusBadRequest, "missing authorization token")
 		return
+	}
+
+	// Cleanup all WhatsApp/Telegram clients for this user
+	if s.clientManager != nil && userID > 0 {
+		if err := s.clientManager.CleanupUser(userID); err != nil {
+			fmt.Printf("Warning: Failed to cleanup clients for user %d: %v\n", userID, err)
+		}
+	}
+
+	// Stop user services
+	if s.userServiceManager != nil && userID > 0 {
+		s.userServiceManager.StopServicesForUser(userID)
 	}
 
 	if err := s.authService.Logout(token); err != nil {

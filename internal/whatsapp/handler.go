@@ -56,6 +56,12 @@ func (h *Handler) SetClient(client *whatsmeow.Client) {
 	h.wClient = client
 }
 
+// SetMessageChannel allows ClientManager to override the message channel
+// with a shared channel for multi-user support
+func (h *Handler) SetMessageChannel(ch chan source.Message) {
+	h.messageChan = ch
+}
+
 func (h *Handler) MessageChan() <-chan source.Message {
 	return h.messageChan
 }
@@ -135,7 +141,7 @@ func (h *Handler) handleMessage(msg *events.Message) {
 		identifier = "debug"
 	} else {
 		var channelType source.ChannelType
-		tracked, sourceID, channelType, err = h.db.IsSourceChannelTracked(source.SourceTypeWhatsApp, identifier)
+		tracked, sourceID, channelType, err = h.db.IsSourceChannelTracked(h.UserID, source.SourceTypeWhatsApp, identifier)
 		if err != nil {
 			fmt.Printf("Error checking channel: %v\n", err)
 			return
@@ -153,6 +159,7 @@ func (h *Handler) handleMessage(msg *events.Message) {
 	// Send to channel for assistant processing
 	select {
 	case h.messageChan <- source.Message{
+		UserID:     h.UserID,
 		SourceType: source.SourceTypeWhatsApp,
 		SourceID:   sourceID,
 		Identifier: identifier,
@@ -267,7 +274,7 @@ func (h *Handler) handleHistorySync(evt *events.HistorySync) {
 
 	statsUpdated := 0
 	for identifier, info := range senderStats {
-		channel, err := h.db.GetSourceChannelByIdentifier(source.SourceTypeWhatsApp, identifier)
+		channel, err := h.db.GetSourceChannelByIdentifier(h.UserID, source.SourceTypeWhatsApp, identifier)
 		if err != nil || channel == nil {
 			continue
 		}
@@ -353,7 +360,7 @@ func (h *Handler) processConversationHistory(chatJID types.JID, messages []*waPr
 // getOrCreateHistoryChannel gets an existing channel or creates a new disabled one
 func (h *Handler) getOrCreateHistoryChannel(identifier string, jid types.JID) (*database.SourceChannel, error) {
 	// Check if channel exists
-	channel, err := h.db.GetSourceChannelByIdentifier(source.SourceTypeWhatsApp, identifier)
+	channel, err := h.db.GetSourceChannelByIdentifier(h.UserID, source.SourceTypeWhatsApp, identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -412,7 +419,7 @@ func (h *Handler) refreshTopContactNames() {
 	}
 
 	// Get top 8 contacts by ACTUAL message count (from channels.total_message_count)
-	topChannels, err := h.db.GetTopChannelsByMessageCount(source.SourceTypeWhatsApp, 8)
+	topChannels, err := h.db.GetTopChannelsByMessageCount(h.UserID, source.SourceTypeWhatsApp, 8)
 	if err != nil {
 		fmt.Printf("RefreshTopNames: Failed to get top channels: %v\n", err)
 		return
@@ -465,7 +472,7 @@ func (h *Handler) refreshAllContactNames() {
 	}
 
 	// Get all WhatsApp channels
-	channels, err := h.db.ListSourceChannels(source.SourceTypeWhatsApp)
+	channels, err := h.db.ListSourceChannels(h.UserID, source.SourceTypeWhatsApp)
 	if err != nil {
 		fmt.Printf("RefreshAllNames: Failed to list channels: %v\n", err)
 		return

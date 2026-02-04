@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
@@ -196,6 +197,31 @@ func (c *Client) IsConnected() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.connected
+}
+
+// DeleteSession removes the session file from disk
+// This prevents auto-reconnection after disconnect/reset
+func (c *Client) DeleteSession() error {
+	c.mu.Lock()
+	sessionPath := c.sessionPath
+	c.mu.Unlock()
+
+	// Check if file exists
+	if _, err := os.Stat(sessionPath); err != nil {
+		if os.IsNotExist(err) {
+			fmt.Printf("Telegram: Session file already deleted: %s\n", sessionPath)
+			return nil
+		}
+		return fmt.Errorf("failed to check session file: %w", err)
+	}
+
+	// Delete the file
+	if err := os.Remove(sessionPath); err != nil {
+		return fmt.Errorf("failed to delete session file: %w", err)
+	}
+
+	fmt.Printf("Telegram: Deleted session file: %s\n", sessionPath)
+	return nil
 }
 
 // SendCode requests a verification code for the given phone number

@@ -44,6 +44,12 @@ func NewHandlerForUser(userID int64, db *database.DB) *Handler {
 	}
 }
 
+// SetMessageChannel allows ClientManager to override the message channel
+// with a shared channel for multi-user support
+func (h *Handler) SetMessageChannel(ch chan source.Message) {
+	h.messageChan = ch
+}
+
 // MessageChan returns the channel for receiving filtered messages
 func (h *Handler) MessageChan() <-chan source.Message {
 	return h.messageChan
@@ -132,7 +138,7 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 	} else {
 		var channelType source.ChannelType
 		var err error
-		tracked, sourceID, channelType, err = h.db.IsSourceChannelTracked(source.SourceTypeTelegram, chatIdentifier)
+		tracked, sourceID, channelType, err = h.db.IsSourceChannelTracked(h.UserID, source.SourceTypeTelegram, chatIdentifier)
 		if err != nil {
 			fmt.Printf("Telegram: Error checking channel: %v\n", err)
 			return
@@ -150,6 +156,7 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 	// Send to processor
 	select {
 	case h.messageChan <- source.Message{
+		UserID:     h.UserID,
 		SourceType: source.SourceTypeTelegram,
 		SourceID:   sourceID,
 		Identifier: chatIdentifier,
@@ -185,7 +192,7 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 		tracked = true
 	} else {
 		var err error
-		tracked, sourceID, _, err = h.db.IsSourceChannelTracked(source.SourceTypeTelegram, chatIdentifier)
+		tracked, sourceID, _, err = h.db.IsSourceChannelTracked(h.UserID, source.SourceTypeTelegram, chatIdentifier)
 		if err != nil {
 			fmt.Printf("Telegram: Error checking channel: %v\n", err)
 			return
@@ -200,6 +207,7 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 
 	select {
 	case h.messageChan <- source.Message{
+		UserID:     h.UserID,
 		SourceType: source.SourceTypeTelegram,
 		SourceID:   sourceID,
 		Identifier: chatIdentifier,

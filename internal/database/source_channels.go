@@ -64,22 +64,22 @@ func (d *DB) GetSourceChannelByID(id int64) (*SourceChannel, error) {
 	return scanSourceChannel(row)
 }
 
-// GetSourceChannelByIdentifier retrieves a channel by source type and identifier
-func (d *DB) GetSourceChannelByIdentifier(sourceType source.SourceType, identifier string) (*SourceChannel, error) {
+// GetSourceChannelByIdentifier retrieves a channel by source type and identifier for a specific user
+func (d *DB) GetSourceChannelByIdentifier(userID int64, sourceType source.SourceType, identifier string) (*SourceChannel, error) {
 	row := d.QueryRow(
 		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
-		 FROM channels WHERE source_type = ? AND identifier = ?`,
-		sourceType, identifier,
+		 FROM channels WHERE user_id = ? AND source_type = ? AND identifier = ?`,
+		userID, sourceType, identifier,
 	)
 	return scanSourceChannel(row)
 }
 
-// ListSourceChannels lists all channels for a given source type
-func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
+// ListSourceChannels lists all channels for a given source type for a specific user
+func (d *DB) ListSourceChannels(userID int64, sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(
 		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
-		 FROM channels WHERE source_type = ? ORDER BY created_at DESC`,
-		sourceType,
+		 FROM channels WHERE user_id = ? AND source_type = ? ORDER BY created_at DESC`,
+		userID, sourceType,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list source channels: %w", err)
@@ -98,12 +98,12 @@ func (d *DB) ListSourceChannels(sourceType source.SourceType) ([]*SourceChannel,
 	return channels, rows.Err()
 }
 
-// ListEnabledSourceChannels lists all enabled channels for a source type
-func (d *DB) ListEnabledSourceChannels(sourceType source.SourceType) ([]*SourceChannel, error) {
+// ListEnabledSourceChannels lists all enabled channels for a source type for a specific user
+func (d *DB) ListEnabledSourceChannels(userID int64, sourceType source.SourceType) ([]*SourceChannel, error) {
 	rows, err := d.Query(
 		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
-		 FROM channels WHERE source_type = ? AND enabled = 1 ORDER BY created_at DESC`,
-		sourceType,
+		 FROM channels WHERE user_id = ? AND source_type = ? AND enabled = 1 ORDER BY created_at DESC`,
+		userID, sourceType,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list enabled source channels: %w", err)
@@ -143,14 +143,14 @@ func (d *DB) DeleteSourceChannel(id int64) error {
 	return nil
 }
 
-// IsSourceChannelTracked checks if a channel is tracked and enabled for a specific source type
+// IsSourceChannelTracked checks if a channel is tracked and enabled for a specific source type and user
 // Returns: isTracked, channelID, channelType, error
-func (d *DB) IsSourceChannelTracked(sourceType source.SourceType, identifier string) (bool, int64, source.ChannelType, error) {
+func (d *DB) IsSourceChannelTracked(userID int64, sourceType source.SourceType, identifier string) (bool, int64, source.ChannelType, error) {
 	var id int64
 	var channelType source.ChannelType
 	err := d.QueryRow(
-		`SELECT id, type FROM channels WHERE source_type = ? AND identifier = ? AND enabled = 1`,
-		sourceType, identifier,
+		`SELECT id, type FROM channels WHERE user_id = ? AND source_type = ? AND identifier = ? AND enabled = 1`,
+		userID, sourceType, identifier,
 	).Scan(&id, &channelType)
 
 	if err == sql.ErrNoRows {
@@ -175,17 +175,17 @@ func (d *DB) UpdateChannelStats(id int64, totalMessageCount int, lastMessageAt *
 	return nil
 }
 
-// GetTopChannelsByMessageCount returns top channels by actual message count
+// GetTopChannelsByMessageCount returns top channels by actual message count for a specific user
 // This uses total_message_count which is populated during HistorySync with accurate counts
-func (d *DB) GetTopChannelsByMessageCount(sourceType source.SourceType, limit int) ([]*SourceChannel, error) {
+func (d *DB) GetTopChannelsByMessageCount(userID int64, sourceType source.SourceType, limit int) ([]*SourceChannel, error) {
 	rows, err := d.Query(`
 		SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled,
 		       total_message_count, last_message_at, created_at
 		FROM channels
-		WHERE source_type = ? AND total_message_count > 1
+		WHERE user_id = ? AND source_type = ? AND total_message_count > 1
 		ORDER BY total_message_count DESC
 		LIMIT ?
-	`, sourceType, limit)
+	`, userID, sourceType, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top channels: %w", err)
 	}

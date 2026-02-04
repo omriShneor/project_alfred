@@ -8,19 +8,17 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/auth"
+	"github.com/omriShneor/project_alfred/internal/clients"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
 	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/sse"
-	"github.com/omriShneor/project_alfred/internal/telegram"
-	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 type Server struct {
 	db               *database.DB
-	waClient         *whatsapp.Client
-	tgClient         *telegram.Client
+	clientManager    *clients.ClientManager
 	gmailClient      *gmail.Client
 	gmailWorker      *gmail.Worker
 	onboardingState  *sse.State
@@ -54,8 +52,6 @@ type ServerConfig struct {
 
 // ClientsConfig holds configuration for completing initialization after onboarding
 type ClientsConfig struct {
-	WAClient         *whatsapp.Client
-	TGClient         *telegram.Client
 	GmailClient      *gmail.Client
 	GmailWorker      *gmail.Worker
 	NotifyService    *notify.Service
@@ -104,8 +100,6 @@ func New(cfg ServerConfig) *Server {
 
 // InitializeClients completes server initialization after onboarding
 func (s *Server) InitializeClients(cfg ClientsConfig) {
-	s.waClient = cfg.WAClient
-	s.tgClient = cfg.TGClient
 	s.gmailClient = cfg.GmailClient
 	s.gmailWorker = cfg.GmailWorker
 	s.notifyService = cfg.NotifyService
@@ -113,14 +107,14 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 	s.reminderAnalyzer = cfg.ReminderAnalyzer
 }
 
-// SetWAClient sets the WhatsApp client (used during onboarding before full initialization)
-func (s *Server) SetWAClient(client *whatsapp.Client) {
-	s.waClient = client
+// SetClientManager sets the ClientManager for per-user WhatsApp/Telegram clients
+func (s *Server) SetClientManager(mgr *clients.ClientManager) {
+	s.clientManager = mgr
 }
 
-// SetTGClient sets the Telegram client (used during onboarding before full initialization)
-func (s *Server) SetTGClient(client *telegram.Client) {
-	s.tgClient = client
+// GetClientManager returns the ClientManager
+func (s *Server) GetClientManager() *clients.ClientManager {
+	return s.clientManager
 }
 
 // getGCalClientForUser creates or retrieves a GCal client for a specific user.

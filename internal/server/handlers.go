@@ -40,12 +40,11 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 		"gcal":     "disconnected",
 	}
 
-	if s.waClient != nil && s.waClient.IsLoggedIn() {
-		status["whatsapp"] = "connected"
-	}
-
-	if s.tgClient != nil && s.tgClient.IsConnected() {
-		status["telegram"] = "connected"
+	// Note: Health check now just reports that ClientManager is available
+	// Individual user connection status should be checked via /api/whatsapp/status and /api/telegram/status
+	if s.clientManager != nil {
+		status["whatsapp"] = "available"
+		status["telegram"] = "available"
 	}
 
 	if s.credentialsFile != "" {
@@ -58,13 +57,21 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 // WhatsApp Discovery API
 
 func (s *Server) handleDiscoverChannels(w http.ResponseWriter, r *http.Request) {
-	if s.waClient == nil || s.waClient.WAClient == nil {
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not initialized")
+		return
+	}
+
+	// Get per-user WhatsApp client
+	waClient, err := s.clientManager.GetWhatsAppClient(userID)
+	if err != nil || waClient.WAClient == nil {
 		respondError(w, http.StatusServiceUnavailable, "WhatsApp not connected")
 		return
 	}
 
 	// Get all discoverable channels from WhatsApp
-	channels, err := s.waClient.GetDiscoverableChannels()
+	channels, err := waClient.GetDiscoverableChannels()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -109,58 +116,56 @@ type TopContactResponse struct {
 }
 
 func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Request) {
-	if s.waClient == nil || s.waClient.WAClient == nil {
-		// Return empty contacts if WhatsApp not connected
-		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"contacts": []TopContactResponse{},
-		})
-		return
-	}
+	userID := getUserID(r)
 
 	// Get top contacts by ACTUAL message count (from channels.total_message_count)
-	channels, err := s.db.GetTopChannelsByMessageCount(source.SourceTypeWhatsApp, 8)
+	channels, err := s.db.GetTopChannelsByMessageCount(userID, source.SourceTypeWhatsApp, 8)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
 	// If no stats available yet, fall back to discoverable channels (recent chats from WhatsApp)
-	if len(channels) == 0 {
-		discoverableChannels, err := s.waClient.GetDiscoverableChannels()
-		if err == nil && len(discoverableChannels) > 0 {
-			// Filter to only contacts (not groups) and limit to 8
-			var contactChannels []whatsapp.DiscoverableChannel
-			for _, ch := range discoverableChannels {
-				if ch.Type == "sender" {
-					contactChannels = append(contactChannels, ch)
+	if len(channels) == 0 && s.clientManager != nil {
+		// Get per-user WhatsApp client
+		waClient, err := s.clientManager.GetWhatsAppClient(userID)
+		if err == nil && waClient.WAClient != nil {
+			discoverableChannels, err := waClient.GetDiscoverableChannels()
+			if err == nil && len(discoverableChannels) > 0 {
+				// Filter to only contacts (not groups) and limit to 8
+				var contactChannels []whatsapp.DiscoverableChannel
+				for _, ch := range discoverableChannels {
+					if ch.Type == "sender" {
+						contactChannels = append(contactChannels, ch)
+					}
 				}
-			}
-			if len(contactChannels) > 8 {
-				contactChannels = contactChannels[:8]
-			}
-			// Convert to response format
-			response := make([]TopContactResponse, len(contactChannels))
-			for i, ch := range contactChannels {
-				// Check if already tracked
-				existingChannel, _ := s.db.GetChannelByIdentifier(ch.Identifier)
-				// Format phone number as secondary label
-				phone := strings.TrimSuffix(ch.Identifier, "@s.whatsapp.net")
-				response[i] = TopContactResponse{
-					Identifier:     ch.Identifier,
-					Name:           ch.Name,
-					SecondaryLabel: "+" + phone,
-					MessageCount:   0, // No message count from discovery
-					IsTracked:      existingChannel != nil,
-					Type:           ch.Type,
+				if len(contactChannels) > 8 {
+					contactChannels = contactChannels[:8]
 				}
-				if existingChannel != nil {
-					response[i].ChannelID = &existingChannel.ID
+				// Convert to response format
+				response := make([]TopContactResponse, len(contactChannels))
+				for i, ch := range contactChannels {
+					// Check if already tracked
+					existingChannel, _ := s.db.GetChannelByIdentifier(ch.Identifier)
+					// Format phone number as secondary label
+					phone := strings.TrimSuffix(ch.Identifier, "@s.whatsapp.net")
+					response[i] = TopContactResponse{
+						Identifier:     ch.Identifier,
+						Name:           ch.Name,
+						SecondaryLabel: "+" + phone,
+						MessageCount:   0, // No message count from discovery
+						IsTracked:      existingChannel != nil,
+						Type:           ch.Type,
+					}
+					if existingChannel != nil {
+						response[i].ChannelID = &existingChannel.ID
+					}
 				}
+				respondJSON(w, http.StatusOK, map[string]interface{}{
+					"contacts": response,
+				})
+				return
 			}
-			respondJSON(w, http.StatusOK, map[string]interface{}{
-				"contacts": response,
-			})
-			return
 		}
 	}
 
@@ -959,8 +964,9 @@ func (s *Server) handleGetChannelHistory(w http.ResponseWriter, r *http.Request)
 // WhatsApp API
 
 func (s *Server) handleWhatsAppReconnect(w http.ResponseWriter, r *http.Request) {
-	if s.waClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "WhatsApp client not initialized")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not initialized")
 		return
 	}
 
@@ -969,8 +975,15 @@ func (s *Server) handleWhatsAppReconnect(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Get per-user WhatsApp client
+	waClient, err := s.clientManager.GetWhatsAppClient(userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to get WhatsApp client: %v", err))
+		return
+	}
+
 	// Trigger reconnect - use background context since request context will be cancelled
-	go s.waClient.Reconnect(context.Background(), s.onboardingState)
+	go waClient.Reconnect(context.Background(), s.onboardingState)
 
 	respondJSON(w, http.StatusOK, map[string]string{
 		"status":  "reconnecting",
@@ -980,18 +993,31 @@ func (s *Server) handleWhatsAppReconnect(w http.ResponseWriter, r *http.Request)
 
 // handleWhatsAppStatus returns the WhatsApp connection status
 func (s *Server) handleWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
+	userID := getUserID(r)
 	status := map[string]interface{}{
 		"connected": false,
 		"message":   "Not connected",
 	}
 
-	if s.waClient != nil && s.waClient.IsLoggedIn() {
+	if s.clientManager == nil {
+		status["message"] = "Client manager not initialized"
+		respondJSON(w, http.StatusOK, status)
+		return
+	}
+
+	// Get per-user WhatsApp client
+	waClient, err := s.clientManager.GetWhatsAppClient(userID)
+	if err != nil {
+		status["message"] = fmt.Sprintf("Failed to get client: %v", err)
+		respondJSON(w, http.StatusOK, status)
+		return
+	}
+
+	if waClient.IsLoggedIn() {
 		status["connected"] = true
 		status["message"] = "Connected"
-	} else if s.waClient != nil {
-		status["message"] = "Not authenticated"
 	} else {
-		status["message"] = "WhatsApp client not initialized"
+		status["message"] = "Not authenticated"
 	}
 
 	respondJSON(w, http.StatusOK, status)
@@ -999,8 +1025,9 @@ func (s *Server) handleWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleWhatsAppPair generates a pairing code for phone-number-based WhatsApp linking
 func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
-	if s.waClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "WhatsApp client not initialized")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not initialized")
 		return
 	}
 
@@ -1029,8 +1056,18 @@ func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
 		s.onboardingState.SetWhatsAppStatus("pairing")
 	}
 
+	// Get per-user WhatsApp client
+	waClient, err := s.clientManager.GetWhatsAppClient(userID)
+	if err != nil {
+		if s.onboardingState != nil {
+			s.onboardingState.SetWhatsAppError(fmt.Sprintf("Failed to get WhatsApp client: %v", err))
+		}
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to get WhatsApp client: %v", err))
+		return
+	}
+
 	// Generate pairing code
-	code, err := s.waClient.PairWithPhone(r.Context(), phone, s.onboardingState)
+	code, err := waClient.PairWithPhone(r.Context(), phone, s.onboardingState)
 	if err != nil {
 		if s.onboardingState != nil {
 			s.onboardingState.SetWhatsAppError(fmt.Sprintf("Failed to generate pairing code: %v", err))
@@ -1047,12 +1084,14 @@ func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
 
 // handleWhatsAppDisconnect logs out from WhatsApp and clears the session
 func (s *Server) handleWhatsAppDisconnect(w http.ResponseWriter, r *http.Request) {
-	if s.waClient == nil {
-		respondError(w, http.StatusServiceUnavailable, "WhatsApp client not initialized")
+	userID := getUserID(r)
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Client manager not initialized")
 		return
 	}
 
-	if err := s.waClient.Logout(); err != nil {
+	// Logout via ClientManager (handles session cleanup)
+	if err := s.clientManager.LogoutWhatsApp(userID); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to logout: %v", err))
 		return
 	}

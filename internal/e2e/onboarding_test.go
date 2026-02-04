@@ -85,6 +85,9 @@ func TestOnboardingFlow(t *testing.T) {
 }
 
 func TestOnboardingResetCleansAllTokens(t *testing.T) {
+	// Set encryption key for testing Google token storage
+	t.Setenv("ALFRED_ENCRYPTION_KEY", "test-encryption-key-for-e2e-tests")
+
 	ts := testutil.NewTestServer(t)
 	userID := ts.TestUser.ID
 

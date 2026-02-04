@@ -31,9 +31,8 @@ type Server struct {
 	reminderAnalyzer  agent.ReminderAnalyzer
 	httpSrv           *http.Server
 	port              int
-	resendAPIKey      string      // For checking email availability
-	oauthCodeChan     chan string // Channel to receive OAuth code from callback
-	gmailPollInterval int         // Gmail worker poll interval in minutes
+	resendAPIKey      string // For checking email availability
+	gmailPollInterval int    // Gmail worker poll interval in minutes
 	gmailMaxEmails    int         // Gmail worker max emails per poll
 	credentialsFile   string      // Path to Google OAuth credentials file (for per-user gcal clients)
 	// Authentication

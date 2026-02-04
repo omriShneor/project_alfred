@@ -38,6 +38,9 @@ var CalendarScopes = []string{
 	calendar.CalendarScope,
 }
 
+// OAuthScopes - all scopes combined (for backward compatibility with tests)
+var OAuthScopes = append(append(ProfileScopes, GmailScopes...), CalendarScopes...)
+
 // Service handles authentication operations
 type Service struct {
 	db        *sql.DB

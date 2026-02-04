@@ -1,11 +1,8 @@
 package gcal
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 	"os"
-	"time"
 
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
@@ -81,56 +78,4 @@ func loadConfigFromFile(path string) (*oauth2.Config, error) {
 
 	config.RedirectURL = getOAuthCallbackURL()
 	return config, nil
-}
-
-
-// StartCallbackServer starts the OAuth callback server and returns immediately.
-// It returns a channel that will receive the authorization code when received.
-// The caller should call ExchangeCode with the received code.
-// redirectURL is where to redirect after successful authorization.
-func (c *Client) StartCallbackServer(ctx context.Context, redirectURL string) (<-chan string, <-chan error) {
-	codeChan := make(chan string, 1)
-	errChan := make(chan error, 1)
-
-	mux := http.NewServeMux()
-	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", oauthCallbackPort),
-		Handler: mux,
-	}
-
-	mux.HandleFunc(callbackPath, func(w http.ResponseWriter, r *http.Request) {
-		code := r.URL.Query().Get("code")
-		if code == "" {
-			errChan <- fmt.Errorf("no authorization code received")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Authorization failed: no code received"))
-			return
-		}
-
-		// Send code and shutdown server before redirect
-		codeChan <- code
-		go srv.Shutdown(context.Background())
-
-		// Redirect back to onboarding page
-		http.Redirect(w, r, redirectURL, http.StatusFound)
-	})
-
-	// Start the callback server in a goroutine
-	go func() {
-		if err := srv.ListenAndServe(); err != http.ErrServerClosed {
-			errChan <- fmt.Errorf("callback server error: %w", err)
-		}
-	}()
-
-	// Auto-shutdown after timeout (5 minutes)
-	go func() {
-		select {
-		case <-ctx.Done():
-			srv.Shutdown(context.Background())
-		case <-time.After(5 * time.Minute):
-			srv.Shutdown(context.Background())
-		}
-	}()
-
-	return codeChan, errChan
 }

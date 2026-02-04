@@ -10,7 +10,6 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/calendar/v3"
-	"google.golang.org/api/gmail/v1"
 )
 
 const (
@@ -26,11 +25,10 @@ func getOAuthCallbackURL() string {
 	return fmt.Sprintf("http://localhost:%d%s", oauthCallbackPort, callbackPath)
 }
 
-// OAuthScopes contains all required OAuth scopes for the application
-// Includes both Calendar and Gmail access
+// OAuthScopes contains only Calendar scopes
+// Gmail scopes should be requested separately via incremental auth
 var OAuthScopes = []string{
 	calendar.CalendarScope,
-	gmail.GmailReadonlyScope,
 }
 
 // loadOAuthConfig loads OAuth2 configuration from credentials file or environment variable

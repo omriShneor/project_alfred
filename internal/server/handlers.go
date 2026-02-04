@@ -744,7 +744,7 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 	switch event.ActionType {
 	case database.EventActionCreate:
 		// Create event in Google Calendar
-		endTime := event.StartTime.Add(1 * 60 * 60 * 1000000000) // 1 hour default
+		endTime := event.StartTime.Add(1 * time.Hour) // 1 hour default
 		if event.EndTime != nil {
 			endTime = *event.EndTime
 		}
@@ -784,7 +784,7 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		endTime := event.StartTime.Add(1 * 60 * 60 * 1000000000)
+		endTime := event.StartTime.Add(1 * time.Hour)
 		if event.EndTime != nil {
 			endTime = *event.EndTime
 		}

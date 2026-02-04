@@ -607,57 +607,10 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	respondJSON(w, http.StatusOK, events)
 }
 
-func (s *Server) handleGCalConnect(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
-	if userID == 0 {
-		respondError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
-	if s.credentialsFile == "" {
-		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured. Check credentials.json.")
-		return
-	}
-
-	// Get or create per-user gcal client (needed for auth URL generation)
-	userGCalClient := s.getGCalClientForUser(userID)
-	if userGCalClient == nil {
-		respondError(w, http.StatusInternalServerError, "Failed to create Google Calendar client")
-		return
-	}
-
-	// Check if a custom redirect URI is provided (for mobile deep links)
-	var req struct {
-		RedirectURI string `json:"redirect_uri"` // e.g., "alfred://oauth/callback"
-	}
-	// Try to decode, but don't fail if no body (for backward compatibility)
-	_ = json.NewDecoder(r.Body).Decode(&req)
-
-	// If a custom redirect URI is provided, use it and return the auth URL
-	// The mobile app will handle the callback via deep link and call /api/gcal/callback
-	if req.RedirectURI != "" {
-		authURL := userGCalClient.GetAuthURLWithRedirect(req.RedirectURI)
-		respondJSON(w, http.StatusOK, map[string]string{
-			"auth_url":     authURL,
-			"redirect_uri": req.RedirectURI,
-			"message":      "Open this URL to authorize Google Calendar access. After authorization, the app will handle the callback.",
-		})
-		return
-	}
-
-	// Return the auth URL for the frontend to open (browser flow)
-	authURL := userGCalClient.GetAuthURL()
-
-	respondJSON(w, http.StatusOK, map[string]string{
-		"auth_url": authURL,
-		"message":  "Open this URL to authorize Google Calendar access",
-	})
-}
-
 // handleOAuthCallback handles the OAuth callback from Google (browser redirect)
 // This endpoint receives the callback from Google after user authorizes.
 // It redirects back to the mobile app via deep link with the authorization code.
-// The app then sends the code to /api/gcal/callback for exchange.
+// The app receives the code and exchanges it via /api/auth/google/add-scopes/callback.
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
 	if code == "" {
@@ -666,7 +619,6 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Redirect back to the app using deep link with the code
-	// The app will receive this and call /api/gcal/callback to exchange the code
 	deepLink := fmt.Sprintf("alfred://oauth/callback?code=%s", code)
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -696,81 +648,6 @@ func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 </html>`, deepLink, deepLink)
 }
 
-// handleGCalExchangeCode handles OAuth code exchange from mobile apps
-// Mobile apps receive the code via deep link and send it to this endpoint
-func (s *Server) handleGCalExchangeCode(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
-	fmt.Printf("[OAuth Exchange] Request received for user %d\n", userID)
-
-	if userID == 0 {
-		fmt.Printf("[OAuth Exchange] ERROR: No user ID found\n")
-		respondError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
-
-	if s.credentialsFile == "" {
-		fmt.Printf("[OAuth Exchange] ERROR: Google Calendar not configured\n")
-		respondError(w, http.StatusServiceUnavailable, "Google Calendar not configured")
-		return
-	}
-
-	var req struct {
-		Code string `json:"code"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		fmt.Printf("[OAuth Exchange] ERROR: Invalid JSON: %v\n", err)
-		respondError(w, http.StatusBadRequest, "invalid JSON")
-		return
-	}
-
-	codePreview := req.Code
-	if len(codePreview) > 10 {
-		codePreview = codePreview[:10] + "..."
-	}
-	fmt.Printf("[OAuth Exchange] Code (first 10 chars): %s\n", codePreview)
-
-	if req.Code == "" {
-		fmt.Printf("[OAuth Exchange] ERROR: Code is empty\n")
-		respondError(w, http.StatusBadRequest, "code is required")
-		return
-	}
-
-	// Create per-user gcal client for token exchange (saves token to database with userID)
-	userGCalClient, err := gcal.NewClientForUser(userID, s.credentialsFile, s.db)
-	if err != nil {
-		fmt.Printf("[OAuth Exchange] ERROR: Failed to create gcal client: %v\n", err)
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create gcal client: %v", err))
-		return
-	}
-
-	// Exchange the code using default HTTPS callback
-	fmt.Printf("[OAuth Exchange] Exchanging code for user %d using default HTTPS callback...\n", userID)
-	if err := userGCalClient.ExchangeCode(context.Background(), req.Code); err != nil {
-		fmt.Printf("[OAuth Exchange] ERROR: Failed to exchange code: %v\n", err)
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to exchange code: %v", err))
-		return
-	}
-
-	fmt.Printf("[OAuth Exchange] SUCCESS: Token saved for user %d\n", userID)
-
-	// Update onboarding state
-	if s.onboardingState != nil {
-		s.onboardingState.SetGCalStatus("connected")
-	}
-
-	fmt.Printf("Google Calendar connected successfully for user %d via mobile!\n", userID)
-
-	// Re-initialize Gmail client with the new token
-	if err := s.initializeGmailClient(); err != nil {
-		fmt.Printf("Warning: Failed to initialize Gmail client: %v\n", err)
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"connected": true,
-		"message":   "Google Calendar connected successfully",
-	})
-}
 
 // handleGCalDisconnect disconnects Google Calendar and clears token
 func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {

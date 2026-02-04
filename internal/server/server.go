@@ -19,18 +19,18 @@ import (
 )
 
 type Server struct {
-	db               *database.DB
-	waClient         *whatsapp.Client
-	tgClient         *telegram.Client
-	gmailClient      *gmail.Client
-	gmailWorker      *gmail.Worker
-	onboardingState  *sse.State
-	state            *sse.State // Alias for onboardingState (for consistency)
-	notifyService    *notify.Service
-	eventAnalyzer    agent.EventAnalyzer
-	reminderAnalyzer agent.ReminderAnalyzer
-	httpSrv          *http.Server
-	port             int
+	db                *database.DB
+	waClient          *whatsapp.Client
+	tgClient          *telegram.Client
+	gmailClient       *gmail.Client
+	gmailWorker       *gmail.Worker
+	onboardingState   *sse.State
+	state             *sse.State // Alias for onboardingState (for consistency)
+	notifyService     *notify.Service
+	eventAnalyzer     agent.EventAnalyzer
+	reminderAnalyzer  agent.ReminderAnalyzer
+	httpSrv           *http.Server
+	port              int
 	resendAPIKey      string      // For checking email availability
 	oauthCodeChan     chan string // Channel to receive OAuth code from callback
 	gmailPollInterval int         // Gmail worker poll interval in minutes
@@ -261,8 +261,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/gcal/settings", s.requireAuth(s.handleGetGCalSettings))
 	mux.HandleFunc("PUT /api/gcal/settings", s.requireAuth(s.handleUpdateGCalSettings))
 	mux.HandleFunc("GET /api/gcal/events/today", s.requireAuth(s.handleListTodayEvents))
-	mux.HandleFunc("POST /api/gcal/connect", s.requireAuth(s.handleGCalConnect))
-	mux.HandleFunc("POST /api/gcal/callback", s.requireAuth(s.handleGCalExchangeCode))
+	// Legacy endpoint removed - use /api/auth/google/add-scopes/callback instead
 	mux.HandleFunc("POST /api/gcal/disconnect", s.requireAuth(s.handleGCalDisconnect))
 
 	// Events API

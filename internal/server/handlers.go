@@ -613,39 +613,21 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 // The app receives the code and exchanges it via /api/auth/google/add-scopes/callback.
 func (s *Server) handleOAuthCallback(w http.ResponseWriter, r *http.Request) {
 	code := r.URL.Query().Get("code")
-	if code == "" {
-		respondError(w, http.StatusBadRequest, "No authorization code received")
-		return
+	errorParam := r.URL.Query().Get("error")
+
+	// Build deep link with code or error
+	deepLink := "alfred://oauth/callback"
+	if errorParam != "" {
+		errorDesc := r.URL.Query().Get("error_description")
+		deepLink = fmt.Sprintf("%s?error=%s&error_description=%s", deepLink, errorParam, errorDesc)
+	} else if code != "" {
+		deepLink = fmt.Sprintf("%s?code=%s", deepLink, code)
+	} else {
+		deepLink = deepLink + "?error=no_code"
 	}
 
-	// Redirect back to the app using deep link with the code
-	deepLink := fmt.Sprintf("alfred://oauth/callback?code=%s", code)
-
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(w, `<!DOCTYPE html>
-<html>
-<head>
-    <title>Connecting...</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
-        .container { text-align: center; padding: 40px; background: white; border-radius: 16px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #27ae60; margin-bottom: 16px; }
-        p { color: #666; margin-bottom: 24px; }
-    </style>
-    <script>
-        // Redirect to app with authorization code
-        window.location.href = '%s';
-    </script>
-</head>
-<body>
-    <div class="container">
-        <h1>Authorization Complete!</h1>
-        <p>Redirecting to Alfred...</p>
-        <p><a href="%s">Tap here if not redirected</a></p>
-    </div>
-</body>
-</html>`, deepLink, deepLink)
+	// Simple HTTP redirect - no HTML page needed
+	http.Redirect(w, r, deepLink, http.StatusFound)
 }
 
 

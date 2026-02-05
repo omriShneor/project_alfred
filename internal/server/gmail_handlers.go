@@ -209,14 +209,14 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// If no contacts and Gmail worker is available, trigger refresh and wait
-	// This handles the race condition where modal opens before async refresh completes
 	if len(contacts) == 0 {
-		worker := s.userServiceManager.GetGmailWorkerForUser(userID)
-		if worker != nil {
-			worker.RefreshTopContactsNow()
-			time.Sleep(3 * time.Second)
-			contacts, _ = s.db.GetTopContacts(userID, 8)
+		if s.userServiceManager != nil {
+			worker := s.userServiceManager.GetGmailWorkerForUser(userID)
+			if worker != nil {
+				worker.RefreshTopContacts()
+				time.Sleep(2 * time.Second)
+				contacts, _ = s.db.GetTopContacts(userID, 8)
+			}
 		}
 	}
 

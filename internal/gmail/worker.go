@@ -125,7 +125,7 @@ func (w *Worker) pollLoop() {
 
 	// Run first poll and check if top contacts need refreshing (every 3 days)
 	w.poll()
-	w.maybeRefreshTopContacts()
+	w.RefreshTopIfNeeded()
 
 	for {
 		select {
@@ -133,7 +133,7 @@ func (w *Worker) pollLoop() {
 			return
 		case <-ticker.C:
 			w.poll()
-			w.maybeRefreshTopContacts()
+			w.RefreshTopIfNeeded()
 		}
 	}
 }
@@ -268,28 +268,23 @@ func (w *Worker) PollNow() {
 }
 
 // maybeRefreshTopContacts checks if top contacts need refreshing (every 3 days)
-func (w *Worker) maybeRefreshTopContacts() {
-	// Skip if no valid user
-	if w.userID == 0 {
-		return
-	}
-
+func (w *Worker) RefreshTopIfNeeded() {
 	lastComputed, err := w.db.GetTopContactsComputedAt(w.userID)
 	if err != nil {
 		fmt.Printf("Gmail worker: failed to get top contacts computed at: %v\n", err)
 		return
 	}
 
-	// Refresh if never computed or older than 3 days
-	needsRefresh := lastComputed == nil || time.Since(*lastComputed) > 3*24*time.Hour
+	// Refresh if never computed or older than 24 hours
+	needsRefresh := lastComputed == nil || time.Since(*lastComputed) > 24*time.Hour
 
 	if needsRefresh {
-		go w.refreshTopContacts()
+		go w.RefreshTopContacts()
 	}
 }
 
-// refreshTopContacts fetches and caches top contacts
-func (w *Worker) refreshTopContacts() {
+// RefreshTopContacts fetches and caches top contacts
+func (w *Worker) RefreshTopContacts() {
 	w.mu.Lock()
 	client := w.client
 	w.mu.Unlock()
@@ -332,10 +327,4 @@ func (w *Worker) refreshTopContacts() {
 	}
 
 	fmt.Printf("Gmail worker: cached %d top contacts\n", len(dbContacts))
-}
-
-// RefreshTopContactsNow triggers an immediate refresh of top contacts (for manual trigger)
-func (w *Worker) RefreshTopContactsNow() {
-	fmt.Println("Gmail worker: RefreshTopContactsNow called - triggering refresh")
-	go w.refreshTopContacts()
 }

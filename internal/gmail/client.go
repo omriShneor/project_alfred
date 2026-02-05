@@ -131,6 +131,28 @@ func (c *Client) GetMessageHeaders(messageID string) (from string, err error) {
 	return "", nil
 }
 
+// GetMessageMetadata retrieves selected headers plus internal date (metadata-only).
+func (c *Client) GetMessageMetadata(messageID string, headerNames ...string) (map[string]string, int64, error) {
+	if c.service == nil {
+		return nil, 0, fmt.Errorf("Gmail service not initialized")
+	}
+
+	call := c.service.Users.Messages.Get("me", messageID).
+		Format("metadata").
+		MetadataHeaders(headerNames...)
+	msg, err := call.Do()
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to get message metadata: %w", err)
+	}
+
+	headers := make(map[string]string, len(headerNames))
+	for _, header := range msg.Payload.Headers {
+		headers[strings.ToLower(header.Name)] = header.Value
+	}
+
+	return headers, msg.InternalDate, nil
+}
+
 // GetMessagesSince retrieves messages received after a specific history ID or timestamp
 // Use query like "after:2024/01/20" for date-based filtering
 func (c *Client) GetMessagesSince(query string, maxResults int64) ([]*Email, error) {

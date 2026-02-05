@@ -192,7 +192,6 @@ export function AddSourceModal({
                 {item.secondary_label}
               </Text>
             )}
-            <Text style={styles.contactCount}>{item.message_count} messages</Text>
           </View>
           {item.is_tracked ? (
             <Feather name="check-circle" size={20} color={colors.success} />
@@ -378,11 +377,6 @@ const styles = StyleSheet.create({
   },
   contactIdentifier: {
     fontSize: 13,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
-  contactCount: {
-    fontSize: 12,
     color: colors.textSecondary,
     marginTop: 2,
   },

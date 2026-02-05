@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/auth"
 	"github.com/omriShneor/project_alfred/internal/clients"
 	"github.com/omriShneor/project_alfred/internal/config"
 	"github.com/omriShneor/project_alfred/internal/database"
@@ -18,7 +19,6 @@ import (
 type UserServices struct {
 	UserID      int64
 	GmailWorker *gmail.Worker
-	Processor   *processor.Processor
 	running     bool
 }
 
@@ -37,6 +37,9 @@ type UserServiceManager struct {
 	// Active services per user
 	mu           sync.RWMutex
 	userServices map[int64]*UserServices
+
+	// Global processor (single instance for all users)
+	globalProcessor *processor.Processor
 }
 
 // UserServiceManagerConfig holds configuration for creating a UserServiceManager
@@ -64,6 +67,64 @@ func NewUserServiceManager(cfg UserServiceManagerConfig) *UserServiceManager {
 	}
 }
 
+// StartGlobalProcessor starts a single shared processor for all users.
+// This must only be started once to avoid multiple consumers on the shared channel.
+func (m *UserServiceManager) StartGlobalProcessor() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.globalProcessor != nil {
+		return nil
+	}
+
+	if m.clientManager == nil {
+		return nil
+	}
+
+	if m.eventAnalyzer == nil && m.reminderAnalyzer == nil {
+		return nil
+	}
+
+	msgChan := m.clientManager.MessageChan()
+	historySize := 0
+	if m.cfg != nil {
+		historySize = m.cfg.MessageHistorySize
+	}
+	proc := processor.New(
+		m.db,
+		m.eventAnalyzer,
+		m.reminderAnalyzer,
+		msgChan,
+		historySize,
+		m.notifyService,
+	)
+	if err := proc.Start(); err != nil {
+		return err
+	}
+
+	m.globalProcessor = proc
+	fmt.Println("Global processor started")
+	return nil
+}
+
+// StopGlobalProcessor stops the shared processor if running.
+func (m *UserServiceManager) StopGlobalProcessor() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.globalProcessor != nil {
+		m.globalProcessor.Stop()
+		m.globalProcessor = nil
+	}
+}
+
+// GlobalProcessorRunning returns true if the shared processor is running.
+func (m *UserServiceManager) GlobalProcessorRunning() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.globalProcessor != nil
+}
+
 
 // StartServicesForUser initializes and starts services for a specific user
 func (m *UserServiceManager) StartServicesForUser(userID int64) error {
@@ -72,6 +133,16 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 
 	// Check if services already running for this user
 	if existing, ok := m.userServices[userID]; ok && existing.running {
+		// If Gmail worker isn't running yet, try to start it now.
+		if existing.GmailWorker == nil {
+			gmailWorker, err := m.createGmailWorker(userID)
+			if err != nil {
+				fmt.Printf("  - Gmail worker failed to start: %v\n", err)
+			} else if gmailWorker != nil {
+				existing.GmailWorker = gmailWorker
+				fmt.Printf("  - Gmail worker started\n")
+			}
+		}
 		fmt.Printf("Services already running for user %d\n", userID)
 		return nil
 	}
@@ -95,26 +166,6 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 		fmt.Printf("  - Gmail worker started\n")
 	}
 
-	// Start processor
-	if m.clientManager != nil && m.eventAnalyzer != nil {
-		// Get message channel from ClientManager
-		msgChan := m.clientManager.MessageChan()
-		proc := processor.New(
-			m.db,
-			m.eventAnalyzer,
-			m.reminderAnalyzer,
-			msgChan,
-			m.cfg.MessageHistorySize,
-			m.notifyService,
-		)
-		if err := proc.Start(); err != nil {
-			fmt.Printf("  - Processor failed to start: %v\n", err)
-		} else {
-			services.Processor = proc
-			fmt.Printf("  - Processor started\n")
-		}
-	}
-
 	services.running = true
 	m.userServices[userID] = services
 
@@ -136,10 +187,6 @@ func (m *UserServiceManager) StopServicesForUser(userID int64) {
 
 	if services.GmailWorker != nil {
 		services.GmailWorker.Stop()
-	}
-
-	if services.Processor != nil {
-		services.Processor.Stop()
 	}
 
 	// Cleanup WhatsApp/Telegram clients for this user
@@ -167,6 +214,8 @@ func (m *UserServiceManager) StopAllServices() {
 	for _, userID := range userIDs {
 		m.StopServicesForUser(userID)
 	}
+
+	m.StopGlobalProcessor()
 }
 
 // IsRunningForUser checks if services are running for a user
@@ -191,12 +240,91 @@ func (m *UserServiceManager) GetGmailWorkerForUser(userID int64) *gmail.Worker {
 	return services.GmailWorker
 }
 
+// StopGmailWorkerForUser stops and removes the Gmail worker for a specific user.
+func (m *UserServiceManager) StopGmailWorkerForUser(userID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	services, ok := m.userServices[userID]
+	if !ok {
+		return
+	}
+
+	if services.GmailWorker != nil {
+		services.GmailWorker.Stop()
+	}
+
+	services.running = false
+	delete(m.userServices, userID)
+}
+
+// StartServicesForEligibleUsers starts services for any user with valid auth/sessions.
+// This is used on server startup to keep background processing always-on.
+func (m *UserServiceManager) StartServicesForEligibleUsers() {
+	if m.db == nil {
+		return
+	}
+
+	userIDs := make(map[int64]struct{})
+
+	if waUsers, err := m.db.ListUsersWithWhatsAppSession(); err == nil {
+		for _, userID := range waUsers {
+			userIDs[userID] = struct{}{}
+		}
+	}
+
+	if tgUsers, err := m.db.ListUsersWithTelegramSession(); err == nil {
+		for _, userID := range tgUsers {
+			userIDs[userID] = struct{}{}
+		}
+	}
+
+	if tokenUsers, err := m.db.ListUsersWithGoogleToken(); err == nil {
+		for _, userID := range tokenUsers {
+			info, err := m.db.GetGoogleTokenInfo(userID)
+			if err != nil || info == nil || !info.HasToken {
+				continue
+			}
+			if hasScope(info.Scopes, auth.GmailScopes[0]) {
+				userIDs[userID] = struct{}{}
+				_ = m.db.SetGmailEnabled(userID, true)
+			}
+		}
+	}
+
+	for userID := range userIDs {
+		if err := m.StartServicesForUser(userID); err != nil {
+			fmt.Printf("Warning: failed to start services for user %d: %v\n", userID, err)
+		}
+	}
+}
+
+func hasScope(scopes []string, scope string) bool {
+	for _, s := range scopes {
+		if s == scope {
+			return true
+		}
+	}
+	return false
+}
+
 // createGmailWorker creates and starts a Gmail worker for a user
 func (m *UserServiceManager) createGmailWorker(userID int64) (*gmail.Worker, error) {
 	// Create per-user gcal client to get OAuth token for Gmail
 	if m.credentialsFile == "" || userID == 0 {
 		return nil, nil
 	}
+
+	// Require Gmail scope before starting a Gmail worker
+	tokenInfo, err := m.db.GetGoogleTokenInfo(userID)
+	if err != nil || tokenInfo == nil || !tokenInfo.HasToken {
+		return nil, nil
+	}
+	if !hasScope(tokenInfo.Scopes, auth.GmailScopes[0]) {
+		return nil, nil
+	}
+
+	_ = m.db.SetGmailEnabled(userID, true)
 
 	userGCalClient, err := gcal.NewClientForUser(userID, m.credentialsFile, m.db)
 	if err != nil || userGCalClient == nil || !userGCalClient.IsAuthenticated() {

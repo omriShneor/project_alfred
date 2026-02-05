@@ -379,6 +379,13 @@ func (s *Server) handleAddScopesCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	for _, scope := range req.Scopes {
+		if scope == "gmail" {
+			_ = s.db.SetGmailEnabled(userID, true)
+			break
+		}
+	}
+
 	// Start services so Gmail worker can refresh top contacts immediately after auth
 	if s.userServiceManager != nil {
 		needsGmail := false

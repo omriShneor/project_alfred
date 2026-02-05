@@ -155,6 +155,10 @@ func (m *ClientManager) LogoutWhatsApp(userID int64) error {
 	client, exists := m.whatsappClients[userID]
 	m.mu.Unlock()
 
+	if m.db != nil {
+		_ = m.db.UpdateWhatsAppConnected(userID, false)
+	}
+
 	if !exists {
 		// No client in memory, but session file might exist - delete it
 		sessionPath := m.getUserWhatsAppDBPath(userID)
@@ -278,6 +282,10 @@ func (m *ClientManager) LogoutTelegram(userID int64) error {
 	client, exists := m.telegramClients[userID]
 	m.mu.Unlock()
 
+	if m.db != nil {
+		_ = m.db.UpdateTelegramConnected(userID, false)
+	}
+
 	if !exists {
 		// No client in memory, but session file might exist - delete it
 		sessionPath := m.getUserTelegramSessionPath(userID)
@@ -373,37 +381,21 @@ func (m *ClientManager) RestoreUserSessions(ctx context.Context) error {
 	}
 
 	for _, user := range users {
-		// Check if user has onboarding complete
-		status, err := m.db.GetAppStatus(user.ID)
-		if err != nil {
-			fmt.Printf("Warning: Failed to get status for user %d: %v\n", user.ID, err)
-			continue
-		}
-
-		if !status.OnboardingComplete {
-			fmt.Printf("ClientManager: Skipping user %d (onboarding incomplete)\n", user.ID)
-			continue
-		}
-
-		// Restore WhatsApp session if enabled
-		if status.WhatsAppEnabled {
-			sessionPath := m.getUserWhatsAppDBPath(user.ID)
-			if _, err := os.Stat(sessionPath); err == nil {
-				fmt.Printf("ClientManager: Restoring WhatsApp session for user %d\n", user.ID)
-				if _, err := m.CreateWhatsAppClient(user.ID); err != nil {
-					fmt.Printf("Warning: Failed to restore WhatsApp for user %d: %v\n", user.ID, err)
-				}
+		// Restore WhatsApp session if session file exists
+		sessionPath := m.getUserWhatsAppDBPath(user.ID)
+		if _, err := os.Stat(sessionPath); err == nil {
+			fmt.Printf("ClientManager: Restoring WhatsApp session for user %d\n", user.ID)
+			if _, err := m.CreateWhatsAppClient(user.ID); err != nil {
+				fmt.Printf("Warning: Failed to restore WhatsApp for user %d: %v\n", user.ID, err)
 			}
 		}
 
-		// Restore Telegram session if enabled
-		if status.TelegramEnabled {
-			sessionPath := m.getUserTelegramSessionPath(user.ID)
-			if _, err := os.Stat(sessionPath); err == nil {
-				fmt.Printf("ClientManager: Restoring Telegram session for user %d\n", user.ID)
-				if _, err := m.CreateTelegramClient(user.ID); err != nil {
-					fmt.Printf("Warning: Failed to restore Telegram for user %d: %v\n", user.ID, err)
-				}
+		// Restore Telegram session if session file exists
+		sessionPath = m.getUserTelegramSessionPath(user.ID)
+		if _, err := os.Stat(sessionPath); err == nil {
+			fmt.Printf("ClientManager: Restoring Telegram session for user %d\n", user.ID)
+			if _, err := m.CreateTelegramClient(user.ID); err != nil {
+				fmt.Printf("Warning: Failed to restore Telegram for user %d: %v\n", user.ID, err)
 			}
 		}
 	}

@@ -55,6 +55,27 @@ func (d *DB) GetGmailSettings(userID int64) (*GmailSettings, error) {
 	return &settings, nil
 }
 
+// SetGmailEnabled enables or disables Gmail processing for a user.
+func (d *DB) SetGmailEnabled(userID int64, enabled bool) error {
+	// Ensure settings row exists
+	if _, err := d.Exec(`
+		INSERT OR IGNORE INTO gmail_settings (user_id, enabled)
+		VALUES (?, ?)
+	`, userID, enabled); err != nil {
+		return fmt.Errorf("failed to ensure gmail settings: %w", err)
+	}
+
+	_, err := d.Exec(`
+		UPDATE gmail_settings
+		SET enabled = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = ?
+	`, enabled, userID)
+	if err != nil {
+		return fmt.Errorf("failed to set gmail enabled: %w", err)
+	}
+	return nil
+}
+
 // UpdateGmailLastPoll updates the last poll timestamp for a user
 func (d *DB) UpdateGmailLastPoll(userID int64) error {
 	_, err := d.Exec(`

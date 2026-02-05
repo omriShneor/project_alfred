@@ -266,6 +266,11 @@ func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 			s.onboardingState.SetGCalStatus("disconnected")
 		}
 
+		if s.userServiceManager != nil {
+			s.userServiceManager.StopGmailWorkerForUser(userID)
+		}
+		_ = s.db.SetGmailEnabled(userID, false)
+
 		respondJSON(w, http.StatusOK, map[string]string{
 			"status": "disconnected",
 			"scope":  "all",
@@ -289,6 +294,12 @@ func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 		if s.onboardingState != nil {
 			s.onboardingState.SetGCalStatus("disconnected")
 		}
+	}
+	if req.Scope == "gmail" {
+		if s.userServiceManager != nil {
+			s.userServiceManager.StopGmailWorkerForUser(userID)
+		}
+		_ = s.db.SetGmailEnabled(userID, false)
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{

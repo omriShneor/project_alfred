@@ -70,6 +70,40 @@ func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Start services on app load if we have cached auth/sessions (faster home screen)
+	if s.userServiceManager != nil && !s.userServiceManager.IsRunningForUser(userID) {
+		shouldStart := false
+
+		// Gmail scope cached
+		if s.authService != nil {
+			hasGmailScope, _ := s.authService.HasGmailScope(userID)
+			if hasGmailScope {
+				shouldStart = true
+			}
+		}
+
+		// WhatsApp / Telegram sessions cached
+		if !shouldStart {
+			if waSession, _ := s.db.GetWhatsAppSession(userID); waSession != nil && waSession.Connected {
+				shouldStart = true
+			}
+		}
+		if !shouldStart {
+			if tgSession, _ := s.db.GetTelegramSession(userID); tgSession != nil && tgSession.Connected {
+				shouldStart = true
+			}
+		}
+
+		// Enabled integrations (onboarding already completed)
+		if !shouldStart && (status.WhatsAppEnabled || status.TelegramEnabled || status.GmailEnabled) {
+			shouldStart = true
+		}
+
+		if shouldStart {
+			go s.userServiceManager.StartServicesForUser(userID)
+		}
+	}
+
 	response := AppStatusResponse{
 		OnboardingComplete: status.OnboardingComplete,
 		WhatsApp: ConnectionStatus{
@@ -119,6 +153,9 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 	if err := s.db.CompleteOnboarding(userID, req.WhatsAppEnabled, req.TelegramEnabled, req.GmailEnabled); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if req.GmailEnabled {
+		_ = s.db.SetGmailEnabled(userID, true)
 	}
 
 	// Start user services now that onboarding is complete

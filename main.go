@@ -85,13 +85,18 @@ func main() {
 	})
 	srv.SetUserServiceManager(userServiceManager)
 
+	// Start a single global processor for all users
+	if err := userServiceManager.StartGlobalProcessor(); err != nil {
+		fmt.Printf("Warning: Failed to start global processor: %v\n", err)
+	}
+
 	// Restore sessions for users who were previously connected
 	if err := clientManager.RestoreUserSessions(ctx); err != nil {
 		fmt.Printf("Warning: Failed to restore some user sessions: %v\n", err)
 	}
 
-	// NOTE: Workers and processors are NOT started here.
-	// They will be started by UserServiceManager after user login + onboarding.
+	// Start background services for eligible users (cached auth/sessions)
+	userServiceManager.StartServicesForEligibleUsers()
 
 	waitForShutdown(srv, clientManager, userServiceManager)
 }

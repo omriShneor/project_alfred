@@ -34,6 +34,9 @@ func main() {
 
 	notifyService := initNotifyService(db, cfg)
 
+	eventAnalyzer := initEventAnalyzer(cfg)
+	reminderAnalyzer := initReminderAnalyzer(cfg)
+
 	srv := server.New(server.ServerConfig{
 		DB:              db,
 		OnboardingState: state,
@@ -42,6 +45,11 @@ func main() {
 		DevMode:         cfg.DevMode,
 		CredentialsFile: cfg.GoogleCredentialsFile,
 		CredentialsJSON: cfg.GoogleCredentialsJSON,
+	})
+	srv.InitializeClients(server.ClientsConfig{
+		NotifyService:    notifyService,
+		EventAnalyzer:    eventAnalyzer,
+		ReminderAnalyzer: reminderAnalyzer,
 	})
 	go func() {
 		if err := srv.Start(); err != nil && err != http.ErrServerClosed {
@@ -69,9 +77,6 @@ func main() {
 
 	// Set ClientManager on server
 	srv.SetClientManager(clientManager)
-
-	eventAnalyzer := initEventAnalyzer(cfg)
-	reminderAnalyzer := initReminderAnalyzer(cfg)
 
 	// Create UserServiceManager for per-user service lifecycle
 	userServiceManager := server.NewUserServiceManager(server.UserServiceManagerConfig{

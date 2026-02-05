@@ -45,8 +45,10 @@ function TabNavigator() {
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarButton: () => null,
-          tabBarItemStyle: { display: 'none' },
+          tabBarLabel: 'Home',
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="home-outline" size={size} color={color} />
+          ),
         }}
       />
       <Tab.Screen

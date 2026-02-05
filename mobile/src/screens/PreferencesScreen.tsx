@@ -4,7 +4,7 @@ import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
 import * as ExpoLinking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, CommonActions, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Button, LoadingSpinner } from '../components/common';
@@ -325,22 +325,10 @@ export function PreferencesScreen() {
     }
   };
 
-  // Navigate to home when tapping header (handled by parent)
-  const handleGoHome = () => {
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: 'Home',
-      })
-    );
-  };
-
   // Show loading state during initial data fetch to prevent flash
   if (isInitialLoading) {
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
-        <TouchableOpacity style={styles.header} onPress={handleGoHome} activeOpacity={0.7}>
-          <Text style={styles.headerTitle}>Alfred</Text>
-        </TouchableOpacity>
         <View style={styles.loadingContainer}>
           <LoadingSpinner />
         </View>
@@ -350,11 +338,6 @@ export function PreferencesScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header with Home navigation */}
-      <TouchableOpacity style={styles.header} onPress={handleGoHome} activeOpacity={0.7}>
-        <Text style={styles.headerTitle}>Alfred</Text>
-      </TouchableOpacity>
-
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -714,22 +697,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 16,
-    paddingTop: 8,
+    paddingTop: 16,
     paddingBottom: 32,
   },
   sectionLabel: {

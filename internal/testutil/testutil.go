@@ -7,6 +7,7 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/auth"
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/server"
 	"github.com/omriShneor/project_alfred/internal/sse"
 	"github.com/stretchr/testify/require"
@@ -68,6 +69,13 @@ func NewTestServer(t *testing.T, opts ...TestServerOption) *TestServer {
 	}
 
 	ts.Server = server.New(cfg)
+
+	// Ensure notification service exists so push availability is true in tests.
+	// Expo push does not require credentials, so we can wire it unconditionally.
+	notifyService := notify.NewService(db, nil, notify.NewExpoPushNotifier())
+	ts.Server.InitializeClients(server.ClientsConfig{
+		NotifyService: notifyService,
+	})
 
 	// Always create MockClientManager for multi-user support
 	// Tests can use GetWhatsAppClient(userID) or GetTelegramClient(userID) on the manager
@@ -219,6 +227,13 @@ func NewTestServerWithUser(t *testing.T, email string) *TestServer {
 	}
 
 	ts.Server = server.New(cfg)
+
+	// Ensure notification service exists so push availability is true in tests.
+	// Expo push does not require credentials, so we can wire it unconditionally.
+	notifyService := notify.NewService(db, nil, notify.NewExpoPushNotifier())
+	ts.Server.InitializeClients(server.ClientsConfig{
+		NotifyService: notifyService,
+	})
 
 	// Always create MockClientManager for multi-user support
 	ts.ClientManager = NewMockClientManager(100)

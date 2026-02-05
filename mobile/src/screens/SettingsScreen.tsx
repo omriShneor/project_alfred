@@ -8,17 +8,14 @@ import {
   Switch,
   Alert,
   Platform,
-  TouchableOpacity,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { CommonActions, useNavigation } from '@react-navigation/native';
 import { Button, Card, LoadingSpinner } from '../components/common';
 import { colors } from '../theme/colors';
 import { usePushNotifications } from '../hooks';
 import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs } from '../api';
 
 export function SettingsScreen() {
-  const navigation = useNavigation();
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [emailAvailable, setEmailAvailable] = useState(false);
@@ -105,22 +102,8 @@ export function SettingsScreen() {
     setSavingNotifications(false);
   };
 
-  // Navigate to home when tapping header
-  const handleGoHome = () => {
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: 'Home',
-      })
-    );
-  };
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header with Home navigation */}
-      <TouchableOpacity style={styles.header} onPress={handleGoHome} activeOpacity={0.7}>
-        <Text style={styles.headerTitle}>Alfred</Text>
-      </TouchableOpacity>
-
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {/* Notifications Section */}
         <Text style={styles.sectionTitle}>Notifications</Text>
@@ -159,7 +142,7 @@ export function SettingsScreen() {
             </View>
           )}
 
-          {Platform.OS !== 'web' && pushAvailable && (
+          {Platform.OS !== 'web' && (
             <View style={styles.pushSection}>
               <View style={styles.settingRow}>
                 <View style={styles.settingInfo}>
@@ -167,6 +150,11 @@ export function SettingsScreen() {
                   <Text style={styles.settingDescription}>
                     Get instant alerts on your phone
                   </Text>
+                  {!pushAvailable && (
+                    <Text style={styles.unavailableText}>
+                      Push notifications not configured on server
+                    </Text>
+                  )}
                   {permissionStatus === 'denied' && (
                     <Text style={styles.unavailableText}>
                       Permission denied - enable in device settings
@@ -216,22 +204,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: colors.background,
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.primary,
-  },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 16,
-    paddingTop: 8,
+    paddingTop: 16,
     paddingBottom: 32,
   },
   sectionTitle: {

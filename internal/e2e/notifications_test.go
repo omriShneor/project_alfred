@@ -37,6 +37,21 @@ func TestNotificationPreferences(t *testing.T) {
 		assert.Contains(t, available, "email")
 		assert.Contains(t, available, "push")
 	})
+
+	t.Run("push availability is true when notify service is configured", func(t *testing.T) {
+		resp, err := http.Get(ts.BaseURL() + "/api/notifications/preferences")
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+		var result map[string]interface{}
+		err = json.NewDecoder(resp.Body).Decode(&result)
+		require.NoError(t, err)
+
+		available := result["available"].(map[string]interface{})
+		assert.Equal(t, true, available["push"])
+	})
 }
 
 func TestEmailNotificationPreferences(t *testing.T) {

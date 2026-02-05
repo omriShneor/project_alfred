@@ -109,6 +109,19 @@ func (m *ClientManager) CreateWhatsAppClient(userID int64) (*whatsapp.Client, er
 	m.whatsappClients[userID] = client
 	fmt.Printf("ClientManager: WhatsApp client created for user %d\n", userID)
 
+	// Auto-connect if client has a valid session (is logged in)
+	// This ensures HistorySync runs after server restarts, populating channels and message counts
+	if client.IsLoggedIn() {
+		go func() {
+			fmt.Printf("ClientManager: Auto-connecting WhatsApp for user %d...\n", userID)
+			if err := client.WAClient.Connect(); err != nil {
+				fmt.Printf("ClientManager: WhatsApp auto-connect failed for user %d: %v\n", userID, err)
+			} else {
+				fmt.Printf("ClientManager: WhatsApp auto-connected successfully for user %d\n", userID)
+			}
+		}()
+	}
+
 	return client, nil
 }
 
@@ -397,29 +410,6 @@ func (m *ClientManager) RestoreUserSessions(ctx context.Context) error {
 
 	fmt.Println("ClientManager: Session restoration complete")
 	return nil
-}
-
-// CleanupLegacySessions deletes old single-user session files (one-time migration)
-// This method should be removed after the migration is complete
-func (m *ClientManager) CleanupLegacySessions() {
-	fmt.Println("ClientManager: Cleaning up legacy session files...")
-
-	legacyFiles := []string{
-		m.cfg.WhatsAppDBBasePath, // e.g., "./whatsapp.db"
-		m.cfg.TelegramDBBasePath, // e.g., "./telegram.db"
-	}
-
-	for _, file := range legacyFiles {
-		if _, err := os.Stat(file); err == nil {
-			if err := os.Remove(file); err != nil {
-				fmt.Printf("Warning: Failed to delete legacy session file %s: %v\n", file, err)
-			} else {
-				fmt.Printf("ClientManager: Deleted legacy session file: %s\n", file)
-			}
-		}
-	}
-
-	fmt.Println("ClientManager: Legacy session cleanup complete")
 }
 
 // Shutdown gracefully shuts down all clients

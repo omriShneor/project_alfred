@@ -34,3 +34,6 @@ token.json
 !mobile/.maestro/
 mobile/.maestro/test-results/
 *.mp4
+
+# Apple auth files
+*.p8

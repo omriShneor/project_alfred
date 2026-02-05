@@ -60,9 +60,6 @@ func main() {
 		DebugAllMessages:   cfg.DebugAllMessages,
 	}, notifyService, state)
 
-	// Clean up legacy session files (one-time migration)
-	clientManager.CleanupLegacySessions()
-
 	// Create dev user if in dev mode (for unauthenticated testing)
 	if cfg.DevMode {
 		if err := ensureDevUser(db); err != nil {
@@ -150,15 +147,14 @@ func initNotifyService(db *database.DB, cfg *config.Config) *notify.Service {
 	return notify.NewService(db, emailNotifier, pushNotifier)
 }
 
-
 // ensureDevUser creates the dev user (ID 1) if it doesn't exist
 // This runs on every startup in dev mode to ensure the user exists
 func ensureDevUser(db *database.DB) error {
 	const (
-		devUserID    = 1
-		devEmail     = "omrishneor@gmail.com"
-		devGoogleID  = "117916007686632359623"
-		devName      = "Omri Shneor"
+		devUserID   = 1
+		devEmail    = "omrishneor@gmail.com"
+		devGoogleID = "117916007686632359623"
+		devName     = "Omri Shneor"
 	)
 
 	// Check if user 1 already exists

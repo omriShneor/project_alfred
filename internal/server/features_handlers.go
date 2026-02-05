@@ -144,6 +144,13 @@ func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Delete all user sessions (forces re-login)
+	if s.authService != nil {
+		if err := s.authService.DeleteAllUserSessions(userID); err != nil {
+			fmt.Printf("Warning: Failed to delete user sessions: %v\n", err)
+		}
+	}
+
 	// Reset SSE state
 	if s.state != nil {
 		s.state.SetTelegramStatus("pending")

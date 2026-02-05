@@ -204,7 +204,7 @@ func (d *DB) RemoveGoogleTokenScope(userID int64, scopeToRemove string) error {
 	scopeURLs := map[string]string{
 		"gmail":    "https://www.googleapis.com/auth/gmail.readonly",
 		"calendar": "https://www.googleapis.com/auth/calendar",
-		"profile": "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
+		"profile":  "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile",
 	}
 
 	scopeURL, ok := scopeURLs[scopeToRemove]

@@ -527,6 +527,12 @@ func (s *Service) CleanupExpiredSessions() error {
 	return err
 }
 
+// DeleteAllUserSessions removes all sessions for a specific user
+func (s *Service) DeleteAllUserSessions(userID int64) error {
+	_, err := s.db.Exec(`DELETE FROM user_sessions WHERE user_id = ?`, userID)
+	return err
+}
+
 // ListUsersWithGoogleToken returns user IDs that have stored Google tokens
 func (s *Service) ListUsersWithGoogleToken() ([]int64, error) {
 	rows, err := s.db.Query(`SELECT user_id FROM google_tokens`)

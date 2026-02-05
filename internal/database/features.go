@@ -21,7 +21,7 @@ type FeatureSettings struct {
 	SMSInputEnabled      bool `json:"sms_input_enabled"`
 
 	// Calendars (where to sync events)
-	AlfredCalendarEnabled  bool `json:"alfred_calendar_enabled"`  // Local Alfred calendar (always available)
+	AlfredCalendarEnabled  bool `json:"alfred_calendar_enabled"` // Local Alfred calendar (always available)
 	GoogleCalendarEnabled  bool `json:"google_calendar_enabled"`
 	OutlookCalendarEnabled bool `json:"outlook_calendar_enabled"`
 
@@ -154,8 +154,6 @@ func (d *DB) ResetOnboarding(userID int64) error {
 		return err
 	}
 
-	// Best-effort cleanup of authentication tokens
-	// Log errors but continue - tokens may not exist
 	if err := d.DeleteGoogleToken(userID); err != nil {
 		log.Printf("Warning: failed to delete Google token during reset: %v", err)
 	}

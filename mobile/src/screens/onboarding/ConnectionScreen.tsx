@@ -12,8 +12,9 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useRoute, useFocusEffect } from '@react-navigation/native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
 import { Feather } from '@expo/vector-icons';
@@ -25,7 +26,6 @@ import {
   useGCalStatus,
   useGeneratePairingCode,
   useGetOAuthURL,
-  useCompleteOnboarding,
   useTelegramStatus,
   useSendTelegramCode,
   useVerifyTelegramCode,
@@ -35,6 +35,7 @@ import { ScopeType } from '../../api/auth';
 import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
 
 type RouteProps = RouteProp<OnboardingParamList, 'Connection'>;
+type NavigationProp = NativeStackNavigationProp<OnboardingParamList, 'Connection'>;
 type IntegrationStatusType = 'pending' | 'connecting' | 'available' | 'error';
 
 function getStatusColor(status: IntegrationStatusType) {
@@ -86,6 +87,7 @@ function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading
 
 export function ConnectionScreen() {
   const route = useRoute<RouteProps>();
+  const navigation = useNavigation<NavigationProp>();
   const queryClient = useQueryClient();
 
   const { whatsappEnabled, telegramEnabled, gmailEnabled } = route.params;
@@ -106,7 +108,6 @@ export function ConnectionScreen() {
   const { data: telegramStatus } = useTelegramStatus();
   const generatePairingCode = useGeneratePairingCode();
   const getOAuthURL = useGetOAuthURL();
-  const completeOnboarding = useCompleteOnboarding();
   const sendTelegramCode = useSendTelegramCode();
   const verifyTelegramCode = useVerifyTelegramCode();
   const requestAdditionalScopes = useRequestAdditionalScopes();
@@ -253,18 +254,13 @@ export function ConnectionScreen() {
     }
   };
 
-  const handleContinue = async () => {
-    try {
-      await completeOnboarding.mutateAsync({
-        whatsapp_enabled: whatsappEnabled,
-        telegram_enabled: telegramEnabled,
-        gmail_enabled: gmailEnabled,
-      });
-      // RootNavigator will automatically switch to MainNavigator
-      // when onboarding_complete becomes true (query is invalidated in the hook)
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to complete onboarding');
-    }
+  const handleContinue = () => {
+    // Navigate to SourceConfiguration instead of calling completeOnboarding
+    navigation.navigate('SourceConfiguration', {
+      whatsappEnabled,
+      telegramEnabled,
+      gmailEnabled,
+    });
   };
 
   return (
@@ -278,7 +274,7 @@ export function ConnectionScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-        <Text style={styles.step}>Step 2 of 2</Text>
+        <Text style={styles.step}>Step 2 of 3</Text>
         <Text style={styles.title}>Connect Your Accounts</Text>
         <Text style={styles.description}>
           Connect the services you selected to start receiving event, reminder, and task suggestions.
@@ -465,7 +461,6 @@ export function ConnectionScreen() {
           title="Continue"
           onPress={handleContinue}
           disabled={!allAvailable}
-          loading={completeOnboarding.isPending}
           style={styles.continueButton}
         />
       </ScrollView>

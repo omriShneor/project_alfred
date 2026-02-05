@@ -13,7 +13,11 @@ import (
 
 // handleListReminders returns reminders with optional status and channel_id filters
 func (s *Server) handleListReminders(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	statusFilter := r.URL.Query().Get("status")
 	channelIDStr := r.URL.Query().Get("channel_id")
 
@@ -174,7 +178,11 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if sync is enabled and Google Calendar is connected
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	gcalSettings, _ := s.db.GetGCalSettings(userID)
 	userGCalClient := s.getGCalClientForUser(userID)
 	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && userGCalClient != nil && userGCalClient.IsAuthenticated()
@@ -342,7 +350,11 @@ func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If synced to Google Calendar, delete the event
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	userGCalClient := s.getGCalClientForUser(userID)
 	if reminder.GoogleEventID != nil && userGCalClient != nil && userGCalClient.IsAuthenticated() {
 		if err := userGCalClient.DeleteEvent(reminder.CalendarID, *reminder.GoogleEventID); err != nil {

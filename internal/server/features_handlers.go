@@ -24,7 +24,11 @@ type ConnectionStatus struct {
 
 // handleGetAppStatus returns the simplified app status
 func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	// Check actual connection status
 	// For WhatsApp/Telegram in multi-user mode, we check if ClientManager is available
@@ -94,7 +98,11 @@ type CompleteOnboardingRequest struct {
 
 // handleCompleteOnboarding marks the onboarding as complete
 func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	var req CompleteOnboardingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -124,7 +132,11 @@ func (s *Server) handleCompleteOnboarding(w http.ResponseWriter, r *http.Request
 
 // handleResetOnboarding resets the onboarding status (for testing)
 func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	// Reset all client sessions for this user (full logout with session deletion)
 	if s.clientManager != nil {

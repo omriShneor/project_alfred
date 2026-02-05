@@ -17,7 +17,11 @@ type TelegramStatusResponse struct {
 
 // handleTelegramStatus returns the current Telegram connection status
 func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	if s.clientManager == nil {
 		respondJSON(w, http.StatusOK, TelegramStatusResponse{
 			Connected: false,
@@ -49,7 +53,11 @@ type TelegramSendCodeRequest struct {
 
 // handleTelegramSendCode sends a verification code to the given phone number
 func (s *Server) handleTelegramSendCode(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	if s.clientManager == nil {
 		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
@@ -94,7 +102,11 @@ type TelegramVerifyCodeRequest struct {
 
 // handleTelegramVerifyCode verifies the code and completes authentication
 func (s *Server) handleTelegramVerifyCode(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	if s.clientManager == nil {
 		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
@@ -134,7 +146,11 @@ func (s *Server) handleTelegramVerifyCode(w http.ResponseWriter, r *http.Request
 
 // handleTelegramDisconnect disconnects the Telegram client
 func (s *Server) handleTelegramDisconnect(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	if s.clientManager == nil {
 		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
@@ -155,7 +171,11 @@ func (s *Server) handleTelegramDisconnect(w http.ResponseWriter, r *http.Request
 
 // handleTelegramReconnect attempts to reconnect the Telegram client
 func (s *Server) handleTelegramReconnect(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	if s.clientManager == nil {
 		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
 		return
@@ -192,7 +212,11 @@ func (s *Server) handleTelegramReconnect(w http.ResponseWriter, r *http.Request)
 
 // handleDiscoverTelegramChannels lists available Telegram chats
 func (s *Server) handleDiscoverTelegramChannels(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	if s.clientManager == nil {
 		respondError(w, http.StatusServiceUnavailable, "Client manager not configured")
@@ -222,7 +246,11 @@ func (s *Server) handleDiscoverTelegramChannels(w http.ResponseWriter, r *http.R
 
 // handleListTelegramChannels lists tracked Telegram channels
 func (s *Server) handleListTelegramChannels(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	channels, err := s.db.ListSourceChannels(userID, source.SourceTypeTelegram)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to list channels: %v", err))
@@ -241,7 +269,11 @@ type TelegramCreateChannelRequest struct {
 
 // handleCreateTelegramChannel adds a Telegram channel to track
 func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	var req TelegramCreateChannelRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid request body")
@@ -331,7 +363,11 @@ type TelegramTopContactResponse struct {
 
 // handleTelegramTopContacts returns top contacts based on message history
 func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	// Get top contacts from message history
 	contacts, err := s.db.GetTopContactsBySourceType("telegram", 8)
@@ -404,7 +440,11 @@ type TelegramCustomSourceRequest struct {
 
 // handleTelegramCustomSource creates a Telegram channel from a username
 func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	// Note: This endpoint doesn't require Telegram to be connected
 	// It just creates a channel entry in the database
 

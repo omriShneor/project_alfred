@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"fmt"
 )
 
 // contextKey is a custom type for context keys to avoid collisions
@@ -31,13 +32,12 @@ func GetUserFromContext(ctx context.Context) *User {
 }
 
 // GetUserID extracts the user ID from the request context
-// Returns 0 if no user is found
-func GetUserID(ctx context.Context) int64 {
+func GetUserID(ctx context.Context) (int64, error) {
 	user := GetUserFromContext(ctx)
 	if user == nil {
-		return 0
+		return -1, fmt.Errorf("Could not extract user from request context")
 	}
-	return user.ID
+	return user.ID, nil
 }
 
 // SetUserInContext returns a new context with the user set

@@ -175,7 +175,7 @@ The mobile app connects to the Project Alfred Go backend API. Required endpoints
 | `GET /api/gcal/status` | Check Google Calendar connection |
 | `POST /api/gcal/connect` | Get OAuth URL |
 | `POST /api/gcal/callback` | Exchange OAuth code |
-| `GET /api/channel` | List channels |
+| `GET /api/whatsapp/channel` | List channels |
 | `GET /api/events` | List events |
 
 ## Testing on Physical Device

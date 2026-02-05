@@ -49,7 +49,7 @@ func TestMultiUserDataIsolation(t *testing.T) {
 		MustBuild(ts2.DB)
 
 	t.Run("user1 only sees user1 channels", func(t *testing.T) {
-		resp, err := http.Get(ts1.BaseURL() + "/api/channel")
+		resp, err := http.Get(ts1.BaseURL() + "/api/whatsapp/channel")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -63,7 +63,7 @@ func TestMultiUserDataIsolation(t *testing.T) {
 	})
 
 	t.Run("user2 only sees user2 channels", func(t *testing.T) {
-		resp, err := http.Get(ts2.BaseURL() + "/api/channel")
+		resp, err := http.Get(ts2.BaseURL() + "/api/whatsapp/channel")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -239,7 +239,7 @@ func TestCrossUserAccessDenied(t *testing.T) {
 	})
 
 	t.Run("user1 cannot delete user2 channel", func(t *testing.T) {
-		req, err := http.NewRequest("DELETE", ts1.BaseURL()+fmt.Sprintf("/api/channel/%d", channel2.ID), nil)
+		req, err := http.NewRequest("DELETE", ts1.BaseURL()+fmt.Sprintf("/api/whatsapp/channel/%d", channel2.ID), nil)
 		require.NoError(t, err)
 
 		resp, err := ts1.Client().Do(req)
@@ -250,7 +250,7 @@ func TestCrossUserAccessDenied(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 
 		// Verify channel still exists for user2
-		respGet, err := http.Get(ts2.BaseURL() + "/api/channel")
+		respGet, err := http.Get(ts2.BaseURL() + "/api/whatsapp/channel")
 		require.NoError(t, err)
 		defer respGet.Body.Close()
 

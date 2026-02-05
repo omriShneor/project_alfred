@@ -154,10 +154,10 @@ describe('apiClient', () => {
         json: () => Promise.resolve({ success: true }),
       });
 
-      const result = await apiClient.delete('/api/channels/1');
+      const result = await apiClient.delete('/api/whatsapp/channels/1');
 
       expect(mockFetch).toHaveBeenCalledWith(
-        'http://localhost:8080/api/channels/1',
+        'http://localhost:8080/api/whatsapp/channels/1',
         expect.objectContaining({
           method: 'DELETE',
         })
@@ -219,7 +219,7 @@ describe('apiClient', () => {
         status: 204,
       });
 
-      const result = await apiClient.delete('/api/channels/1');
+      const result = await apiClient.delete('/api/whatsapp/channels/1');
 
       expect(result).toBeUndefined();
     });

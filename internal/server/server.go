@@ -247,10 +247,10 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/telegram/sources/custom", s.requireAuth(s.handleTelegramCustomSource))
 
 	// WhatsApp Channel Registry API
-	mux.HandleFunc("GET /api/channel", s.requireAuth(s.handleListChannels))
-	mux.HandleFunc("POST /api/channel", s.requireAuth(s.handleCreateChannel))
-	mux.HandleFunc("PUT /api/channel/{id}", s.requireAuth(s.handleUpdateChannel))
-	mux.HandleFunc("DELETE /api/channel/{id}", s.requireAuth(s.handleDeleteChannel))
+	mux.HandleFunc("GET /api/whatsapp/channel", s.requireAuth(s.handleListWhatsappChannels))
+	mux.HandleFunc("POST /api/whatsapp/channel", s.requireAuth(s.handleCreateWhatsappChannel))
+	mux.HandleFunc("PUT /api/whatsapp/channel/{id}", s.requireAuth(s.handleUpdateWhatsappChannel))
+	mux.HandleFunc("DELETE /api/whatsapp/channel/{id}", s.requireAuth(s.handleDeleteWhatsappChannel))
 
 	// Google Calendar API
 	mux.HandleFunc("GET /api/gcal/status", s.requireAuth(s.handleGCalStatus))

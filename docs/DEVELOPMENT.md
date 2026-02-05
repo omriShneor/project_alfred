@@ -233,7 +233,7 @@ curl -X POST http://localhost:8080/api/gcal/callback \
 ### Channels & Events
 ```bash
 # List channels
-curl http://localhost:8080/api/channel
+curl http://localhost:8080/api/whatsapp/channel
 
 # List events
 curl http://localhost:8080/api/events

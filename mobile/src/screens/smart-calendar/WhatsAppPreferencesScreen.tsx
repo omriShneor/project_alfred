@@ -51,7 +51,7 @@ export function WhatsAppPreferencesScreen() {
     }
   };
 
-  const handleDeleteChannel = (channel: Channel) => {
+  const handleDeleteWhatsappChannel = (channel: Channel) => {
     Alert.alert(
       'Delete Source',
       `Are you sure you want to delete "${channel.name}"?`,
@@ -143,7 +143,7 @@ export function WhatsAppPreferencesScreen() {
             trackColor={{ false: colors.border, true: colors.primary }}
             thumbColor="#ffffff"
           />
-          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteChannel(item)}>
+          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteWhatsappChannel(item)}>
             <Feather name="trash-2" size={18} color={colors.danger} />
           </TouchableOpacity>
         </View>

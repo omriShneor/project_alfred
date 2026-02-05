@@ -176,7 +176,11 @@ func (s *Server) handleAuthGoogleCallback(w http.ResponseWriter, r *http.Request
 // handleAuthLogout invalidates the current session
 // POST /api/auth/google/logout
 func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	if s.authService == nil {
 		respondError(w, http.StatusServiceUnavailable, "authentication not configured")
@@ -333,7 +337,11 @@ func (s *Server) handleAddScopesCallback(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	if userID == 0 {
 		respondError(w, http.StatusUnauthorized, "authentication required")
 		return

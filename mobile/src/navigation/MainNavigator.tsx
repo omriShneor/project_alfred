@@ -7,6 +7,7 @@ import { HomeScreen } from '../screens/HomeScreen';
 import { PreferencesScreen } from '../screens/PreferencesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { WhatsAppPreferencesScreen, TelegramPreferencesScreen, GmailPreferencesScreen, GoogleCalendarPreferencesScreen } from '../screens/smart-calendar';
+import type { PreferenceStackParamList } from './PreferenceStackNavigator';
 import { colors } from '../theme/colors';
 
 export type TabParamList = {
@@ -17,11 +18,8 @@ export type TabParamList = {
 
 export type MainStackParamList = {
   MainTabs: undefined;
-  WhatsAppPreferences: undefined;
-  TelegramPreferences: undefined;
-  GmailPreferences: undefined;
-  GoogleCalendarPreferences: undefined;
-};
+  // Use shared types for preference screens
+} & PreferenceStackParamList;
 
 const Stack = createNativeStackNavigator<MainStackParamList>();
 const Tab = createBottomTabNavigator<TabParamList>();

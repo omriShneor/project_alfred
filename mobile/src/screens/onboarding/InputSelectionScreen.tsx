@@ -13,7 +13,6 @@ type NavigationProp = NativeStackNavigationProp<OnboardingParamList, 'InputSelec
 interface InputOption {
   id: 'whatsapp' | 'telegram' | 'gmail';
   title: string;
-  description: string;
   icon: keyof typeof Ionicons.glyphMap;
 }
 
@@ -21,19 +20,16 @@ const inputOptions: InputOption[] = [
   {
     id: 'whatsapp',
     title: 'WhatsApp',
-    description: 'Suggest events, reminders and tasks from selected contacts',
     icon: 'chatbubble-outline',
   },
   {
     id: 'telegram',
     title: 'Telegram',
-    description: 'Suggest events, reminders and tasks from selected contacts',
     icon: 'paper-plane-outline',
   },
   {
     id: 'gmail',
     title: 'Gmail',
-    description: 'Suggest events, reminders and tasks from selected email addresses',
     icon: 'mail-outline',
   },
 ];
@@ -68,10 +64,10 @@ export function InputSelectionScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.content}>
-        <Text style={styles.step}>Step 1 of 2</Text>
+        <Text style={styles.step}>Step 1 of 3</Text>
         <Text style={styles.title}>Choose Your Sources</Text>
         <Text style={styles.description}>
-          Select where Alfred should look for events. You can change this later.
+            Select where Alfred should look for event, reminder and task suggestions. You can change this later.
         </Text>
 
         <View style={styles.options}>
@@ -94,7 +90,6 @@ export function InputSelectionScreen() {
                   </View>
                   <View style={styles.optionText}>
                     <Text style={styles.optionTitle}>{option.title}</Text>
-                    <Text style={styles.optionDescription}>{option.description}</Text>
                   </View>
                 </View>
                 <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>

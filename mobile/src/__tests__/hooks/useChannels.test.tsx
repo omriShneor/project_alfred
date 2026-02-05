@@ -9,11 +9,11 @@ import {
   useWhatsAppTopContacts,
   useAddWhatsAppCustomSource,
 } from '../../hooks/useChannels';
-import * as channelsApi from '../../api/channels';
+import * as channelsApi from '../../api/whatsapp/channels';
 import type { Channel, SourceTopContact } from '../../types/channel';
 
 // Mock the API module
-jest.mock('../../api/channels');
+jest.mock('../../api/whatsapp/channels');
 
 const mockChannelsApi = channelsApi as jest.Mocked<typeof channelsApi>;
 

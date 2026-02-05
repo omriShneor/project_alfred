@@ -13,7 +13,11 @@ import (
 // Gmail Status API
 
 func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	status := map[string]interface{}{
 		"connected":  false,
@@ -56,11 +60,14 @@ func (s *Server) handleGmailStatus(w http.ResponseWriter, r *http.Request) {
 // Email Sources API (similar to WhatsApp channels)
 
 func (s *Server) handleListEmailSources(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	typeFilter := r.URL.Query().Get("type")
 
 	var sources []*database.EmailSource
-	var err error
 
 	if typeFilter != "" {
 		sources, err = s.db.ListEmailSourcesByType(userID, database.EmailSourceType(typeFilter))
@@ -91,7 +98,11 @@ func (s *Server) handleListEmailSources(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	var req struct {
 		Type       string `json:"type"`       // "category", "sender", "domain"
@@ -186,7 +197,11 @@ type topContactResponse struct {
 }
 
 func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	contacts, err := s.db.GetTopContacts(userID, 8)
 	if err != nil {
@@ -232,7 +247,11 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 // Custom Source API - validates and creates a custom email or domain source
 
 func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
-	userID := getUserID(r)
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 
 	var req struct {
 		Value string `json:"value"` // Email address or domain

@@ -24,7 +24,7 @@ func TestWhatsAppChannelManagement(t *testing.T) {
 		}
 		body, _ := json.Marshal(channelData)
 
-		resp, err := http.Post(ts.BaseURL()+"/api/channel", "application/json", bytes.NewReader(body))
+		resp, err := http.Post(ts.BaseURL()+"/api/whatsapp/channel", "application/json", bytes.NewReader(body))
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -40,7 +40,7 @@ func TestWhatsAppChannelManagement(t *testing.T) {
 	})
 
 	t.Run("list channels", func(t *testing.T) {
-		resp, err := http.Get(ts.BaseURL() + "/api/channel")
+		resp, err := http.Get(ts.BaseURL() + "/api/whatsapp/channel")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -54,7 +54,7 @@ func TestWhatsAppChannelManagement(t *testing.T) {
 	})
 
 	t.Run("filter channels by type", func(t *testing.T) {
-		resp, err := http.Get(ts.BaseURL() + "/api/channel?type=sender")
+		resp, err := http.Get(ts.BaseURL() + "/api/whatsapp/channel?type=sender")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
@@ -88,7 +88,7 @@ func TestChannelCRUD(t *testing.T) {
 		}
 		body, _ := json.Marshal(updateData)
 
-		req, err := http.NewRequest("PUT", ts.BaseURL()+fmt.Sprintf("/api/channel/%d", channel.ID), bytes.NewReader(body))
+		req, err := http.NewRequest("PUT", ts.BaseURL()+fmt.Sprintf("/api/whatsapp/channel/%d", channel.ID), bytes.NewReader(body))
 		require.NoError(t, err)
 		req.Header.Set("Content-Type", "application/json")
 
@@ -106,7 +106,7 @@ func TestChannelCRUD(t *testing.T) {
 	})
 
 	t.Run("delete channel", func(t *testing.T) {
-		req, err := http.NewRequest("DELETE", ts.BaseURL()+fmt.Sprintf("/api/channel/%d", channel.ID), nil)
+		req, err := http.NewRequest("DELETE", ts.BaseURL()+fmt.Sprintf("/api/whatsapp/channel/%d", channel.ID), nil)
 		require.NoError(t, err)
 
 		resp, err := ts.Client().Do(req)
@@ -180,7 +180,7 @@ func TestMultipleChannelSources(t *testing.T) {
 
 	t.Run("list all channels includes both sources", func(t *testing.T) {
 		// List WhatsApp channels
-		resp, err := http.Get(ts.BaseURL() + "/api/channel")
+		resp, err := http.Get(ts.BaseURL() + "/api/whatsapp/channel")
 		require.NoError(t, err)
 		defer resp.Body.Close()
 

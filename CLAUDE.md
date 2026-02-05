@@ -166,28 +166,30 @@ The `ClientManager` ([internal/clients/manager.go](internal/clients/manager.go))
 6. All operations automatically scoped to authenticated user
 
 ### Service Lifecycle
-- Services start when user first accesses them (lazy initialization)
+- A single **global Processor** runs for all users (shared message channel)
+- Per-user **Gmail workers** run independently (polling interval configurable)
 - WhatsApp/Telegram maintain persistent connections per user
-- Gmail workers poll per-user mailboxes independently (1-minute interval)
-- Services automatically restart on reconnection
+- Services restart on reconnection and after server restarts
 - Session data persists in database (encrypted OAuth tokens) and per-user files
+- Gmail polling is enabled automatically when Gmail scope is granted
 
 ### Session Restoration & Auto-Reconnect
 **On Server Startup:**
-- `RestoreUserSessions()` ([internal/server/user_service_manager.go](internal/server/user_service_manager.go)) reconnects all users with active sessions
-- WhatsApp clients auto-connect if session files exist (triggers HistorySync for message statistics)
-- Telegram clients restore connection state from database files
-- Gmail workers auto-start for users with configured email sources
+- `RestoreUserSessions()` (ClientManager) restores WhatsApp/Telegram sessions from session files (no onboarding gate)
+- Global Processor starts once and handles all incoming messages
+- Gmail workers auto-start for any user with valid Gmail scope/token
 - Per-user service lifecycle managed by `UserServiceManager`
 
 **Implementation Pattern:**
 ```go
 // Server startup in main.go
-userServiceManager.RestoreUserSessions(ctx)
+userServiceManager.StartGlobalProcessor()
+clientManager.RestoreUserSessions(ctx)
+userServiceManager.StartServicesForEligibleUsers()
 
-// Per-user service initialization
-services, err := userServiceManager.GetServicesForUser(userID)
-// Returns: WhatsApp, Telegram, Gmail, GCal clients for that user
+// Per-user Gmail worker lifecycle
+userServiceManager.StartServicesForUser(userID)
+userServiceManager.StopGmailWorkerForUser(userID)
 ```
 
 ---

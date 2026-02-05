@@ -98,7 +98,8 @@ func TestOnboardingResetCleansAllTokens(t *testing.T) {
 			RefreshToken: "test-refresh-token",
 			TokenType:    "Bearer",
 		}
-		err := ts.DB.SaveGoogleToken(userID, token, "test@example.com")
+		testScopes := []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"}
+		err := ts.DB.SaveGoogleToken(userID, token, "test@example.com", testScopes)
 		require.NoError(t, err)
 
 		// Create WhatsApp session

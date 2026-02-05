@@ -178,6 +178,19 @@ func (m *UserServiceManager) IsRunningForUser(userID int64) bool {
 	return ok && services.running
 }
 
+// GetGmailWorkerForUser retrieves the Gmail worker for a specific user
+func (m *UserServiceManager) GetGmailWorkerForUser(userID int64) *gmail.Worker {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	services, ok := m.userServices[userID]
+	if !ok || !services.running {
+		return nil
+	}
+
+	return services.GmailWorker
+}
+
 // createGmailWorker creates and starts a Gmail worker for a user
 func (m *UserServiceManager) createGmailWorker(userID int64) (*gmail.Worker, error) {
 	// Create per-user gcal client to get OAuth token for Gmail

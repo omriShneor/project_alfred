@@ -134,7 +134,7 @@ func (d *DB) GetGoogleToken(userID int64) (*oauth2.Token, error) {
 }
 
 // SaveGoogleToken stores an OAuth2 token for a user (upsert)
-func (d *DB) SaveGoogleToken(userID int64, token *oauth2.Token, email string) error {
+func (d *DB) SaveGoogleToken(userID int64, token *oauth2.Token, email string, scopes []string) error {
 	// Encrypt tokens
 	accessTokenEnc, err := encryptToken(token.AccessToken)
 	if err != nil {
@@ -151,18 +151,25 @@ func (d *DB) SaveGoogleToken(userID int64, token *oauth2.Token, email string) er
 		expiry = &token.Expiry
 	}
 
+	// Marshal scopes to JSON
+	scopesJSON, err := json.Marshal(scopes)
+	if err != nil {
+		return fmt.Errorf("failed to marshal scopes: %w", err)
+	}
+
 	// Upsert token
 	_, err = d.Exec(`
-		INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, expiry, email, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		INSERT INTO google_tokens (user_id, access_token_encrypted, refresh_token_encrypted, token_type, expiry, scopes, email, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(user_id) DO UPDATE SET
 			access_token_encrypted = excluded.access_token_encrypted,
 			refresh_token_encrypted = excluded.refresh_token_encrypted,
 			token_type = excluded.token_type,
 			expiry = excluded.expiry,
+			scopes = excluded.scopes,
 			email = excluded.email,
 			updated_at = CURRENT_TIMESTAMP
-	`, userID, accessTokenEnc, refreshTokenEnc, token.TokenType, expiry, email)
+	`, userID, accessTokenEnc, refreshTokenEnc, token.TokenType, expiry, scopesJSON, email)
 
 	if err != nil {
 		return fmt.Errorf("failed to save google token: %w", err)

@@ -289,7 +289,7 @@ export function GmailPreferencesScreen() {
         title="Add Email Source"
         topContacts={mappedContacts}
         contactsLoading={contactsLoading}
-        customInputPlaceholder="e.g. boss@work.com or acme.com"
+        customInputPlaceholder="e.g. boss@work.com"
         customInputKeyboardType="email-address"
         validateCustomInput={validateCustomInput}
         onAddContacts={handleAddContacts}

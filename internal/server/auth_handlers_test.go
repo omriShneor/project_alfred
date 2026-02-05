@@ -380,7 +380,8 @@ func TestHandleAddScopesCallback(t *testing.T) {
 			RefreshToken: "test-refresh",
 			TokenType:    "Bearer",
 		}
-		err := s.db.SaveGoogleToken(user.ID, token, "test@example.com")
+		profileScopes := []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"}
+		err := s.db.SaveGoogleToken(user.ID, token, "test@example.com", profileScopes)
 		require.NoError(t, err)
 
 		body := map[string]interface{}{

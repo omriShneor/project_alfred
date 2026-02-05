@@ -129,7 +129,8 @@ func (c *Client) saveInitialToken(token *oauth2.Token) error {
 		return fmt.Errorf("database and userID are required")
 	}
 	// Note: email will be set later when we have user info
-	return c.db.SaveGoogleToken(c.userID, token, "")
+	// Pass empty scopes array - scopes will be managed by auth service
+	return c.db.SaveGoogleToken(c.userID, token, "", []string{})
 }
 
 // Disconnect removes the stored token and clears the service
@@ -150,7 +151,6 @@ func (c *Client) Disconnect() error {
 // NewClientForUser creates a Google Calendar client for a specific user (multi-user mode)
 // Token storage is handled via database instead of file
 func NewClientForUser(userID int64, credentialsFile string, db *database.DB) (*Client, error) {
-	fmt.Printf("[GCal Client] Creating client for user %d\n", userID)
 	config, err := loadOAuthConfig(credentialsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load OAuth config: %w", err)
@@ -165,21 +165,13 @@ func NewClientForUser(userID int64, credentialsFile string, db *database.DB) (*C
 
 	// Try to load existing token from database
 	token, err := db.GetGoogleToken(userID)
-	fmt.Printf("[GCal Client] Token from DB: exists=%v, err=%v\n", token != nil, err)
 	if err == nil && token != nil {
 		client.token = token
-		fmt.Printf("[GCal Client] Token details: valid=%v, hasRefresh=%v, expiry=%v\n",
-			token.Valid(), token.RefreshToken != "", token.Expiry)
-		// Try to initialize the service with the existing token
 		if err := client.tryInitService(); err != nil {
-			fmt.Printf("[GCal Client] ERROR: Could not initialize calendar service for user %d: %v\n", userID, err)
-		} else {
-			fmt.Printf("[GCal Client] Service initialized successfully for user %d\n", userID)
+			return nil, fmt.Errorf("failed to init google calender client: %w", err)
 		}
 	} else {
-		fmt.Printf("[GCal Client] No token found for user %d\n", userID)
 	}
 
 	return client, nil
 }
-

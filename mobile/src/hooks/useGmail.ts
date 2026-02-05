@@ -72,7 +72,7 @@ export function useTopContacts() {
   });
 }
 
-// Add custom email or domain source
+// Add custom email source
 export function useAddCustomSource() {
   const queryClient = useQueryClient();
 

@@ -32,7 +32,8 @@ func TestGoogleTokenStorage(t *testing.T) {
 			Expiry:       time.Now().Add(time.Hour),
 		}
 
-		err := db.SaveGoogleToken(user.ID, testToken, "test@example.com")
+		testScopes := []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"}
+		err := db.SaveGoogleToken(user.ID, testToken, "test@example.com", testScopes)
 		require.NoError(t, err)
 
 		retrieved, err := db.GetGoogleToken(user.ID)

@@ -3,14 +3,15 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"sort"
 )
 
 // DiscoverableChannel represents a WhatsApp contact that can be tracked
 type DiscoverableChannel struct {
-	Type       string `json:"type"`       // "sender" (contacts only)
-	Identifier string `json:"identifier"` // phone number
-	Name       string `json:"name"`       // display name
-	IsTracked  bool   `json:"is_tracked"` // whether this channel is already tracked
+	Type       string `json:"type"`                 // "sender" (contacts only)
+	Identifier string `json:"identifier"`           // phone number
+	Name       string `json:"name"`                 // display name
+	IsTracked  bool   `json:"is_tracked"`           // whether this channel is already tracked
 	ChannelID  *int64 `json:"channel_id,omitempty"` // ID if tracked
 	Enabled    *bool  `json:"enabled,omitempty"`    // enabled status if tracked
 }
@@ -47,5 +48,8 @@ func (c *Client) GetDiscoverableChannels() ([]DiscoverableChannel, error) {
 		})
 	}
 
+	sort.Slice(channels, func(i, j int) bool {
+		return channels[i].Name < channels[j].Name
+	})
 	return channels, nil
 }

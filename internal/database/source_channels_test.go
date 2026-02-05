@@ -119,6 +119,32 @@ func TestCreateSourceChannel_DifferentSourceTypes(t *testing.T) {
 	assert.Equal(t, source.SourceTypeGmail, ch2.SourceType)
 }
 
+func TestCreateSourceChannel_SameIdentifierDifferentUsers(t *testing.T) {
+	db := NewTestDB(t)
+	user1 := CreateTestUser(t, db)
+	user2 := CreateTestUser(t, db)
+
+	identifier := "shared@s.whatsapp.net"
+
+	_, err := db.CreateSourceChannel(
+		user1.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		identifier,
+		"User 1 Channel",
+	)
+	require.NoError(t, err)
+
+	_, err = db.CreateSourceChannel(
+		user2.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		identifier,
+		"User 2 Channel",
+	)
+	require.NoError(t, err)
+}
+
 func TestGetSourceChannelByID(t *testing.T) {
 	db := NewTestDB(t)
 	user := CreateTestUser(t, db)
@@ -134,7 +160,7 @@ func TestGetSourceChannelByID(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("get existing channel", func(t *testing.T) {
-		channel, err := db.GetSourceChannelByID(created.ID)
+		channel, err := db.GetSourceChannelByID(user.ID, created.ID)
 		require.NoError(t, err)
 		require.NotNil(t, channel)
 		assert.Equal(t, created.ID, channel.ID)
@@ -143,7 +169,7 @@ func TestGetSourceChannelByID(t *testing.T) {
 	})
 
 	t.Run("get non-existent channel returns nil", func(t *testing.T) {
-		channel, err := db.GetSourceChannelByID(999999)
+		channel, err := db.GetSourceChannelByID(user.ID, 999999)
 		require.NoError(t, err)
 		assert.Nil(t, channel)
 	})
@@ -262,47 +288,6 @@ func TestListSourceChannels(t *testing.T) {
 	})
 }
 
-func TestListEnabledSourceChannels(t *testing.T) {
-	db := NewTestDB(t)
-	user := CreateTestUser(t, db)
-
-	// Create channels
-	ch1, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled1@s.whatsapp.net", "Enabled 1")
-	require.NoError(t, err)
-	ch2, err := db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "disabled@s.whatsapp.net", "Disabled")
-	require.NoError(t, err)
-	_, err = db.CreateSourceChannel(user.ID, source.SourceTypeWhatsApp, source.ChannelTypeSender, "enabled2@s.whatsapp.net", "Enabled 2")
-	require.NoError(t, err)
-
-	// Disable one channel
-	err = db.UpdateSourceChannel(ch2.ID, ch2.Name, false)
-	require.NoError(t, err)
-
-	t.Run("returns only enabled channels", func(t *testing.T) {
-		channels, err := db.ListEnabledSourceChannels(user.ID, source.SourceTypeWhatsApp)
-		require.NoError(t, err)
-		assert.Len(t, channels, 2)
-
-		for _, ch := range channels {
-			assert.True(t, ch.Enabled)
-			assert.NotEqual(t, "Disabled", ch.Name)
-		}
-	})
-
-	// Enable the disabled channel
-	err = db.UpdateSourceChannel(ch2.ID, ch2.Name, true)
-	require.NoError(t, err)
-
-	t.Run("includes re-enabled channels", func(t *testing.T) {
-		channels, err := db.ListEnabledSourceChannels(user.ID, source.SourceTypeWhatsApp)
-		require.NoError(t, err)
-		assert.Len(t, channels, 3)
-	})
-
-	// Verify ch1 is still present
-	_ = ch1
-}
-
 func TestUpdateSourceChannel(t *testing.T) {
 	db := NewTestDB(t)
 	user := CreateTestUser(t, db)
@@ -318,29 +303,29 @@ func TestUpdateSourceChannel(t *testing.T) {
 	assert.True(t, channel.Enabled)
 
 	t.Run("update name", func(t *testing.T) {
-		err := db.UpdateSourceChannel(channel.ID, "Updated Name", true)
+		err := db.UpdateSourceChannel(user.ID, channel.ID, "Updated Name", true)
 		require.NoError(t, err)
 
-		updated, err := db.GetSourceChannelByID(channel.ID)
+		updated, err := db.GetSourceChannelByID(user.ID, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, "Updated Name", updated.Name)
 		assert.True(t, updated.Enabled)
 	})
 
 	t.Run("disable channel", func(t *testing.T) {
-		err := db.UpdateSourceChannel(channel.ID, "Updated Name", false)
+		err := db.UpdateSourceChannel(user.ID, channel.ID, "Updated Name", false)
 		require.NoError(t, err)
 
-		updated, err := db.GetSourceChannelByID(channel.ID)
+		updated, err := db.GetSourceChannelByID(user.ID, channel.ID)
 		require.NoError(t, err)
 		assert.False(t, updated.Enabled)
 	})
 
 	t.Run("re-enable channel", func(t *testing.T) {
-		err := db.UpdateSourceChannel(channel.ID, "Re-enabled", true)
+		err := db.UpdateSourceChannel(user.ID, channel.ID, "Re-enabled", true)
 		require.NoError(t, err)
 
-		updated, err := db.GetSourceChannelByID(channel.ID)
+		updated, err := db.GetSourceChannelByID(user.ID, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, "Re-enabled", updated.Name)
 		assert.True(t, updated.Enabled)
@@ -361,17 +346,17 @@ func TestDeleteSourceChannel(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("delete existing channel", func(t *testing.T) {
-		err := db.DeleteSourceChannel(channel.ID)
+		err := db.DeleteSourceChannel(user.ID, channel.ID)
 		require.NoError(t, err)
 
-		deleted, err := db.GetSourceChannelByID(channel.ID)
+		deleted, err := db.GetSourceChannelByID(user.ID, channel.ID)
 		require.NoError(t, err)
 		assert.Nil(t, deleted)
 	})
 
 	t.Run("delete non-existent channel (no error)", func(t *testing.T) {
-		err := db.DeleteSourceChannel(999999)
-		require.NoError(t, err) // SQLite DELETE doesn't error on missing rows
+		err := db.DeleteSourceChannel(user.ID, 999999)
+		require.Error(t, err)
 	})
 }
 
@@ -398,7 +383,7 @@ func TestIsSourceChannelTracked(t *testing.T) {
 		"Disabled Channel",
 	)
 	require.NoError(t, err)
-	err = db.UpdateSourceChannel(disabledCh.ID, disabledCh.Name, false)
+	err = db.UpdateSourceChannel(user.ID, disabledCh.ID, disabledCh.Name, false)
 	require.NoError(t, err)
 
 	t.Run("tracked and enabled", func(t *testing.T) {

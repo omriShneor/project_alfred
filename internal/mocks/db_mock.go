@@ -16,8 +16,8 @@ type MockDB struct {
 
 // Source Channels
 
-func (m *MockDB) GetSourceChannelByID(id int64) (*database.SourceChannel, error) {
-	args := m.Called(id)
+func (m *MockDB) GetSourceChannelByID(userID int64, id int64) (*database.SourceChannel, error) {
+	args := m.Called(userID, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
@@ -56,13 +56,13 @@ func (m *MockDB) ListEnabledSourceChannels(sourceType source.SourceType) ([]*dat
 	return args.Get(0).([]*database.SourceChannel), args.Error(1)
 }
 
-func (m *MockDB) UpdateSourceChannel(id int64, name string, enabled bool) error {
-	args := m.Called(id, name, enabled)
+func (m *MockDB) UpdateSourceChannel(userID int64, id int64, name string, enabled bool) error {
+	args := m.Called(userID, id, name, enabled)
 	return args.Error(0)
 }
 
-func (m *MockDB) DeleteSourceChannel(id int64) error {
-	args := m.Called(id)
+func (m *MockDB) DeleteSourceChannel(userID int64, id int64) error {
+	args := m.Called(userID, id)
 	return args.Error(0)
 }
 
@@ -81,29 +81,29 @@ func (m *MockDB) StoreSourceMessage(sourceType source.SourceType, channelID int6
 	return args.Get(0).(*database.SourceMessage), args.Error(1)
 }
 
-func (m *MockDB) GetSourceMessageHistory(sourceType source.SourceType, channelID int64, limit int) ([]database.SourceMessage, error) {
-	args := m.Called(sourceType, channelID, limit)
+func (m *MockDB) GetSourceMessageHistory(userID int64, sourceType source.SourceType, channelID int64, limit int) ([]database.SourceMessage, error) {
+	args := m.Called(userID, sourceType, channelID, limit)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).([]database.SourceMessage), args.Error(1)
 }
 
-func (m *MockDB) PruneSourceMessages(sourceType source.SourceType, channelID int64, keepCount int) error {
-	args := m.Called(sourceType, channelID, keepCount)
+func (m *MockDB) PruneSourceMessages(userID int64, sourceType source.SourceType, channelID int64, keepCount int) error {
+	args := m.Called(userID, sourceType, channelID, keepCount)
 	return args.Error(0)
 }
 
-func (m *MockDB) GetSourceMessageByID(id int64) (*database.SourceMessage, error) {
-	args := m.Called(id)
+func (m *MockDB) GetSourceMessageByID(userID int64, id int64) (*database.SourceMessage, error) {
+	args := m.Called(userID, id)
 	if args.Get(0) == nil {
 		return nil, args.Error(1)
 	}
 	return args.Get(0).(*database.SourceMessage), args.Error(1)
 }
 
-func (m *MockDB) CountSourceMessages(sourceType source.SourceType, channelID int64) (int, error) {
-	args := m.Called(sourceType, channelID)
+func (m *MockDB) CountSourceMessages(userID int64, sourceType source.SourceType, channelID int64) (int, error) {
+	args := m.Called(userID, sourceType, channelID)
 	return args.Int(0), args.Error(1)
 }
 

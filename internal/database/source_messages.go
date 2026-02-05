@@ -74,14 +74,14 @@ func (d *DB) StoreSourceMessage(sourceType source.SourceType, channelID int64, s
 }
 
 // GetSourceMessageHistory retrieves the last N messages for a source type and channel, ordered chronologically
-func (d *DB) GetSourceMessageHistory(sourceType source.SourceType, channelID int64, limit int) ([]SourceMessage, error) {
+func (d *DB) GetSourceMessageHistory(userID int64, sourceType source.SourceType, channelID int64, limit int) ([]SourceMessage, error) {
 	rows, err := d.Query(`
 		SELECT id, COALESCE(source_type, 'whatsapp'), channel_id, sender_jid, sender_name, message_text, COALESCE(subject, ''), timestamp, created_at
 		FROM message_history
-		WHERE source_type = ? AND channel_id = ?
+		WHERE user_id = ? AND source_type = ? AND channel_id = ?
 		ORDER BY timestamp DESC
 		LIMIT ?
-	`, sourceType, channelID, limit)
+	`, userID, sourceType, channelID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query source message history: %w", err)
 	}
@@ -109,16 +109,16 @@ func (d *DB) GetSourceMessageHistory(sourceType source.SourceType, channelID int
 }
 
 // PruneSourceMessages keeps only the last N messages for a source type and channel
-func (d *DB) PruneSourceMessages(sourceType source.SourceType, channelID int64, keepCount int) error {
+func (d *DB) PruneSourceMessages(userID int64, sourceType source.SourceType, channelID int64, keepCount int) error {
 	_, err := d.Exec(`
 		DELETE FROM message_history
-		WHERE source_type = ? AND channel_id = ? AND id NOT IN (
+		WHERE user_id = ? AND source_type = ? AND channel_id = ? AND id NOT IN (
 			SELECT id FROM message_history
-			WHERE source_type = ? AND channel_id = ?
+			WHERE user_id = ? AND source_type = ? AND channel_id = ?
 			ORDER BY timestamp DESC
 			LIMIT ?
 		)
-	`, sourceType, channelID, sourceType, channelID, keepCount)
+	`, userID, sourceType, channelID, userID, sourceType, channelID, keepCount)
 	if err != nil {
 		return fmt.Errorf("failed to prune source messages: %w", err)
 	}
@@ -126,13 +126,13 @@ func (d *DB) PruneSourceMessages(sourceType source.SourceType, channelID int64, 
 }
 
 // GetSourceMessageByID retrieves a specific message by ID with source type validation
-func (d *DB) GetSourceMessageByID(id int64) (*SourceMessage, error) {
+func (d *DB) GetSourceMessageByID(userID int64, id int64) (*SourceMessage, error) {
 	var m SourceMessage
 	err := d.QueryRow(`
 		SELECT id, COALESCE(source_type, 'whatsapp'), channel_id, sender_jid, sender_name, message_text, COALESCE(subject, ''), timestamp, created_at
 		FROM message_history
-		WHERE id = ?
-	`, id).Scan(&m.ID, &m.SourceType, &m.ChannelID, &m.SenderID, &m.SenderName, &m.MessageText, &m.Subject, &m.Timestamp, &m.CreatedAt)
+		WHERE user_id = ? AND id = ?
+	`, userID, id).Scan(&m.ID, &m.SourceType, &m.ChannelID, &m.SenderID, &m.SenderName, &m.MessageText, &m.Subject, &m.Timestamp, &m.CreatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -143,12 +143,12 @@ func (d *DB) GetSourceMessageByID(id int64) (*SourceMessage, error) {
 }
 
 // CountSourceMessages returns the number of messages stored for a source type and channel
-func (d *DB) CountSourceMessages(sourceType source.SourceType, channelID int64) (int, error) {
+func (d *DB) CountSourceMessages(userID int64, sourceType source.SourceType, channelID int64) (int, error) {
 	var count int
 	err := d.QueryRow(`
 		SELECT COUNT(*) FROM message_history
-		WHERE source_type = ? AND channel_id = ?
-	`, sourceType, channelID).Scan(&count)
+		WHERE user_id = ? AND source_type = ? AND channel_id = ?
+	`, userID, sourceType, channelID).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count source messages: %w", err)
 	}
@@ -156,14 +156,14 @@ func (d *DB) CountSourceMessages(sourceType source.SourceType, channelID int64) 
 }
 
 // GetAllSourceMessages retrieves all messages for a source type (useful for debugging)
-func (d *DB) GetAllSourceMessages(sourceType source.SourceType, limit int) ([]SourceMessage, error) {
+func (d *DB) GetAllSourceMessages(userID int64, sourceType source.SourceType, limit int) ([]SourceMessage, error) {
 	rows, err := d.Query(`
 		SELECT id, COALESCE(source_type, 'whatsapp'), channel_id, sender_jid, sender_name, message_text, COALESCE(subject, ''), timestamp, created_at
 		FROM message_history
-		WHERE source_type = ?
+		WHERE user_id = ? AND source_type = ?
 		ORDER BY timestamp DESC
 		LIMIT ?
-	`, sourceType, limit)
+	`, userID, sourceType, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query all source messages: %w", err)
 	}

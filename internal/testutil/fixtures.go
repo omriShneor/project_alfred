@@ -120,7 +120,7 @@ func (b *ChannelBuilder) Build(db *database.DB) (*database.SourceChannel, error)
 	}
 
 	if !b.enabled {
-		if err := db.UpdateSourceChannel(channel.ID, channel.Name, false); err != nil {
+		if err := db.UpdateSourceChannel(b.userID, channel.ID, channel.Name, false); err != nil {
 			return nil, err
 		}
 		channel.Enabled = false

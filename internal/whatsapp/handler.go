@@ -348,7 +348,7 @@ func (h *Handler) processConversationHistory(chatJID types.JID, messages []*waPr
 
 	// Prune to keep only last N messages
 	if processed > 0 {
-		if err := h.db.PruneSourceMessages(source.SourceTypeWhatsApp, channel.ID, maxHistoryMessagesPerContact); err != nil {
+		if err := h.db.PruneSourceMessages(h.UserID, source.SourceTypeWhatsApp, channel.ID, maxHistoryMessagesPerContact); err != nil {
 			fmt.Printf("HistorySync: Failed to prune messages for %s: %v\n", identifier, err)
 		}
 		fmt.Printf("HistorySync: Stored %d messages for %s\n", processed, identifier)
@@ -395,7 +395,7 @@ func (h *Handler) getOrCreateHistoryChannel(identifier string, jid types.JID) (*
 	}
 
 	// Disable the channel - it's just for discovery, not event tracking
-	if err := h.db.UpdateSourceChannel(channel.ID, channel.Name, false); err != nil {
+	if err := h.db.UpdateSourceChannel(h.UserID, channel.ID, channel.Name, false); err != nil {
 		fmt.Printf("HistorySync: Warning - failed to disable new channel: %v\n", err)
 	}
 
@@ -404,7 +404,7 @@ func (h *Handler) getOrCreateHistoryChannel(identifier string, jid types.JID) (*
 
 // Contact name refresh after HistorySync
 
-// refreshTopContactNames updates names for top 8 contacts by ACTUAL message count
+// refreshTopContactNames updates names for top 8 contacts by message history
 // This runs immediately after HistorySync to ensure the Add Source modal shows names ASAP
 func (h *Handler) refreshTopContactNames() {
 	if h.wClient == nil || h.wClient.Store == nil || h.wClient.Store.Contacts == nil {
@@ -418,33 +418,33 @@ func (h *Handler) refreshTopContactNames() {
 		return
 	}
 
-	// Get top 8 contacts by ACTUAL message count (from channels.total_message_count)
-	topChannels, err := h.db.GetTopChannelsByMessageCount(h.UserID, source.SourceTypeWhatsApp, 8)
+	// Get top 8 contacts from message history (fast, user-scoped)
+	topContacts, err := h.db.GetTopContactsBySourceTypeForUser(h.UserID, source.SourceTypeWhatsApp, 8)
 	if err != nil {
-		fmt.Printf("RefreshTopNames: Failed to get top channels: %v\n", err)
+		fmt.Printf("RefreshTopNames: Failed to get top contacts: %v\n", err)
 		return
 	}
 
 	updated := 0
-	for _, channel := range topChannels {
+	for _, contact := range topContacts {
 		// Skip if already has a real name (name != identifier)
-		if channel.Name != channel.Identifier {
+		if contact.Name != contact.Identifier {
 			continue
 		}
 
 		// Look up in contacts map
-		jid, err := types.ParseJID(channel.Identifier + "@s.whatsapp.net")
+		jid, err := types.ParseJID(contact.Identifier + "@s.whatsapp.net")
 		if err != nil {
 			continue
 		}
 
-		if contact, ok := allContacts[jid]; ok {
-			name := contact.FullName
+		if waContact, ok := allContacts[jid]; ok {
+			name := waContact.FullName
 			if name == "" {
-				name = contact.PushName
+				name = waContact.PushName
 			}
-			if name != "" && name != channel.Identifier {
-				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.Enabled); err != nil {
+			if name != "" && name != contact.Identifier {
+				if err := h.db.UpdateSourceChannel(h.UserID, contact.ChannelID, name, contact.IsTracked); err != nil {
 					continue
 				}
 				updated++
@@ -497,7 +497,7 @@ func (h *Handler) refreshAllContactNames() {
 				name = contact.PushName
 			}
 			if name != "" && name != channel.Identifier {
-				if err := h.db.UpdateSourceChannel(channel.ID, name, channel.Enabled); err != nil {
+				if err := h.db.UpdateSourceChannel(h.UserID, channel.ID, name, channel.Enabled); err != nil {
 					continue
 				}
 				updated++

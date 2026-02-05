@@ -11,7 +11,6 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/source"
-	"github.com/omriShneor/project_alfred/internal/whatsapp"
 )
 
 // WhatsApp Top Contacts API
@@ -33,96 +32,73 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 		respondError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	response := []TopContactResponse{}
+	formatTopContactsFromHistory := func(stats []database.TopContactStats) []TopContactResponse {
+		contacts := make([]TopContactResponse, len(stats))
+		for i, c := range stats {
+			phone := strings.TrimSuffix(c.Identifier, "@s.whatsapp.net")
+			contacts[i] = TopContactResponse{
+				Identifier:     c.Identifier,
+				Name:           c.Name,
+				SecondaryLabel: "+" + phone,
+				MessageCount:   c.MessageCount,
+				IsTracked:      c.IsTracked,
+				Type:           c.Type,
+			}
+			if c.IsTracked {
+				contacts[i].ChannelID = &c.ChannelID
+			}
+		}
+		return contacts
+	}
 
-	channels, err := s.db.GetTopChannelsByMessageCount(userID, source.SourceTypeWhatsApp, 8)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
+	historyStats, err := s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeWhatsApp, 8)
+	if err == nil && len(historyStats) > 0 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": formatTopContactsFromHistory(historyStats),
+		})
 		return
 	}
 
 	// If no stats available yet, wait briefly for HistorySync to complete before falling back
-	if len(channels) == 0 && s.clientManager != nil {
+	if s.clientManager != nil {
 		waClient, err := s.clientManager.GetWhatsAppClient(userID)
 		if err == nil && waClient.WAClient != nil && waClient.IsLoggedIn() {
 			timeout := time.After(25 * time.Second)
 			ticker := time.NewTicker(500 * time.Millisecond)
 			defer ticker.Stop()
 
-			for {
+			timedOut := false
+			for !timedOut {
 				select {
 				case <-timeout:
-					goto fallbackToDiscovery
+					timedOut = true
 				case <-ticker.C:
-					channels, err = s.db.GetTopChannelsByMessageCount(userID, source.SourceTypeWhatsApp, 8)
-					if err == nil && len(channels) > 0 {
-						response = make([]TopContactResponse, len(channels))
-						for i, c := range channels {
-							// Format phone number
-							phone := strings.TrimSuffix(c.Identifier, "@s.whatsapp.net")
-							response[i] = TopContactResponse{
-								Identifier:     c.Identifier,
-								Name:           c.Name,
-								SecondaryLabel: "+" + phone,
-								MessageCount:   c.TotalMessageCount, // Accurate count from HistorySync
-								IsTracked:      c.Enabled,
-								Type:           string(c.Type),
-							}
-							if c.Enabled {
-								response[i].ChannelID = &c.ID
-							}
-						}
+					historyStats, err = s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeWhatsApp, 8)
+					if err == nil && len(historyStats) > 0 {
+						respondJSON(w, http.StatusOK, map[string]interface{}{
+							"contacts": formatTopContactsFromHistory(historyStats),
+						})
+						return
 					}
 				}
 			}
 
-		fallbackToDiscovery:
-			// HistorySync didn't complete in time, fall back to discoverable channels
-			discoverableChannels, err := waClient.GetDiscoverableChannels()
-			if err == nil && len(discoverableChannels) > 0 {
-				// Filter to only contacts (not groups) and limit to 8
-				var contactChannels []whatsapp.DiscoverableChannel
-				for _, ch := range discoverableChannels {
-					if ch.Type == "sender" {
-						contactChannels = append(contactChannels, ch)
-					}
-				}
-				if len(contactChannels) > 8 {
-					contactChannels = contactChannels[:8]
-				}
-				// Convert to response format
-				response := make([]TopContactResponse, len(contactChannels))
-				for i, ch := range contactChannels {
-					// Check if already tracked (user-scoped query for multi-user support)
-					existingChannel, _ := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, ch.Identifier)
-					// Format phone number as secondary label
-					phone := strings.TrimSuffix(ch.Identifier, "@s.whatsapp.net")
-					response[i] = TopContactResponse{
-						Identifier:     ch.Identifier,
-						Name:           ch.Name,
-						SecondaryLabel: "+" + phone,
-						MessageCount:   0, // No message count from discovery
-						IsTracked:      existingChannel != nil && existingChannel.Enabled,
-						Type:           ch.Type,
-					}
-					if existingChannel != nil && existingChannel.Enabled {
-						response[i].ChannelID = &existingChannel.ID
-					}
-				}
-				respondJSON(w, http.StatusOK, map[string]interface{}{
-					"contacts": response,
-				})
-				return
-			}
+			// HistorySync didn't complete in time; return empty if no history is available.
 		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"contacts": response,
+		"contacts": []TopContactResponse{},
 	})
 }
 
 func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	var req struct {
 		PhoneNumber string `json:"phone_number"`
 	}
@@ -159,14 +135,20 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 	identifier := phone + "@s.whatsapp.net"
 
 	// Check if already tracked
-	existing, err := s.db.GetChannelByIdentifier(identifier)
+	existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier)
 	if err == nil && existing != nil {
 		respondError(w, http.StatusConflict, "This phone number is already being tracked")
 		return
 	}
 
 	// Create the channel
-	channel, err := s.db.CreateChannel(database.ChannelTypeSender, identifier, req.PhoneNumber)
+	channel, err := s.db.CreateSourceChannel(
+		userID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		identifier,
+		req.PhoneNumber,
+	)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -192,6 +174,12 @@ func (s *Server) handleListWhatsappChannels(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	var req struct {
 		Type       string `json:"type"`
 		Identifier string `json:"identifier"`
@@ -214,10 +202,10 @@ func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Check if channel already exists (may have been created by history sync)
-	existingChannel, err := s.db.GetChannelByIdentifier(req.Identifier)
+	existingChannel, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, req.Identifier)
 	if err == nil && existingChannel != nil {
 		// Channel exists - update it (enable it, update name)
-		if err := s.db.UpdateChannel(existingChannel.ID, req.Name, true); err != nil {
+		if err := s.db.UpdateSourceChannel(userID, existingChannel.ID, req.Name, true); err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to enable channel: %v", err))
 			return
 		}
@@ -229,7 +217,13 @@ func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Channel doesn't exist - create a new one
-	channel, err := s.db.CreateChannel(database.ChannelType(req.Type), req.Identifier, req.Name)
+	channel, err := s.db.CreateSourceChannel(
+		userID,
+		source.SourceTypeWhatsApp,
+		source.ChannelType(req.Type),
+		req.Identifier,
+		req.Name,
+	)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create channel: %v", err))
 		return
@@ -239,6 +233,12 @@ func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleUpdateWhatsappChannel(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -255,12 +255,16 @@ func (s *Server) handleUpdateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.db.UpdateChannel(id, req.Name, req.Enabled); err != nil {
+	if err := s.db.UpdateSourceChannel(userID, id, req.Name, req.Enabled); err != nil {
+		if err.Error() == "channel not found" {
+			respondError(w, http.StatusNotFound, "channel not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	channel, _ := s.db.GetChannelByID(id)
+	channel, _ := s.db.GetSourceChannelByID(userID, id)
 	respondJSON(w, http.StatusOK, channel)
 }
 
@@ -276,7 +280,7 @@ func (s *Server) handleDeleteWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.db.DeleteChannel(userID, id); err != nil {
+	if err := s.db.DeleteSourceChannel(userID, id); err != nil {
 		if err.Error() == "channel not found" {
 			respondError(w, http.StatusNotFound, "channel not found")
 			return

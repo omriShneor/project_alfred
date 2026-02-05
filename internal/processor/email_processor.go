@@ -150,12 +150,20 @@ func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.Email
 
 // getOrCreateEmailChannel gets or creates a placeholder channel for email-sourced events
 // This is needed because calendar_events has a foreign key to channels
-func (p *EmailProcessor) getOrCreateEmailChannel(source *gmail.EmailSource) (*database.Channel, error) {
+func (p *EmailProcessor) getOrCreateEmailChannel(emailSource *gmail.EmailSource) (*database.SourceChannel, error) {
+	dbSource, err := p.db.GetEmailSourceByID(emailSource.ID)
+	if err != nil {
+		return nil, err
+	}
+	if dbSource == nil {
+		return nil, fmt.Errorf("email source not found: %d", emailSource.ID)
+	}
+
 	// Use a channel identifier based on the email source
-	identifier := fmt.Sprintf("email:%s:%s", source.Type, source.Identifier)
+	identifier := fmt.Sprintf("email:%s:%s", emailSource.Type, emailSource.Identifier)
 
 	// Check if channel exists
-	channel, err := p.db.GetChannelByIdentifier(identifier)
+	channel, err := p.db.GetSourceChannelByIdentifier(dbSource.UserID, source.SourceTypeGmail, identifier)
 	if err != nil {
 		return nil, err
 	}
@@ -164,5 +172,11 @@ func (p *EmailProcessor) getOrCreateEmailChannel(source *gmail.EmailSource) (*da
 	}
 
 	// Create new channel for this email source
-	return p.db.CreateChannel(database.ChannelTypeSender, identifier, fmt.Sprintf("Email: %s", source.Name))
+	return p.db.CreateSourceChannel(
+		dbSource.UserID,
+		source.SourceTypeGmail,
+		source.ChannelTypeSender,
+		identifier,
+		fmt.Sprintf("Email: %s", emailSource.Name),
+	)
 }

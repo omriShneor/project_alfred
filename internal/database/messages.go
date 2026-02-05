@@ -3,6 +3,8 @@ package database
 import (
 	"fmt"
 	"time"
+
+	"github.com/omriShneor/project_alfred/internal/source"
 )
 
 // MessageRecord represents a stored message in the history
@@ -14,32 +16,6 @@ type MessageRecord struct {
 	MessageText string    `json:"message_text"`
 	Timestamp   time.Time `json:"timestamp"`
 	CreatedAt   time.Time `json:"created_at"`
-}
-
-// StoreMessage saves a message to the history
-func (d *DB) StoreMessage(channelID int64, senderJID, senderName, text string, timestamp time.Time) (*MessageRecord, error) {
-	result, err := d.Exec(`
-		INSERT INTO message_history (channel_id, sender_jid, sender_name, message_text, timestamp)
-		VALUES (?, ?, ?, ?, ?)
-	`, channelID, senderJID, senderName, text, timestamp)
-	if err != nil {
-		return nil, fmt.Errorf("failed to store message: %w", err)
-	}
-
-	id, err := result.LastInsertId()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get message id: %w", err)
-	}
-
-	return &MessageRecord{
-		ID:          id,
-		ChannelID:   channelID,
-		SenderJID:   senderJID,
-		SenderName:  senderName,
-		MessageText: text,
-		Timestamp:   timestamp,
-		CreatedAt:   time.Now(),
-	}, nil
 }
 
 // GetMessageHistory retrieves the last N messages for a channel, ordered by timestamp descending
@@ -148,6 +124,42 @@ func (d *DB) GetTopContactsBySourceType(sourceType string, limit int) ([]TopCont
 	`, sourceType, limit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get top contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []TopContactStats
+	for rows.Next() {
+		var c TopContactStats
+		if err := rows.Scan(&c.ChannelID, &c.Identifier, &c.Name, &c.Type, &c.MessageCount, &c.IsTracked); err != nil {
+			return nil, fmt.Errorf("failed to scan top contact: %w", err)
+		}
+		contacts = append(contacts, c)
+	}
+
+	return contacts, rows.Err()
+}
+
+// GetTopContactsBySourceTypeForUser returns top contacts based on message count for a user and source type.
+// This is a fallback when channel-level total_message_count isn't available yet.
+func (d *DB) GetTopContactsBySourceTypeForUser(userID int64, sourceType source.SourceType, limit int) ([]TopContactStats, error) {
+	rows, err := d.Query(`
+		SELECT
+			c.id,
+			c.identifier,
+			c.name,
+			c.type,
+			COUNT(mh.id) as message_count,
+			c.enabled as is_tracked
+		FROM message_history mh
+		JOIN channels c ON c.id = mh.channel_id
+		WHERE mh.user_id = ? AND mh.source_type = ?
+			AND c.user_id = ? AND c.source_type = ? AND c.type = ?
+		GROUP BY c.id
+		ORDER BY message_count DESC
+		LIMIT ?
+	`, userID, sourceType, userID, sourceType, source.ChannelTypeSender, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get top contacts for user: %w", err)
 	}
 	defer rows.Close()
 

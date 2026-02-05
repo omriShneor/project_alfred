@@ -140,6 +140,7 @@ func TestHandleListWhatsappChannels_Empty(t *testing.T) {
 func TestHandleCreateWhatsappChannel(t *testing.T) {
 	t.Run("create valid channel", func(t *testing.T) {
 		s := createTestServer(t)
+		user := database.CreateTestUser(t, s.db)
 
 		body := map[string]string{
 			"type":       "sender",
@@ -150,13 +151,14 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 		req := httptest.NewRequest("POST", "/api/whatsapp/channel", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleCreateWhatsappChannel(w, req)
 
 		assert.Equal(t, http.StatusCreated, w.Code)
 
-		var channel database.Channel
+		var channel database.SourceChannel
 		err := json.Unmarshal(w.Body.Bytes(), &channel)
 		require.NoError(t, err)
 		assert.Equal(t, "New Channel", channel.Name)
@@ -165,6 +167,7 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 	t.Run("invalid type", func(t *testing.T) {
 		s := createTestServer(t)
+		user := database.CreateTestUser(t, s.db)
 
 		body := map[string]string{
 			"type":       "invalid_type",
@@ -175,6 +178,7 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 		req := httptest.NewRequest("POST", "/api/whatsapp/channel", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleCreateWhatsappChannel(w, req)
@@ -184,6 +188,7 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 	t.Run("missing identifier", func(t *testing.T) {
 		s := createTestServer(t)
+		user := database.CreateTestUser(t, s.db)
 
 		body := map[string]string{
 			"type": "sender",
@@ -193,6 +198,7 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 		req := httptest.NewRequest("POST", "/api/whatsapp/channel", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleCreateWhatsappChannel(w, req)
@@ -202,6 +208,7 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 	t.Run("missing name", func(t *testing.T) {
 		s := createTestServer(t)
+		user := database.CreateTestUser(t, s.db)
 
 		body := map[string]string{
 			"type":       "sender",
@@ -211,6 +218,7 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 
 		req := httptest.NewRequest("POST", "/api/whatsapp/channel", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleCreateWhatsappChannel(w, req)
@@ -219,11 +227,178 @@ func TestHandleCreateWhatsappChannel(t *testing.T) {
 	})
 }
 
+func TestHandleWhatsAppTopContacts(t *testing.T) {
+	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
+
+	ch1, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"1111111111@s.whatsapp.net",
+		"Alice",
+	)
+	require.NoError(t, err)
+
+	ch2, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"2222222222@s.whatsapp.net",
+		"Bob",
+	)
+	require.NoError(t, err)
+
+	now := time.Now()
+	_, err = s.db.StoreSourceMessage(
+		source.SourceTypeWhatsApp,
+		ch1.ID,
+		"sender-1",
+		"Sender 1",
+		"One",
+		"",
+		now,
+	)
+	require.NoError(t, err)
+	_, err = s.db.StoreSourceMessage(
+		source.SourceTypeWhatsApp,
+		ch2.ID,
+		"sender-2",
+		"Sender 2",
+		"One",
+		"",
+		now,
+	)
+	require.NoError(t, err)
+	_, err = s.db.StoreSourceMessage(
+		source.SourceTypeWhatsApp,
+		ch2.ID,
+		"sender-2",
+		"Sender 2",
+		"Two",
+		"",
+		now,
+	)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/whatsapp/top-contacts", nil)
+	req = withAuthContext(req, user)
+	w := httptest.NewRecorder()
+
+	s.handleWhatsAppTopContacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Contacts []TopContactResponse `json:"contacts"`
+	}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	require.Len(t, resp.Contacts, 2)
+	assert.Equal(t, ch2.Identifier, resp.Contacts[0].Identifier)
+	assert.Equal(t, 2, resp.Contacts[0].MessageCount)
+	assert.Equal(t, ch1.Identifier, resp.Contacts[1].Identifier)
+	assert.Equal(t, 1, resp.Contacts[1].MessageCount)
+}
+
+func TestHandleWhatsAppTopContacts_EmptyHistory(t *testing.T) {
+	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
+
+	req := httptest.NewRequest("GET", "/api/whatsapp/top-contacts", nil)
+	req = withAuthContext(req, user)
+	w := httptest.NewRecorder()
+
+	s.handleWhatsAppTopContacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Contacts []TopContactResponse `json:"contacts"`
+	}
+	err := json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	require.Len(t, resp.Contacts, 0)
+}
+
+func TestHandleTelegramTopContacts_UserScoped(t *testing.T) {
+	s := createTestServer(t)
+	user1 := database.CreateTestUser(t, s.db)
+	user2 := database.CreateTestUser(t, s.db)
+
+	ch1, err := s.db.CreateSourceChannel(
+		user1.ID,
+		source.SourceTypeTelegram,
+		source.ChannelTypeSender,
+		"tg_user_1",
+		"User One",
+	)
+	require.NoError(t, err)
+
+	ch2, err := s.db.CreateSourceChannel(
+		user2.ID,
+		source.SourceTypeTelegram,
+		source.ChannelTypeSender,
+		"tg_user_2",
+		"User Two",
+	)
+	require.NoError(t, err)
+
+	now := time.Now()
+	_, err = s.db.StoreSourceMessage(
+		source.SourceTypeTelegram,
+		ch1.ID,
+		"tg_user_1",
+		"User One",
+		"Message 1",
+		"",
+		now,
+	)
+	require.NoError(t, err)
+	_, err = s.db.StoreSourceMessage(
+		source.SourceTypeTelegram,
+		ch2.ID,
+		"tg_user_2",
+		"User Two",
+		"Message 2",
+		"",
+		now,
+	)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("GET", "/api/telegram/top-contacts", nil)
+	req = withAuthContext(req, user1)
+	w := httptest.NewRecorder()
+
+	s.handleTelegramTopContacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Contacts []TelegramTopContactResponse `json:"contacts"`
+	}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	require.Len(t, resp.Contacts, 1)
+	assert.Equal(t, "tg_user_1", resp.Contacts[0].Identifier)
+	assert.Equal(t, 1, resp.Contacts[0].MessageCount)
+}
+
 func TestHandleUpdateWhatsappChannel(t *testing.T) {
 	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
 
 	// Create a channel first
-	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "update@s.whatsapp.net", "Original Name")
+	channel, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"update@s.whatsapp.net",
+		"Original Name",
+	)
 	require.NoError(t, err)
 
 	t.Run("update channel successfully", func(t *testing.T) {
@@ -236,20 +411,21 @@ func TestHandleUpdateWhatsappChannel(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/api/whatsapp/channel/"+strconv.FormatInt(channel.ID, 10), bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("id", strconv.FormatInt(channel.ID, 10))
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleUpdateWhatsappChannel(w, req)
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		var updated database.Channel
+		var updated database.SourceChannel
 		err := json.Unmarshal(w.Body.Bytes(), &updated)
 		require.NoError(t, err)
 		assert.Equal(t, "Updated Name", updated.Name)
 		assert.False(t, updated.Enabled)
 	})
 
-	t.Run("update non-existent channel returns OK (no-op)", func(t *testing.T) {
+	t.Run("update non-existent channel returns not found", func(t *testing.T) {
 		body := map[string]interface{}{
 			"name":    "Name",
 			"enabled": true,
@@ -259,12 +435,12 @@ func TestHandleUpdateWhatsappChannel(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/api/whatsapp/channel/999999", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("id", "999999")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleUpdateWhatsappChannel(w, req)
 
-		// UPDATE in SQL doesn't fail if no rows match, handler returns OK
-		assert.Equal(t, http.StatusOK, w.Code)
+		assert.Equal(t, http.StatusNotFound, w.Code)
 	})
 
 	t.Run("invalid channel id", func(t *testing.T) {
@@ -277,6 +453,7 @@ func TestHandleUpdateWhatsappChannel(t *testing.T) {
 		req := httptest.NewRequest("PUT", "/api/whatsapp/channel/invalid", bytes.NewReader(jsonBody))
 		req.Header.Set("Content-Type", "application/json")
 		req.SetPathValue("id", "invalid")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleUpdateWhatsappChannel(w, req)
@@ -310,7 +487,7 @@ func TestHandleDeleteWhatsappChannel(t *testing.T) {
 		assert.Equal(t, http.StatusOK, w.Code)
 
 		// Verify deleted
-		deleted, _ := s.db.GetSourceChannelByID(channel.ID)
+		deleted, _ := s.db.GetSourceChannelByID(user.ID, channel.ID)
 		assert.Nil(t, deleted)
 	})
 
@@ -442,12 +619,20 @@ func TestHandleListEvents(t *testing.T) {
 
 func TestHandleGetEvent(t *testing.T) {
 	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
 
 	// Create a channel and event
-	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "getevent@s.whatsapp.net", "Get Event Channel")
+	channel, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"getevent@s.whatsapp.net",
+		"Get Event Channel",
+	)
 	require.NoError(t, err)
 
 	event := &database.CalendarEvent{
+		UserID:       user.ID,
 		ChannelID:    channel.ID,
 		CalendarID:   "primary",
 		Title:        "Test Event",
@@ -463,6 +648,7 @@ func TestHandleGetEvent(t *testing.T) {
 	t.Run("get existing event", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/events/"+strconv.FormatInt(created.ID, 10), nil)
 		req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleGetEvent(w, req)
@@ -478,6 +664,7 @@ func TestHandleGetEvent(t *testing.T) {
 	t.Run("get non-existent event", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/events/999999", nil)
 		req.SetPathValue("id", "999999")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleGetEvent(w, req)
@@ -488,6 +675,7 @@ func TestHandleGetEvent(t *testing.T) {
 	t.Run("invalid event id", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/events/invalid", nil)
 		req.SetPathValue("id", "invalid")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleGetEvent(w, req)
@@ -498,12 +686,20 @@ func TestHandleGetEvent(t *testing.T) {
 
 func TestHandleRejectEvent(t *testing.T) {
 	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
 
 	// Create a channel and pending event
-	channel, err := s.db.CreateChannel(database.ChannelTypeSender, "reject@s.whatsapp.net", "Reject Channel")
+	channel, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"reject@s.whatsapp.net",
+		"Reject Channel",
+	)
 	require.NoError(t, err)
 
 	event := &database.CalendarEvent{
+		UserID:    user.ID,
 		ChannelID:  channel.ID,
 		CalendarID: "primary",
 		Title:      "Event to Reject",
@@ -516,6 +712,7 @@ func TestHandleRejectEvent(t *testing.T) {
 	t.Run("reject pending event", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/events/"+strconv.FormatInt(created.ID, 10)+"/reject", nil)
 		req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleRejectEvent(w, req)

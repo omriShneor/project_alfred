@@ -51,15 +51,15 @@ func (d *DB) CreateSourceChannel(userID int64, sourceType source.SourceType, cha
 		return nil, fmt.Errorf("failed to get last insert id: %w", err)
 	}
 
-	return d.GetSourceChannelByID(id)
+	return d.GetSourceChannelByID(userID, id)
 }
 
-// GetSourceChannelByID retrieves a channel by ID
-func (d *DB) GetSourceChannelByID(id int64) (*SourceChannel, error) {
+// GetSourceChannelByID retrieves a channel by ID for a specific user
+func (d *DB) GetSourceChannelByID(userID int64, id int64) (*SourceChannel, error) {
 	row := d.QueryRow(
 		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
-		 FROM channels WHERE id = ?`,
-		id,
+		 FROM channels WHERE id = ? AND user_id = ?`,
+		id, userID,
 	)
 	return scanSourceChannel(row)
 }
@@ -98,47 +98,37 @@ func (d *DB) ListSourceChannels(userID int64, sourceType source.SourceType) ([]*
 	return channels, rows.Err()
 }
 
-// ListEnabledSourceChannels lists all enabled channels for a source type for a specific user
-func (d *DB) ListEnabledSourceChannels(userID int64, sourceType source.SourceType) ([]*SourceChannel, error) {
-	rows, err := d.Query(
-		`SELECT id, user_id, COALESCE(source_type, 'whatsapp'), type, identifier, name, enabled, created_at
-		 FROM channels WHERE user_id = ? AND source_type = ? AND enabled = 1 ORDER BY created_at DESC`,
-		userID, sourceType,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list enabled source channels: %w", err)
-	}
-	defer rows.Close()
-
-	var channels []*SourceChannel
-	for rows.Next() {
-		channel, err := scanSourceChannelRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		channels = append(channels, channel)
-	}
-
-	return channels, rows.Err()
-}
-
-// UpdateSourceChannel updates a channel's properties
-func (d *DB) UpdateSourceChannel(id int64, name string, enabled bool) error {
-	_, err := d.Exec(
-		`UPDATE channels SET name = ?, enabled = ? WHERE id = ?`,
-		name, enabled, id,
+// UpdateSourceChannel updates a channel's properties for a specific user
+func (d *DB) UpdateSourceChannel(userID int64, id int64, name string, enabled bool) error {
+	result, err := d.Exec(
+		`UPDATE channels SET name = ?, enabled = ? WHERE id = ? AND user_id = ?`,
+		name, enabled, id, userID,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update source channel: %w", err)
 	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to update source channel: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("channel not found")
+	}
 	return nil
 }
 
-// DeleteSourceChannel deletes a channel by ID
-func (d *DB) DeleteSourceChannel(id int64) error {
-	_, err := d.Exec(`DELETE FROM channels WHERE id = ?`, id)
+// DeleteSourceChannel deletes a channel by ID for a specific user
+func (d *DB) DeleteSourceChannel(userID int64, id int64) error {
+	result, err := d.Exec(`DELETE FROM channels WHERE id = ? AND user_id = ?`, id, userID)
 	if err != nil {
 		return fmt.Errorf("failed to delete source channel: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to delete source channel: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("channel not found")
 	}
 	return nil
 }
@@ -160,6 +150,22 @@ func (d *DB) IsSourceChannelTracked(userID int64, sourceType source.SourceType, 
 		return false, 0, "", fmt.Errorf("failed to check source channel: %w", err)
 	}
 	return true, id, channelType, nil
+}
+
+// UserHasAnySources returns true if the user has any enabled sources (channels or email sources)
+func (d *DB) UserHasAnySources(userID int64) (bool, error) {
+	var exists int
+	err := d.QueryRow(`
+		SELECT EXISTS(
+			SELECT 1 FROM channels WHERE user_id = ? AND enabled = 1
+			UNION ALL
+			SELECT 1 FROM email_sources WHERE user_id = ? AND enabled = 1
+		)
+	`, userID, userID).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check user sources: %w", err)
+	}
+	return exists == 1, nil
 }
 
 // UpdateChannelStats updates the message count and last message time for a channel

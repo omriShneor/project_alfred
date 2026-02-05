@@ -83,7 +83,7 @@ func TestTelegramChannelCRUD(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		// Verify update
-		updated, err := ts.DB.GetSourceChannelByID(channel.ID)
+		updated, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, "Updated TG Name", updated.Name)
 		assert.False(t, updated.Enabled)
@@ -100,7 +100,7 @@ func TestTelegramChannelCRUD(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		// Verify deleted - GetSourceChannelByID returns nil, nil for deleted channels
-		deleted, err := ts.DB.GetSourceChannelByID(channel.ID)
+		deleted, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
 		assert.NoError(t, err)
 		assert.Nil(t, deleted)
 	})

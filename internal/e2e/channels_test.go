@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/omriShneor/project_alfred/internal/database"
+	"github.com/omriShneor/project_alfred/internal/source"
 	"github.com/omriShneor/project_alfred/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -30,7 +31,7 @@ func TestWhatsAppChannelManagement(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, resp.StatusCode)
 
-		var channel database.Channel
+		var channel database.SourceChannel
 		err = json.NewDecoder(resp.Body).Decode(&channel)
 		require.NoError(t, err)
 
@@ -46,7 +47,7 @@ func TestWhatsAppChannelManagement(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-		var channels []database.Channel
+		var channels []database.SourceChannel
 		err = json.NewDecoder(resp.Body).Decode(&channels)
 		require.NoError(t, err)
 
@@ -60,12 +61,12 @@ func TestWhatsAppChannelManagement(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-		var channels []database.Channel
+		var channels []database.SourceChannel
 		err = json.NewDecoder(resp.Body).Decode(&channels)
 		require.NoError(t, err)
 
 		for _, ch := range channels {
-			assert.Equal(t, database.ChannelType("sender"), ch.Type)
+			assert.Equal(t, source.ChannelTypeSender, ch.Type)
 		}
 	})
 }
@@ -99,7 +100,7 @@ func TestChannelCRUD(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		// Verify update
-		updated, err := ts.DB.GetChannelByID(channel.ID)
+		updated, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, "Updated Contact Name", updated.Name)
 		assert.False(t, updated.Enabled)
@@ -116,7 +117,7 @@ func TestChannelCRUD(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 		// Verify deleted - GetChannelByID returns nil, nil when not found
-		deleted, err := ts.DB.GetChannelByID(channel.ID)
+		deleted, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
 		assert.NoError(t, err) // No error on not found
 		assert.Nil(t, deleted) // But channel should be nil
 	})
@@ -184,7 +185,7 @@ func TestMultipleChannelSources(t *testing.T) {
 		require.NoError(t, err)
 		defer resp.Body.Close()
 
-		var waChannels []database.Channel
+		var waChannels []database.SourceChannel
 		err = json.NewDecoder(resp.Body).Decode(&waChannels)
 		require.NoError(t, err)
 

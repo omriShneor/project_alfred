@@ -309,6 +309,12 @@ type TelegramUpdateChannelRequest struct {
 
 // handleUpdateTelegramChannel updates a tracked Telegram channel
 func (s *Server) handleUpdateTelegramChannel(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid channel ID")
@@ -321,24 +327,34 @@ func (s *Server) handleUpdateTelegramChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.db.UpdateSourceChannel(id, req.Name, req.Enabled); err != nil {
+	if err := s.db.UpdateSourceChannel(userID, id, req.Name, req.Enabled); err != nil {
+		if err.Error() == "channel not found" {
+			respondError(w, http.StatusNotFound, "channel not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to update channel: %v", err))
 		return
 	}
 
-	channel, _ := s.db.GetSourceChannelByID(id)
+	channel, _ := s.db.GetSourceChannelByID(userID, id)
 	respondJSON(w, http.StatusOK, channel)
 }
 
 // handleDeleteTelegramChannel removes a tracked Telegram channel
 func (s *Server) handleDeleteTelegramChannel(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "Invalid channel ID")
 		return
 	}
 
-	if err := s.db.DeleteSourceChannel(id); err != nil {
+	if err := s.db.DeleteSourceChannel(userID, id); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete channel: %v", err))
 		return
 	}
@@ -370,7 +386,7 @@ func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Get top contacts from message history
-	contacts, err := s.db.GetTopContactsBySourceType("telegram", 8)
+	contacts, err := s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeTelegram, 8)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

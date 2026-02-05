@@ -108,7 +108,7 @@ func (p *Processor) processMessage(msg source.Message) error {
 	fmt.Printf("Processing %s message from channel %d: %s\n", msg.SourceType, msg.SourceID, truncate(msg.Text, 50))
 
 	// Get the channel to find its calendar_id
-	channel, err := p.db.GetSourceChannelByID(msg.SourceID)
+	channel, err := p.db.GetSourceChannelByID(msg.UserID, msg.SourceID)
 	if err != nil {
 		return fmt.Errorf("failed to get channel: %w", err)
 	}
@@ -128,12 +128,12 @@ func (p *Processor) processMessage(msg source.Message) error {
 	}
 
 	// Prune old messages to keep only the last N
-	if err := p.db.PruneSourceMessages(msg.SourceType, msg.SourceID, p.historySize); err != nil {
+	if err := p.db.PruneSourceMessages(msg.UserID, msg.SourceType, msg.SourceID, p.historySize); err != nil {
 		fmt.Printf("Warning: failed to prune messages: %v\n", err)
 	}
 
 	// Get message history for context (shared between analyzers)
-	history, err := p.db.GetSourceMessageHistory(msg.SourceType, msg.SourceID, p.historySize)
+	history, err := p.db.GetSourceMessageHistory(msg.UserID, msg.SourceType, msg.SourceID, p.historySize)
 	if err != nil {
 		return fmt.Errorf("failed to get message history: %w", err)
 	}

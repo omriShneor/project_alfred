@@ -154,7 +154,7 @@ func TestGetSourceMessageHistory(t *testing.T) {
 	}
 
 	t.Run("get all messages in chronological order", func(t *testing.T) {
-		messages, err := db.GetSourceMessageHistory(source.SourceTypeWhatsApp, channel.ID, 10)
+		messages, err := db.GetSourceMessageHistory(user.ID, source.SourceTypeWhatsApp, channel.ID, 10)
 		require.NoError(t, err)
 		assert.Len(t, messages, 5)
 
@@ -172,7 +172,7 @@ func TestGetSourceMessageHistory(t *testing.T) {
 	})
 
 	t.Run("respect limit parameter", func(t *testing.T) {
-		messages, err := db.GetSourceMessageHistory(source.SourceTypeWhatsApp, channel.ID, 3)
+		messages, err := db.GetSourceMessageHistory(user.ID, source.SourceTypeWhatsApp, channel.ID, 3)
 		require.NoError(t, err)
 		assert.Len(t, messages, 3)
 
@@ -193,7 +193,7 @@ func TestGetSourceMessageHistory(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		messages, err := db.GetSourceMessageHistory(source.SourceTypeWhatsApp, emptyChannel.ID, 10)
+		messages, err := db.GetSourceMessageHistory(user.ID, source.SourceTypeWhatsApp, emptyChannel.ID, 10)
 		require.NoError(t, err)
 		assert.Len(t, messages, 0)
 	})
@@ -221,7 +221,7 @@ func TestGetSourceMessageHistory(t *testing.T) {
 		require.NoError(t, err)
 
 		// Getting WhatsApp history should not include Telegram messages
-		waMessages, err := db.GetSourceMessageHistory(source.SourceTypeWhatsApp, channel.ID, 10)
+		waMessages, err := db.GetSourceMessageHistory(user.ID, source.SourceTypeWhatsApp, channel.ID, 10)
 		require.NoError(t, err)
 		for _, msg := range waMessages {
 			assert.Equal(t, source.SourceTypeWhatsApp, msg.SourceType)
@@ -251,20 +251,20 @@ func TestPruneSourceMessages(t *testing.T) {
 	}
 
 	// Verify 10 messages exist
-	count, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
+	count, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
 	require.NoError(t, err)
 	assert.Equal(t, 10, count)
 
 	t.Run("prune to keep only 5 newest messages", func(t *testing.T) {
-		err := db.PruneSourceMessages(source.SourceTypeWhatsApp, channel.ID, 5)
+		err := db.PruneSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID, 5)
 		require.NoError(t, err)
 
-		count, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
+		count, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 5, count)
 
 		// Verify the newest 5 messages remain (F, G, H, I, J)
-		messages, err := db.GetSourceMessageHistory(source.SourceTypeWhatsApp, channel.ID, 10)
+		messages, err := db.GetSourceMessageHistory(user.ID, source.SourceTypeWhatsApp, channel.ID, 10)
 		require.NoError(t, err)
 		assert.Len(t, messages, 5)
 
@@ -275,10 +275,10 @@ func TestPruneSourceMessages(t *testing.T) {
 
 	t.Run("prune when already at or below limit", func(t *testing.T) {
 		// Should be a no-op
-		err := db.PruneSourceMessages(source.SourceTypeWhatsApp, channel.ID, 10)
+		err := db.PruneSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID, 10)
 		require.NoError(t, err)
 
-		count, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
+		count, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 5, count) // Still 5 from previous test
 	})
@@ -308,11 +308,11 @@ func TestPruneSourceMessages(t *testing.T) {
 		}
 
 		// Prune WhatsApp messages
-		err = db.PruneSourceMessages(source.SourceTypeWhatsApp, channel.ID, 3)
+		err = db.PruneSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID, 3)
 		require.NoError(t, err)
 
 		// Telegram messages should be unaffected
-		tgCount, err := db.CountSourceMessages(source.SourceTypeTelegram, tgChannel.ID)
+		tgCount, err := db.CountSourceMessages(user.ID, source.SourceTypeTelegram, tgChannel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 5, tgCount)
 	})
@@ -336,7 +336,7 @@ func TestGetSourceMessageByID(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Run("get existing message", func(t *testing.T) {
-		msg, err := db.GetSourceMessageByID(stored.ID)
+		msg, err := db.GetSourceMessageByID(user.ID, stored.ID)
 		require.NoError(t, err)
 		require.NotNil(t, msg)
 		assert.Equal(t, stored.ID, msg.ID)
@@ -345,7 +345,7 @@ func TestGetSourceMessageByID(t *testing.T) {
 	})
 
 	t.Run("get non-existent message returns nil", func(t *testing.T) {
-		msg, err := db.GetSourceMessageByID(999999)
+		msg, err := db.GetSourceMessageByID(user.ID, 999999)
 		require.NoError(t, err)
 		assert.Nil(t, msg)
 	})
@@ -357,7 +357,7 @@ func TestCountSourceMessages(t *testing.T) {
 	channel := createTestChannelForMessages(t, db, user.ID)
 
 	t.Run("zero messages initially", func(t *testing.T) {
-		count, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
+		count, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 0, count)
 	})
@@ -377,7 +377,7 @@ func TestCountSourceMessages(t *testing.T) {
 	}
 
 	t.Run("counts messages correctly", func(t *testing.T) {
-		count, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
+		count, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 7, count)
 	})
@@ -405,12 +405,12 @@ func TestCountSourceMessages(t *testing.T) {
 		require.NoError(t, err)
 
 		// Count should still be 7 for WhatsApp
-		waCount, err := db.CountSourceMessages(source.SourceTypeWhatsApp, channel.ID)
+		waCount, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 7, waCount)
 
 		// Telegram should be 1
-		tgCount, err := db.CountSourceMessages(source.SourceTypeTelegram, tgChannel.ID)
+		tgCount, err := db.CountSourceMessages(user.ID, source.SourceTypeTelegram, tgChannel.ID)
 		require.NoError(t, err)
 		assert.Equal(t, 1, tgCount)
 	})
@@ -458,13 +458,13 @@ func TestGetAllSourceMessages(t *testing.T) {
 	}
 
 	t.Run("get all messages across channels", func(t *testing.T) {
-		messages, err := db.GetAllSourceMessages(source.SourceTypeWhatsApp, 10)
+		messages, err := db.GetAllSourceMessages(user.ID, source.SourceTypeWhatsApp, 10)
 		require.NoError(t, err)
 		assert.Len(t, messages, 6) // 3 from each channel
 	})
 
 	t.Run("respects limit", func(t *testing.T) {
-		messages, err := db.GetAllSourceMessages(source.SourceTypeWhatsApp, 3)
+		messages, err := db.GetAllSourceMessages(user.ID, source.SourceTypeWhatsApp, 3)
 		require.NoError(t, err)
 		assert.Len(t, messages, 3)
 	})
@@ -477,7 +477,7 @@ func TestGetAllSourceMessages(t *testing.T) {
 		require.NoError(t, err)
 
 		// WhatsApp should still return only WhatsApp messages
-		waMessages, err := db.GetAllSourceMessages(source.SourceTypeWhatsApp, 10)
+		waMessages, err := db.GetAllSourceMessages(user.ID, source.SourceTypeWhatsApp, 10)
 		require.NoError(t, err)
 		for _, msg := range waMessages {
 			assert.Equal(t, source.SourceTypeWhatsApp, msg.SourceType)

@@ -634,60 +634,6 @@ func TestReminderPriorities(t *testing.T) {
 	})
 }
 
-func TestReminderWithTriggerMessage(t *testing.T) {
-	ts := testutil.NewTestServer(t)
-
-	// Setup channel
-	channel := testutil.NewChannelBuilder().
-		WithUserID(ts.TestUser.ID).
-		WhatsApp().
-		WithName("Message Source").
-		MustBuild(ts.DB)
-
-	// Create a message using the legacy StoreMessage function which is compatible with GetMessageByID
-	msg, err := ts.DB.StoreMessage(
-		channel.ID,
-		"sender@s.whatsapp.net",
-		"Sender Name",
-		"Remind me to call the office tomorrow at 9am",
-		time.Now(),
-	)
-	require.NoError(t, err)
-
-	// Create reminder with original message ID
-	reminder := &database.Reminder{
-		ChannelID:     channel.ID,
-		CalendarID:    "primary",
-		Title:         "Call the office",
-		DueDate:       time.Now().Add(24 * time.Hour),
-		Priority:      database.ReminderPriorityNormal,
-		ActionType:    database.ReminderActionCreate,
-		OriginalMsgID: &msg.ID,
-		LLMReasoning:  "Detected reminder request from message",
-	}
-	created, err := ts.DB.CreatePendingReminder(reminder)
-	require.NoError(t, err)
-
-	t.Run("get reminder includes trigger message", func(t *testing.T) {
-		resp, err := http.Get(ts.BaseURL() + fmt.Sprintf("/api/reminders/%d", created.ID))
-		require.NoError(t, err)
-		defer resp.Body.Close()
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-
-		var result map[string]interface{}
-		err = json.NewDecoder(resp.Body).Decode(&result)
-		require.NoError(t, err)
-
-		// Should have both reminder and trigger_message
-		assert.NotNil(t, result["reminder"])
-		assert.NotNil(t, result["trigger_message"])
-
-		triggerMsg := result["trigger_message"].(map[string]interface{})
-		assert.Contains(t, triggerMsg["message_text"], "Remind me to call the office")
-	})
-}
-
 func TestReminderNotFound(t *testing.T) {
 	ts := testutil.NewTestServer(t)
 

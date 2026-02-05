@@ -3,10 +3,12 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/omriShneor/project_alfred/internal/auth"
 	"github.com/omriShneor/project_alfred/internal/database"
@@ -30,7 +32,7 @@ func createTestServerWithAuth(t *testing.T) *Server {
 	state := sse.NewState()
 
 	// Create OAuth config for testing
-	config := &oauth2.Config{
+	oauthCfg := &oauth2.Config{
 		ClientID:     "test-client-id",
 		ClientSecret: "test-client-secret",
 		RedirectURL:  "alfred://oauth/callback",
@@ -41,7 +43,7 @@ func createTestServerWithAuth(t *testing.T) *Server {
 		},
 	}
 
-	authService, err := auth.NewService(db.DB, config)
+	authService, err := auth.NewService(db.DB, oauthCfg)
 	require.NoError(t, err)
 
 	return &Server{
@@ -230,6 +232,73 @@ func TestHandleRequestAdditionalScopes(t *testing.T) {
 		authURL := response["auth_url"]
 		assert.Contains(t, authURL, "redirect_uri=https%3A%2F%2Fexample.com%2Fcallback")
 	})
+}
+
+func TestHandleAddScopesCallbackStartsServicesForGmail(t *testing.T) {
+	// Set up test encryption key
+	os.Setenv("ALFRED_ENCRYPTION_KEY", "test-key-for-auth-handlers")
+	t.Cleanup(func() {
+		os.Unsetenv("ALFRED_ENCRYPTION_KEY")
+	})
+
+	db := database.NewTestDB(t)
+	state := sse.NewState()
+	testUser := database.CreateTestUser(t, db)
+
+	// Mock OAuth token endpoint
+	tokenServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"access_token":"test-access","token_type":"Bearer","expires_in":3600,"refresh_token":"test-refresh"}`)
+	}))
+	t.Cleanup(tokenServer.Close)
+
+	oauthCfg := &oauth2.Config{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		RedirectURL:  "alfred://oauth/callback",
+		Scopes:       auth.ProfileScopes,
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  "https://accounts.google.com/o/oauth2/auth",
+			TokenURL: tokenServer.URL,
+		},
+	}
+
+	authService, err := auth.NewService(db.DB, oauthCfg)
+	require.NoError(t, err)
+
+	s := &Server{
+		db:              db,
+		onboardingState: state,
+		state:           state,
+		authService:     authService,
+		authMiddleware:  auth.NewMiddleware(authService),
+	}
+
+	userServiceManager := NewUserServiceManager(UserServiceManagerConfig{
+		DB: db,
+	})
+	s.SetUserServiceManager(userServiceManager)
+
+	body := map[string]interface{}{
+		"code":   "test-code",
+		"scopes": []string{"gmail"},
+	}
+	bodyJSON, _ := json.Marshal(body)
+	req := httptest.NewRequest("POST", "/api/auth/google/add-scopes/callback", bytes.NewReader(bodyJSON))
+	req = req.WithContext(auth.SetUserInContext(req.Context(), &auth.User{
+		ID:    testUser.ID,
+		Email: testUser.Email,
+		Name:  testUser.Name,
+	}))
+
+	w := httptest.NewRecorder()
+	s.handleAddScopesCallback(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	require.Eventually(t, func() bool {
+		return userServiceManager.IsRunningForUser(testUser.ID)
+	}, 2*time.Second, 20*time.Millisecond)
 }
 
 func TestHandleAuthOAuthCallback(t *testing.T) {

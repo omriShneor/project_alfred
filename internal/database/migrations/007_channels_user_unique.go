@@ -11,9 +11,28 @@ func init() {
 }
 
 func channelsUserScopedUnique(db *sql.DB) error {
+	// Temporarily disable foreign key enforcement during table rebuild.
+	// We'll re-enable after the migration completes.
+	if _, err := db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+		return err
+	}
+	defer func() {
+		_, _ = db.Exec(`PRAGMA foreign_keys=ON`)
+	}()
+
 	// Check if channels table exists
 	var count int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='channels'`).Scan(&count); err != nil {
+		return err
+	}
+
+	// Drop orphaned channels before enforcing foreign key constraints.
+	if _, err := db.Exec(`
+		DELETE FROM channels
+		WHERE user_id IS NULL
+		   OR user_id = 0
+		   OR user_id NOT IN (SELECT id FROM users)
+	`); err != nil {
 		return err
 	}
 

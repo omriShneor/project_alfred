@@ -23,9 +23,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
           CFBundleURLSchemes: ['alfred'],
         },
       ],
+      UIBackgroundModes: ['remote-notification'],
     },
     config: {
       usesNonExemptEncryption: false,
+    },
+    entitlements: {
+      'aps-environment': 'development',
     },
   },
   android: {

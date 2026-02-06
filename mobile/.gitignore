@@ -39,3 +39,7 @@ coverage.*
 
 # Temporary files
 *.log
+
+# Native directories (managed by EAS/prebuild)
+ios/
+android/

@@ -62,11 +62,6 @@ func New(
 
 // Start begins processing messages from the channel
 func (p *Processor) Start() error {
-	if p.eventAnalyzer == nil || !p.eventAnalyzer.IsConfigured() {
-		fmt.Println("Event processor: EventAnalyzer not configured, processor disabled")
-		return nil
-	}
-
 	fmt.Println("Event processor started")
 
 	p.wg.Add(1)

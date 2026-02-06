@@ -262,15 +262,11 @@ func (p *Processor) createPendingReminder(
 	analysis *agent.ReminderAnalysis,
 	sourceType source.SourceType,
 ) error {
-	// Get existing reminders for potential update/delete
-	existingReminders, _ := p.db.GetActiveRemindersForChannel(channel.ID)
-
 	params := ReminderCreationParams{
-		ChannelID:         channel.ID,
-		SourceType:        sourceType,
-		MessageID:         &messageID,
-		Analysis:          analysis,
-		ExistingReminders: existingReminders,
+		ChannelID:  channel.ID,
+		SourceType: sourceType,
+		MessageID:  &messageID,
+		Analysis:   analysis,
 	}
 
 	_, err := p.reminderCreator.CreateReminderFromAnalysis(p.ctx, params)

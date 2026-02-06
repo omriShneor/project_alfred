@@ -31,7 +31,7 @@ func NewAgent(cfg Config) *Agent {
 		APIKey:       cfg.APIKey,
 		Model:        cfg.Model,
 		Temperature:  cfg.Temperature,
-		SystemPrompt: SystemPrompt,
+		SystemPrompt: ReminderAnalyzerSystemPrompt,
 	})
 
 	// REUSE extraction tool from event agent
@@ -65,7 +65,7 @@ func (a *Agent) AnalyzeMessages(
 				},
 			},
 		},
-		MaxTurns: 2, // Allow extraction + action
+		MaxTurns: 3, // Allow extraction + action + final response
 	}
 
 	output, err := a.Execute(ctx, input)
@@ -90,7 +90,7 @@ func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*ag
 				},
 			},
 		},
-		MaxTurns: 2,
+		MaxTurns: 3,
 	}
 
 	output, err := a.Execute(ctx, input)

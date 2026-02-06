@@ -582,6 +582,11 @@ func TestHandleNoAction(t *testing.T) {
 				assert.Equal(t, "none", parsed["action"])
 				assert.Contains(t, parsed, "reasoning")
 				assert.Equal(t, tt.input["reasoning"], parsed["reasoning"])
+				if confidence, ok := tt.input["confidence"]; ok {
+					assert.Equal(t, confidence, parsed["confidence"])
+				} else {
+					assert.Equal(t, float64(0), parsed["confidence"])
+				}
 			}
 		})
 	}

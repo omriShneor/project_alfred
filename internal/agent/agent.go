@@ -54,6 +54,10 @@ func (a *Agent) Tools() []Tool {
 
 // Execute runs the agent with the given input
 func (a *Agent) Execute(ctx context.Context, input AgentInput) (*AgentOutput, error) {
+	return a.executeWithPrompt(ctx, input, a.systemPrompt)
+}
+
+func (a *Agent) executeWithPrompt(ctx context.Context, input AgentInput, systemPrompt string) (*AgentOutput, error) {
 	maxTurns := input.MaxTurns
 	if maxTurns <= 0 {
 		maxTurns = 1 // Default to single-shot
@@ -68,7 +72,7 @@ func (a *Agent) Execute(ctx context.Context, input AgentInput) (*AgentOutput, er
 	for turn := 0; turn < maxTurns; turn++ {
 		// Make API call
 		response, err := a.apiClient.Call(ctx, messages, CallOptions{
-			System: a.systemPrompt,
+			System: systemPrompt,
 			Tools:  a.registry.Tools(),
 		})
 		if err != nil {

@@ -31,7 +31,7 @@ func NewAgent(cfg Config) *Agent {
 		APIKey:       cfg.APIKey,
 		Model:        cfg.Model,
 		Temperature:  cfg.Temperature,
-		SystemPrompt: SystemPrompt,
+		SystemPrompt: EventAnalyzerSystemPrompt,
 	})
 
 	// Register extraction tools
@@ -67,7 +67,7 @@ func (a *Agent) AnalyzeMessages(
 				},
 			},
 		},
-		MaxTurns: 2, // Allow extraction + action
+		MaxTurns: 3, // Allow extraction + action + final response
 	}
 
 	output, err := a.Execute(ctx, input)
@@ -81,23 +81,6 @@ func (a *Agent) AnalyzeMessages(
 // AnalyzeEmail analyzes an email for calendar events
 // Implements agent.EventAnalyzer interface
 func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*agent.EventAnalysis, error) {
-	// Create a temporary agent with email-specific prompt
-	emailAgent := agent.NewAgent(agent.AgentConfig{
-		Name:         "event-scheduler-email",
-		APIKey:       "", // Will use same client
-		Model:        "",
-		Temperature:  0,
-		SystemPrompt: EmailSystemPrompt,
-	})
-
-	// Copy tools from main agent
-	for _, tool := range a.Tools() {
-		handler := a.getToolHandler(tool.Name)
-		if handler != nil {
-			emailAgent.MustRegisterTool(tool, handler)
-		}
-	}
-
 	userPrompt := buildEmailPrompt(email)
 
 	input := agent.AgentInput{
@@ -109,38 +92,15 @@ func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*ag
 				},
 			},
 		},
-		MaxTurns: 2,
+		MaxTurns: 3,
 	}
 
-	// Use the main agent (which has the API client configured)
 	output, err := a.Execute(ctx, input)
 	if err != nil {
 		return nil, fmt.Errorf("email analysis failed: %w", err)
 	}
 
 	return parseAgentOutput(output)
-}
-
-// getToolHandler returns the handler for a tool (used internally)
-func (a *Agent) getToolHandler(name string) agent.ToolHandler {
-	switch name {
-	case "extract_datetime":
-		return tools.HandleExtractDateTime
-	case "extract_location":
-		return tools.HandleExtractLocation
-	case "extract_attendees":
-		return tools.HandleExtractAttendees
-	case "create_calendar_event":
-		return tools.HandleCreateCalendarEvent
-	case "update_calendar_event":
-		return tools.HandleUpdateCalendarEvent
-	case "delete_calendar_event":
-		return tools.HandleDeleteCalendarEvent
-	case "no_calendar_action":
-		return tools.HandleNoAction
-	default:
-		return nil
-	}
 }
 
 // IsConfigured returns true if the agent is properly configured

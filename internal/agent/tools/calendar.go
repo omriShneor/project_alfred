@@ -299,9 +299,10 @@ func HandleNoAction(_ context.Context, input map[string]any) (string, error) {
 	}
 
 	result, err := json.Marshal(map[string]any{
-		"status":    "success",
-		"action":    "none",
-		"reasoning": parsed.Reasoning,
+		"status":     "success",
+		"action":     "none",
+		"reasoning":  parsed.Reasoning,
+		"confidence": parsed.Confidence,
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to marshal result: %w", err)

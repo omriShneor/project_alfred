@@ -27,9 +27,6 @@ type ReminderCreationParams struct {
 
 	// From reminder analysis
 	Analysis *agent.ReminderAnalysis
-
-	// For update/delete of pending reminders
-	ExistingReminders []database.Reminder
 }
 
 // ReminderCreator handles shared reminder creation logic

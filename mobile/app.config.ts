@@ -28,9 +28,6 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     config: {
       usesNonExemptEncryption: false,
     },
-    entitlements: {
-      'aps-environment': 'development',
-    },
   },
   android: {
     adaptiveIcon: {
@@ -55,7 +52,17 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: './assets/favicon.png',
   },
   scheme: 'alfred',
-  plugins: ['expo-web-browser', '@react-native-community/datetimepicker', 'expo-notifications'],
+  plugins: [
+    'expo-web-browser',
+    '@react-native-community/datetimepicker',
+    [
+      'expo-notifications',
+      {
+        icon: './assets/icon.png',
+        color: '#3498db',
+      },
+    ],
+  ],
   extra: {
     apiBaseUrl: process.env.EXPO_PUBLIC_API_BASE_URL || 'http://localhost:8080',
     eas: {

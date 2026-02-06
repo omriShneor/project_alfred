@@ -229,6 +229,8 @@ func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	s.startChannelBackfill(userID, channel)
+
 	respondJSON(w, http.StatusCreated, channel)
 }
 

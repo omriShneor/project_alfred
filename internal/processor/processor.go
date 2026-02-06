@@ -232,6 +232,7 @@ func (p *Processor) createPendingEvent(
 	sourceType source.SourceType,
 ) error {
 	params := EventCreationParams{
+		UserID:     channel.UserID,
 		ChannelID:  channel.ID,
 		SourceType: sourceType,
 		MessageID:  &messageID,
@@ -258,6 +259,7 @@ func (p *Processor) createPendingReminder(
 	sourceType source.SourceType,
 ) error {
 	params := ReminderCreationParams{
+		UserID:     channel.UserID,
 		ChannelID:  channel.ID,
 		SourceType: sourceType,
 		MessageID:  &messageID,

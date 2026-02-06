@@ -180,3 +180,32 @@ func (d *DB) GetAllSourceMessages(userID int64, sourceType source.SourceType, li
 
 	return messages, rows.Err()
 }
+
+// GetSourceMessagesSince retrieves messages for a source channel since a timestamp, ordered chronologically.
+func (d *DB) GetSourceMessagesSince(userID int64, sourceType source.SourceType, channelID int64, since time.Time) ([]SourceMessage, error) {
+	rows, err := d.Query(`
+		SELECT id, COALESCE(source_type, 'whatsapp'), channel_id, sender_jid, sender_name, message_text, COALESCE(subject, ''), timestamp, created_at
+		FROM message_history
+		WHERE user_id = ? AND source_type = ? AND channel_id = ? AND timestamp >= ?
+		ORDER BY timestamp ASC
+	`, userID, sourceType, channelID, since)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query source messages since: %w", err)
+	}
+	defer rows.Close()
+
+	var messages []SourceMessage
+	for rows.Next() {
+		var m SourceMessage
+		if err := rows.Scan(&m.ID, &m.SourceType, &m.ChannelID, &m.SenderID, &m.SenderName, &m.MessageText, &m.Subject, &m.Timestamp, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan source message: %w", err)
+		}
+		messages = append(messages, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating source messages: %w", err)
+	}
+
+	return messages, nil
+}

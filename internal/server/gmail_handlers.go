@@ -103,6 +103,15 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
+	if s.authService == nil {
+		respondError(w, http.StatusForbidden, "gmail access not authorized")
+		return
+	}
+	hasGmailScope, _ := s.authService.HasGmailScope(userID)
+	if !hasGmailScope {
+		respondError(w, http.StatusForbidden, "gmail access not authorized")
+		return
+	}
 
 	var req struct {
 		Type       string `json:"type"`       // "category", "sender", "domain"
@@ -141,6 +150,8 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	s.startEmailSourceBackfill(userID, source)
 
 	respondJSON(w, http.StatusCreated, source)
 }
@@ -252,6 +263,15 @@ func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
+	if s.authService == nil {
+		respondError(w, http.StatusForbidden, "gmail access not authorized")
+		return
+	}
+	hasGmailScope, _ := s.authService.HasGmailScope(userID)
+	if !hasGmailScope {
+		respondError(w, http.StatusForbidden, "gmail access not authorized")
+		return
+	}
 
 	var req struct {
 		Value string `json:"value"` // Email address or domain
@@ -299,6 +319,8 @@ func (s *Server) handleAddCustomSource(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	s.startEmailSourceBackfill(userID, source)
 
 	respondJSON(w, http.StatusCreated, source)
 }

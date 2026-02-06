@@ -89,23 +89,23 @@ func (d *DB) UpdateGmailLastPoll(userID int64) error {
 	return nil
 }
 
-// IsEmailProcessed checks if an email has already been processed
-func (d *DB) IsEmailProcessed(emailID string) (bool, error) {
+// IsEmailProcessed checks if an email has already been processed for a user
+func (d *DB) IsEmailProcessed(userID int64, emailID string) (bool, error) {
 	var count int
 	err := d.QueryRow(`
-		SELECT COUNT(*) FROM processed_emails WHERE email_id = ?
-	`, emailID).Scan(&count)
+		SELECT COUNT(*) FROM processed_emails WHERE user_id = ? AND email_id = ?
+	`, userID, emailID).Scan(&count)
 	if err != nil {
 		return false, fmt.Errorf("failed to check processed email: %w", err)
 	}
 	return count > 0, nil
 }
 
-// MarkEmailProcessed marks an email as processed
-func (d *DB) MarkEmailProcessed(emailID string) error {
+// MarkEmailProcessed marks an email as processed for a user
+func (d *DB) MarkEmailProcessed(userID int64, emailID string) error {
 	_, err := d.Exec(`
-		INSERT OR IGNORE INTO processed_emails (email_id) VALUES (?)
-	`, emailID)
+		INSERT OR IGNORE INTO processed_emails (user_id, email_id) VALUES (?, ?)
+	`, userID, emailID)
 	if err != nil {
 		return fmt.Errorf("failed to mark email processed: %w", err)
 	}

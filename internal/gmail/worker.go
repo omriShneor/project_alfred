@@ -11,8 +11,8 @@ import (
 
 // DBInterface defines the database operations needed by the Gmail worker
 type DBInterface interface {
-	IsEmailProcessed(emailID string) (bool, error)
-	MarkEmailProcessed(emailID string) error
+	IsEmailProcessed(userID int64, emailID string) (bool, error)
+	MarkEmailProcessed(userID int64, emailID string) error
 	GetGmailSettings(userID int64) (*database.GmailSettings, error)
 	UpdateGmailLastPoll(userID int64) error
 	ListEnabledEmailSources(userID int64) ([]*database.EmailSource, error)
@@ -220,7 +220,7 @@ func (w *Worker) poll() {
 	processedCount := 0
 	for _, result := range results {
 		// Check if already processed
-		processed, err := w.db.IsEmailProcessed(result.Email.ID)
+		processed, err := w.db.IsEmailProcessed(w.userID, result.Email.ID)
 		if err != nil {
 			fmt.Printf("Gmail worker: failed to check processed status: %v\n", err)
 			continue
@@ -248,7 +248,7 @@ func (w *Worker) poll() {
 		}
 
 		// Mark as processed
-		if err := w.db.MarkEmailProcessed(result.Email.ID); err != nil {
+		if err := w.db.MarkEmailProcessed(w.userID, result.Email.ID); err != nil {
 			fmt.Printf("Gmail worker: failed to mark email processed: %v\n", err)
 		}
 		processedCount++
@@ -265,6 +265,71 @@ func (w *Worker) poll() {
 // PollNow triggers an immediate poll (for testing or manual trigger)
 func (w *Worker) PollNow() {
 	go w.poll()
+}
+
+// BackfillSource scans a specific email source for historical emails and processes them.
+func (w *Worker) BackfillSource(ctx context.Context, source *EmailSource, since time.Time, maxResults int64) (int, error) {
+	if w.userID == 0 {
+		return 0, fmt.Errorf("invalid user ID")
+	}
+	if source == nil {
+		return 0, fmt.Errorf("source is nil")
+	}
+
+	w.mu.Lock()
+	client := w.client
+	scanner := w.scanner
+	w.mu.Unlock()
+
+	if client == nil || !client.IsAuthenticated() {
+		return 0, fmt.Errorf("Gmail client not authenticated")
+	}
+
+	settings, err := w.db.GetGmailSettings(w.userID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get Gmail settings: %w", err)
+	}
+	if settings == nil || !settings.Enabled {
+		return 0, fmt.Errorf("Gmail is disabled for user")
+	}
+
+	results, err := scanner.ScanSourceEmails(source, &since, maxResults)
+	if err != nil {
+		return 0, err
+	}
+
+	processedCount := 0
+	for _, result := range results {
+		processed, err := w.db.IsEmailProcessed(w.userID, result.Email.ID)
+		if err != nil {
+			fmt.Printf("Gmail backfill: failed to check processed status: %v\n", err)
+			continue
+		}
+		if processed {
+			continue
+		}
+
+		var thread *Thread
+		if result.Email.ThreadID != "" {
+			thread, err = client.GetThread(result.Email.ThreadID, 10)
+			if err != nil {
+				fmt.Printf("Gmail backfill: warning - failed to get thread %s: %v\n", result.Email.ThreadID, err)
+			}
+		}
+
+		if w.processor != nil && result.Source != nil {
+			if err := w.processor.ProcessEmail(ctx, result.Email, result.Source, thread); err != nil {
+				fmt.Printf("Gmail backfill: failed to process email %s: %v\n", result.Email.ID, err)
+			}
+		}
+
+		if err := w.db.MarkEmailProcessed(w.userID, result.Email.ID); err != nil {
+			fmt.Printf("Gmail backfill: failed to mark email processed: %v\n", err)
+		}
+		processedCount++
+	}
+
+	return processedCount, nil
 }
 
 // maybeRefreshTopContacts checks if top contacts need refreshing (every 3 days)

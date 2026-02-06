@@ -298,6 +298,8 @@ func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	s.startChannelBackfill(userID, channel)
+
 	respondJSON(w, http.StatusCreated, channel)
 }
 
@@ -507,6 +509,8 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
 		return
 	}
+
+	s.startChannelBackfill(userID, channel)
 
 	respondJSON(w, http.StatusCreated, channel)
 }

@@ -229,6 +229,29 @@ func TestGetSourceMessageHistory(t *testing.T) {
 	})
 }
 
+func TestGetSourceMessagesSince(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
+
+	base := time.Now().Add(-48 * time.Hour)
+
+	_, err := db.StoreSourceMessage(source.SourceTypeWhatsApp, channel.ID, "sender1", "Sender 1", "Old message", "", base)
+	require.NoError(t, err)
+	_, err = db.StoreSourceMessage(source.SourceTypeWhatsApp, channel.ID, "sender2", "Sender 2", "Mid message", "", base.Add(12*time.Hour))
+	require.NoError(t, err)
+	_, err = db.StoreSourceMessage(source.SourceTypeWhatsApp, channel.ID, "sender3", "Sender 3", "Recent message", "", base.Add(36*time.Hour))
+	require.NoError(t, err)
+
+	since := base.Add(24 * time.Hour)
+	messages, err := db.GetSourceMessagesSince(user.ID, source.SourceTypeWhatsApp, channel.ID, since)
+	require.NoError(t, err)
+	require.Len(t, messages, 1)
+
+	assert.Equal(t, "Recent message", messages[0].MessageText)
+	assert.True(t, messages[0].Timestamp.After(since))
+}
+
 func TestPruneSourceMessages(t *testing.T) {
 	db := NewTestDB(t)
 	user := CreateTestUser(t, db)

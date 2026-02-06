@@ -85,6 +85,10 @@ rows, err := d.Query(`
 - **Token encryption**: AES-256-GCM via `ALFRED_ENCRYPTION_KEY` or SHA-256 of `ANTHROPIC_API_KEY`
 - **Incremental OAuth**: Profile scopes → Gmail+Calendar (onboarding) → Individual scopes (post-onboarding)
 - **Agent-based detection**: Claude uses tools for context-aware event/reminder extraction
+- **Initial source backfill**: One-time 10-day backfill runs on source creation (POST only)
+  - WhatsApp/Telegram use existing `message_history` only (no new fetch)
+  - Gmail source creation requires Gmail scope; backfill uses Gmail API
+  - Status tracked via `initial_backfill_status` + `initial_backfill_at` on `channels`/`email_sources`
 
 ---
 

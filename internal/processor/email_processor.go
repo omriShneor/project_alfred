@@ -111,13 +111,14 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, e
 // createPendingEventFromEmail creates a pending event from email analysis
 func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSource, analysis *agent.EventAnalysis) error {
 	// Get or create a placeholder channel for email sources
-	emailChannel, err := p.getOrCreateEmailChannel(emailSource)
+	emailChannel, userID, err := p.getOrCreateEmailChannel(emailSource)
 	if err != nil {
 		return fmt.Errorf("failed to get email channel: %w", err)
 	}
 
 	emailSourceID := emailSource.ID
 	params := EventCreationParams{
+		UserID:        userID,
 		ChannelID:     emailChannel.ID,
 		SourceType:    source.SourceTypeGmail,
 		EmailSourceID: &emailSourceID,
@@ -131,13 +132,14 @@ func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSou
 // createPendingReminderFromEmail creates a pending reminder from email analysis
 func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.EmailSource, analysis *agent.ReminderAnalysis) error {
 	// Get or create a placeholder channel for email sources
-	emailChannel, err := p.getOrCreateEmailChannel(emailSource)
+	emailChannel, userID, err := p.getOrCreateEmailChannel(emailSource)
 	if err != nil {
 		return fmt.Errorf("failed to get email channel: %w", err)
 	}
 
 	emailSourceID := emailSource.ID
 	params := ReminderCreationParams{
+		UserID:        userID,
 		ChannelID:     emailChannel.ID,
 		SourceType:    source.SourceTypeGmail,
 		EmailSourceID: &emailSourceID,
@@ -150,13 +152,13 @@ func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.Email
 
 // getOrCreateEmailChannel gets or creates a placeholder channel for email-sourced events
 // This is needed because calendar_events has a foreign key to channels
-func (p *EmailProcessor) getOrCreateEmailChannel(emailSource *gmail.EmailSource) (*database.SourceChannel, error) {
+func (p *EmailProcessor) getOrCreateEmailChannel(emailSource *gmail.EmailSource) (*database.SourceChannel, int64, error) {
 	dbSource, err := p.db.GetEmailSourceByID(emailSource.ID)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if dbSource == nil {
-		return nil, fmt.Errorf("email source not found: %d", emailSource.ID)
+		return nil, 0, fmt.Errorf("email source not found: %d", emailSource.ID)
 	}
 
 	// Use a channel identifier based on the email source
@@ -165,18 +167,23 @@ func (p *EmailProcessor) getOrCreateEmailChannel(emailSource *gmail.EmailSource)
 	// Check if channel exists
 	channel, err := p.db.GetSourceChannelByIdentifier(dbSource.UserID, source.SourceTypeGmail, identifier)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if channel != nil {
-		return channel, nil
+		return channel, dbSource.UserID, nil
 	}
 
 	// Create new channel for this email source
-	return p.db.CreateSourceChannel(
+	channel, err = p.db.CreateSourceChannel(
 		dbSource.UserID,
 		source.SourceTypeGmail,
 		source.ChannelTypeSender,
 		identifier,
 		fmt.Sprintf("Email: %s", emailSource.Name),
 	)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return channel, dbSource.UserID, nil
 }

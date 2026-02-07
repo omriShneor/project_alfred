@@ -21,6 +21,8 @@ import {
   useTelegramTopContacts,
   useAddTelegramCustomSource,
   useTelegramStatus,
+  useSearchTelegramContacts,
+  useDebounce,
 } from '../../hooks';
 import type { Channel, SourceTopContact, ChannelType } from '../../types/channel';
 
@@ -34,6 +36,10 @@ export function TelegramPreferencesScreen() {
   const { data: topContacts, isLoading: contactsLoading } = useTelegramTopContacts({
     enabled: isConnected && addSourceModalVisible,
   });
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebounce(searchQuery, 300);
+  const { data: searchResults, isLoading: searchLoading } = useSearchTelegramContacts(debouncedQuery);
 
   const updateChannel = useUpdateTelegramChannel();
   const deleteChannel = useDeleteTelegramChannel();
@@ -179,10 +185,16 @@ export function TelegramPreferencesScreen() {
 
       <AddSourceModal
         visible={addSourceModalVisible}
-        onClose={() => setAddSourceModalVisible(false)}
+        onClose={() => {
+          setSearchQuery('');
+          setAddSourceModalVisible(false);
+        }}
         title="Add Telegram Source"
         topContacts={topContacts}
         contactsLoading={contactsLoading}
+        searchResults={searchResults}
+        searchLoading={searchLoading}
+        onSearchQueryChange={setSearchQuery}
         customInputPlaceholder="e.g., @username"
         customInputKeyboardType="default"
         validateCustomInput={validateTelegramUsername}

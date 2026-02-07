@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/omriShneor/project_alfred/internal/source"
 )
@@ -448,6 +449,76 @@ func (s *Server) handleTelegramTopContacts(w http.ResponseWriter, r *http.Reques
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"contacts": response,
+	})
+}
+
+func (s *Server) handleTelegramContactSearch(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	if len(query) < 2 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TelegramTopContactResponse{},
+		})
+		return
+	}
+
+	if s.clientManager == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TelegramTopContactResponse{},
+		})
+		return
+	}
+
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil || !tgClient.IsConnected() {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TelegramTopContactResponse{},
+		})
+		return
+	}
+
+	allChannels, err := tgClient.GetDiscoverableChannels(r.Context(), userID, s.db)
+	if err != nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TelegramTopContactResponse{},
+		})
+		return
+	}
+
+	queryLower := strings.ToLower(query)
+	var results []TelegramTopContactResponse
+	for _, ch := range allChannels {
+		nameMatch := strings.Contains(strings.ToLower(ch.Name), queryLower)
+		usernameMatch := ch.SecondaryLabel != "" && strings.Contains(strings.ToLower(ch.SecondaryLabel), queryLower)
+
+		if !nameMatch && !usernameMatch {
+			continue
+		}
+
+		resp := TelegramTopContactResponse{
+			Identifier:     ch.Identifier,
+			Name:           ch.Name,
+			SecondaryLabel: ch.SecondaryLabel,
+			IsTracked:      ch.IsTracked,
+			Type:           ch.Type,
+		}
+		if ch.IsTracked && ch.ChannelID != nil {
+			resp.ChannelID = ch.ChannelID
+		}
+		results = append(results, resp)
+
+		if len(results) >= 10 {
+			break
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"contacts": results,
 	})
 }
 

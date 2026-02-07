@@ -41,7 +41,7 @@ export interface SourceTopContact {
   type: ChannelType; // 'sender' for WhatsApp, 'contact' for Telegram
 }
 
-// Request to add a custom source (phone number for WhatsApp, username for Telegram)
+// Request to add a custom source (contact name for WhatsApp, username for Telegram)
 export interface AddCustomSourceRequest {
-  value: string; // phone_number for WhatsApp, username for Telegram
+  value: string; // contact name for WhatsApp, username for Telegram
 }

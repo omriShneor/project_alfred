@@ -21,6 +21,8 @@ import {
   useWhatsAppTopContacts,
   useAddWhatsAppCustomSource,
   useWhatsAppStatus,
+  useSearchWhatsAppContacts,
+  useDebounce,
 } from '../../hooks';
 import type { Channel, SourceTopContact, ChannelType } from '../../types/channel';
 
@@ -34,6 +36,10 @@ export function WhatsAppPreferencesScreen() {
   const { data: topContacts, isLoading: contactsLoading } = useWhatsAppTopContacts({
     enabled: isConnected && addSourceModalVisible,
   });
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebounce(searchQuery, 300);
+  const { data: searchResults, isLoading: searchLoading } = useSearchWhatsAppContacts(debouncedQuery);
 
   const updateChannel = useUpdateChannel();
   const deleteChannel = useDeleteChannel();
@@ -84,12 +90,9 @@ export function WhatsAppPreferencesScreen() {
     setAddSourceModalVisible(true);
   };
 
-  const validatePhoneNumber = (value: string): string | null => {
+  const validateContactName = (value: string): string | null => {
     if (!value.trim()) return null;
-    const cleaned = value.replace(/[\s\-\(\)]/g, '');
-    const phoneRegex = /^\+?[0-9]{7,15}$/;
-    if (phoneRegex.test(cleaned)) return null;
-    return 'Enter a valid phone number (e.g., +1234567890)';
+    return null;
   };
 
   const handleAddContacts = async (contacts: SourceTopContact[]) => {
@@ -186,13 +189,19 @@ export function WhatsAppPreferencesScreen() {
 
       <AddSourceModal
         visible={addSourceModalVisible}
-        onClose={() => setAddSourceModalVisible(false)}
+        onClose={() => {
+          setSearchQuery('');
+          setAddSourceModalVisible(false);
+        }}
         title="Add WhatsApp Source"
         topContacts={topContacts}
         contactsLoading={contactsLoading}
-        customInputPlaceholder="e.g., +1234567890"
-        customInputKeyboardType="phone-pad"
-        validateCustomInput={validatePhoneNumber}
+        searchResults={searchResults}
+        searchLoading={searchLoading}
+        onSearchQueryChange={setSearchQuery}
+        customInputPlaceholder="e.g., John Appleseed"
+        customInputKeyboardType="default"
+        validateCustomInput={validateContactName}
         onAddContacts={handleAddContacts}
         onAddCustom={handleAddCustom}
         addContactsLoading={createChannel.isPending}

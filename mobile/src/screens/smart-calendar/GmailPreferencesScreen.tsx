@@ -25,6 +25,8 @@ import {
   useDeleteEmailSource,
   useTopContacts,
   useAddCustomSource,
+  useSearchGmailContacts,
+  useDebounce,
 } from '../../hooks';
 import { requestAdditionalScopes, exchangeAddScopesCode } from '../../api/auth';
 import { API_BASE_URL } from '../../config/api';
@@ -39,6 +41,10 @@ export function GmailPreferencesScreen() {
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
   const { data: topContacts, isLoading: contactsLoading } = useTopContacts();
+
+  const [searchQuery, setSearchQuery] = useState('');
+  const debouncedQuery = useDebounce(searchQuery, 300);
+  const { data: gmailSearchResults, isLoading: searchLoading } = useSearchGmailContacts(debouncedQuery);
 
   const createSource = useCreateEmailSource();
   const updateSource = useUpdateEmailSource();
@@ -84,6 +90,17 @@ export function GmailPreferencesScreen() {
 
   // Map Gmail TopContact to SourceTopContact for the shared modal
   const mappedContacts: SourceTopContact[] = (topContacts || []).map((contact: TopContact) => ({
+    identifier: contact.email,
+    name: contact.name || contact.email,
+    secondary_label: contact.email,
+    message_count: contact.email_count,
+    is_tracked: contact.is_tracked,
+    channel_id: contact.source_id,
+    type: 'sender' as const,
+  }));
+
+  // Map Gmail search results to SourceTopContact format
+  const mappedSearchResults: SourceTopContact[] | undefined = gmailSearchResults?.map((contact: TopContact) => ({
     identifier: contact.email,
     name: contact.name || contact.email,
     secondary_label: contact.email,
@@ -285,10 +302,16 @@ export function GmailPreferencesScreen() {
 
       <AddSourceModal
         visible={addSourceModalVisible}
-        onClose={() => setAddSourceModalVisible(false)}
+        onClose={() => {
+          setSearchQuery('');
+          setAddSourceModalVisible(false);
+        }}
         title="Add Email Source"
         topContacts={mappedContacts}
         contactsLoading={contactsLoading}
+        searchResults={mappedSearchResults}
+        searchLoading={searchLoading}
+        onSearchQueryChange={setSearchQuery}
         customInputPlaceholder="e.g. boss@work.com"
         customInputKeyboardType="email-address"
         validateCustomInput={validateCustomInput}

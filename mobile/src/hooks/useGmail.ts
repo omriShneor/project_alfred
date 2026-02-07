@@ -7,12 +7,14 @@ import {
   deleteEmailSource,
   getTopContacts,
   addCustomSource,
+  searchGmailContacts,
 } from '../api/gmail';
 import type {
   EmailSourceType,
   CreateEmailSourceRequest,
   UpdateEmailSourceRequest,
   AddCustomSourceRequest,
+  TopContact,
 } from '../types/gmail';
 
 export function useGmailStatus() {
@@ -69,6 +71,15 @@ export function useTopContacts() {
   return useQuery({
     queryKey: ['gmailTopContacts'],
     queryFn: getTopContacts,
+  });
+}
+
+// Search all cached contacts by name or email
+export function useSearchGmailContacts(query: string) {
+  return useQuery<TopContact[]>({
+    queryKey: ['gmailContactSearch', query],
+    queryFn: () => searchGmailContacts(query),
+    enabled: query.length >= 2,
   });
 }
 

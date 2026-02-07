@@ -80,3 +80,12 @@ export async function addTelegramCustomSource(username: string): Promise<Channel
     username,
   });
 }
+
+// Search all Telegram contacts by name or username
+export async function searchTelegramContacts(query: string): Promise<SourceTopContact[]> {
+  const response = await apiClient.get<{ contacts: SourceTopContact[] }>(
+    '/api/telegram/contacts/search',
+    { params: { query } }
+  );
+  return response.contacts || [];
+}

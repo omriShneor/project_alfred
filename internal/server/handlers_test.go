@@ -387,6 +387,88 @@ func TestHandleTelegramTopContacts_UserScoped(t *testing.T) {
 	assert.Equal(t, 1, resp.Contacts[0].MessageCount)
 }
 
+func TestHandleWhatsAppCustomSource(t *testing.T) {
+	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
+
+	t.Run("requires name or phone_number", func(t *testing.T) {
+		body := map[string]string{}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/whatsapp/sources/custom", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
+		w := httptest.NewRecorder()
+
+		s.handleWhatsAppCustomSource(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("name requires contacts availability", func(t *testing.T) {
+		body := map[string]string{
+			"name": "Alice",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/whatsapp/sources/custom", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
+		w := httptest.NewRecorder()
+
+		s.handleWhatsAppCustomSource(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
+	})
+
+	t.Run("creates channel from phone number with canonical identifier", func(t *testing.T) {
+		body := map[string]string{
+			"phone_number": "+1234567890",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/whatsapp/sources/custom", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
+		w := httptest.NewRecorder()
+
+		s.handleWhatsAppCustomSource(w, req)
+
+		assert.Equal(t, http.StatusCreated, w.Code)
+
+		var channel database.SourceChannel
+		err := json.Unmarshal(w.Body.Bytes(), &channel)
+		require.NoError(t, err)
+		assert.Equal(t, "1234567890", channel.Identifier)
+		assert.Equal(t, "+1234567890", channel.Name)
+	})
+
+	t.Run("detects legacy identifier duplicates", func(t *testing.T) {
+		_, err := s.db.CreateSourceChannel(
+			user.ID,
+			source.SourceTypeWhatsApp,
+			source.ChannelTypeSender,
+			"9876543210@s.whatsapp.net",
+			"Legacy",
+		)
+		require.NoError(t, err)
+
+		body := map[string]string{
+			"phone_number": "+9876543210",
+		}
+		jsonBody, _ := json.Marshal(body)
+
+		req := httptest.NewRequest("POST", "/api/whatsapp/sources/custom", bytes.NewReader(jsonBody))
+		req.Header.Set("Content-Type", "application/json")
+		req = withAuthContext(req, user)
+		w := httptest.NewRecorder()
+
+		s.handleWhatsAppCustomSource(w, req)
+
+		assert.Equal(t, http.StatusConflict, w.Code)
+	})
+}
+
 func TestHandleUpdateWhatsappChannel(t *testing.T) {
 	s := createTestServer(t)
 	user := database.CreateTestUser(t, s.db)

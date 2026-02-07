@@ -230,6 +230,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/whatsapp/reconnect", s.requireAuth(s.handleWhatsAppReconnect))
 	mux.HandleFunc("POST /api/whatsapp/disconnect", s.requireAuth(s.handleWhatsAppDisconnect))
 	mux.HandleFunc("GET /api/whatsapp/top-contacts", s.requireAuth(s.handleWhatsAppTopContacts))
+	mux.HandleFunc("GET /api/whatsapp/contacts/search", s.requireAuth(s.handleWhatsAppContactSearch))
 	mux.HandleFunc("POST /api/whatsapp/sources/custom", s.requireAuth(s.handleWhatsAppCustomSource))
 
 	// Telegram API
@@ -244,6 +245,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/telegram/channel/{id}", s.requireAuth(s.handleUpdateTelegramChannel))
 	mux.HandleFunc("DELETE /api/telegram/channel/{id}", s.requireAuth(s.handleDeleteTelegramChannel))
 	mux.HandleFunc("GET /api/telegram/top-contacts", s.requireAuth(s.handleTelegramTopContacts))
+	mux.HandleFunc("GET /api/telegram/contacts/search", s.requireAuth(s.handleTelegramContactSearch))
 	mux.HandleFunc("POST /api/telegram/sources/custom", s.requireAuth(s.handleTelegramCustomSource))
 
 	// WhatsApp Channel Registry API
@@ -286,6 +288,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Gmail Top Contacts API
 	mux.HandleFunc("GET /api/gmail/top-contacts", s.requireAuth(s.handleGetTopContacts))
+	mux.HandleFunc("GET /api/gmail/contacts/search", s.requireAuth(s.handleGmailContactSearch))
 	mux.HandleFunc("POST /api/gmail/sources/custom", s.requireAuth(s.handleAddCustomSource))
 
 	// Gmail Sources API

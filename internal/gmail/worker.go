@@ -123,9 +123,9 @@ func (w *Worker) pollLoop() {
 	ticker := time.NewTicker(w.pollInterval)
 	defer ticker.Stop()
 
-	// Run first poll and check if top contacts need refreshing (every 3 days)
+	// Run first poll and check if contacts need refreshing
 	w.poll()
-	w.RefreshTopIfNeeded()
+	w.RefreshContactsIfNeeded()
 
 	for {
 		select {
@@ -133,7 +133,7 @@ func (w *Worker) pollLoop() {
 			return
 		case <-ticker.C:
 			w.poll()
-			w.RefreshTopIfNeeded()
+			w.RefreshContactsIfNeeded()
 		}
 	}
 }
@@ -332,11 +332,11 @@ func (w *Worker) BackfillSource(ctx context.Context, source *EmailSource, since 
 	return processedCount, nil
 }
 
-// maybeRefreshTopContacts checks if top contacts need refreshing (every 3 days)
-func (w *Worker) RefreshTopIfNeeded() {
+// RefreshContactsIfNeeded checks if contacts need refreshing (every 24 hours)
+func (w *Worker) RefreshContactsIfNeeded() {
 	lastComputed, err := w.db.GetTopContactsComputedAt(w.userID)
 	if err != nil {
-		fmt.Printf("Gmail worker: failed to get top contacts computed at: %v\n", err)
+		fmt.Printf("Gmail worker: failed to get contacts computed at: %v\n", err)
 		return
 	}
 
@@ -344,30 +344,30 @@ func (w *Worker) RefreshTopIfNeeded() {
 	needsRefresh := lastComputed == nil || time.Since(*lastComputed) > 24*time.Hour
 
 	if needsRefresh {
-		go w.RefreshTopContacts()
+		go w.RefreshContacts()
 	}
 }
 
-// RefreshTopContacts fetches and caches top contacts
-func (w *Worker) RefreshTopContacts() {
+// RefreshContacts fetches and caches all discovered contacts
+func (w *Worker) RefreshContacts() {
 	w.mu.Lock()
 	client := w.client
 	w.mu.Unlock()
 
 	if client == nil {
-		fmt.Println("Gmail worker: cannot refresh top contacts - client is nil")
+		fmt.Println("Gmail worker: cannot refresh contacts - client is nil")
 		return
 	}
 	if !client.IsAuthenticated() {
-		fmt.Println("Gmail worker: cannot refresh top contacts - client not authenticated")
+		fmt.Println("Gmail worker: cannot refresh contacts - client not authenticated")
 		return
 	}
 
-	fmt.Println("Gmail worker: refreshing top contacts...")
+	fmt.Println("Gmail worker: refreshing contacts...")
 
-	contacts, err := client.DiscoverTopContacts(8)
+	contacts, err := client.DiscoverContacts()
 	if err != nil {
-		fmt.Printf("Gmail worker: failed to discover top contacts: %v\n", err)
+		fmt.Printf("Gmail worker: failed to discover contacts: %v\n", err)
 		return
 	}
 
@@ -382,14 +382,14 @@ func (w *Worker) RefreshTopContacts() {
 	}
 
 	if err := w.db.ReplaceTopContacts(w.userID, dbContacts); err != nil {
-		fmt.Printf("Gmail worker: failed to replace top contacts: %v\n", err)
+		fmt.Printf("Gmail worker: failed to replace contacts: %v\n", err)
 		return
 	}
 
 	if err := w.db.SetTopContactsComputedAt(w.userID, time.Now()); err != nil {
-		fmt.Printf("Gmail worker: failed to set top contacts computed at: %v\n", err)
+		fmt.Printf("Gmail worker: failed to set contacts computed at: %v\n", err)
 		return
 	}
 
-	fmt.Printf("Gmail worker: cached %d top contacts\n", len(dbContacts))
+	fmt.Printf("Gmail worker: cached %d contacts\n", len(dbContacts))
 }

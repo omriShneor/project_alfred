@@ -224,7 +224,7 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 		if s.userServiceManager != nil {
 			worker := s.userServiceManager.GetGmailWorkerForUser(userID)
 			if worker != nil {
-				worker.RefreshTopContacts()
+				worker.RefreshContacts()
 				time.Sleep(2 * time.Second)
 				contacts, _ = s.db.GetTopContacts(userID, 8)
 			}
@@ -253,6 +253,54 @@ func (s *Server) handleGetTopContacts(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{"contacts": response})
+}
+
+// Contact Search API - searches all cached contacts by name or email
+
+func (s *Server) handleGmailContactSearch(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	if len(query) < 2 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []topContactResponse{},
+		})
+		return
+	}
+
+	contacts, err := s.db.SearchGoogleContacts(userID, query, 10)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Get tracked sender sources to mark which contacts are already tracked
+	senderSources, _ := s.db.ListEmailSourcesByType(userID, database.EmailSourceTypeSender)
+	trackedEmails := make(map[string]int64)
+	for _, src := range senderSources {
+		if src.Enabled {
+			trackedEmails[src.Identifier] = src.ID
+		}
+	}
+
+	response := make([]topContactResponse, len(contacts))
+	for i, c := range contacts {
+		response[i] = topContactResponse{
+			Email:      c.Email,
+			Name:       c.Name,
+			EmailCount: c.EmailCount,
+			IsTracked:  trackedEmails[c.Email] > 0,
+			SourceID:   trackedEmails[c.Email],
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"contacts": response,
+	})
 }
 
 // Custom Source API - validates and creates a custom email or domain source

@@ -9,6 +9,8 @@ import {
   Platform,
   ScrollView,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Feather } from '@expo/vector-icons';
 import { colors } from '../../theme/colors';
 
 interface ModalProps {
@@ -21,71 +23,76 @@ interface ModalProps {
 }
 
 export function Modal({ visible, onClose, title, children, scrollable = true, footer }: ModalProps) {
+  const insets = useSafeAreaInsets();
   const ContentWrapper = scrollable ? ScrollView : View;
-  const contentProps = scrollable ? { keyboardShouldPersistTaps: 'handled' as const } : {};
+  const contentProps = scrollable
+    ? { keyboardShouldPersistTaps: 'handled' as const, contentContainerStyle: styles.scrollContent }
+    : {};
 
   return (
     <RNModal
       visible={visible}
-      transparent
       animationType="slide"
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.overlay}
-      >
-        <View style={styles.container}>
+      <View style={[styles.safeArea, { paddingTop: insets.top }]}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.container}
+        >
           <View style={styles.header}>
-            {title && <Text style={styles.title}>{title}</Text>}
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-              <Text style={styles.closeText}>✕</Text>
+            <TouchableOpacity onPress={onClose} style={styles.backButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Feather name="arrow-left" size={24} color={colors.text} />
             </TouchableOpacity>
+            {title && <Text style={styles.title}>{title}</Text>}
+            <View style={styles.headerSpacer} />
           </View>
           <ContentWrapper style={styles.content} {...contentProps}>
             {children}
           </ContentWrapper>
           {footer}
-        </View>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
+      </View>
     </RNModal>
   );
 }
 
 const styles = StyleSheet.create({
-  overlay: {
+  safeArea: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    backgroundColor: colors.background,
   },
   container: {
-    backgroundColor: colors.card,
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    maxHeight: '90%',
+    flex: 1,
+    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  backButton: {
+    padding: 4,
+    marginRight: 12,
   },
   title: {
+    flex: 1,
     fontSize: 18,
     fontWeight: '600',
     color: colors.text,
   },
-  closeButton: {
-    padding: 4,
-  },
-  closeText: {
-    fontSize: 18,
-    color: colors.textSecondary,
+  headerSpacer: {
+    width: 32,
   },
   content: {
+    flex: 1,
+  },
+  scrollContent: {
     padding: 16,
+    flexGrow: 1,
   },
 });

@@ -6,6 +6,7 @@ export {
   useDeleteChannel,
   useWhatsAppTopContacts,
   useAddWhatsAppCustomSource,
+  useSearchWhatsAppContacts,
 } from './useChannels';
 export { useEvents, useEvent, useUpdateEvent, useConfirmEvent, useRejectEvent, useChannelHistory, useCalendars } from './useEvents';
 export { useDebounce } from './useDebounce';
@@ -30,6 +31,7 @@ export {
   useDeleteEmailSource,
   useTopContacts,
   useAddCustomSource,
+  useSearchGmailContacts,
 } from './useGmail';
 export { useAppStatus, useCompleteOnboarding, useIsOnboarded } from './useAppStatus';
 export {
@@ -45,4 +47,5 @@ export {
   useDeleteTelegramChannel,
   useTelegramTopContacts,
   useAddTelegramCustomSource,
+  useSearchTelegramContacts,
 } from './useTelegram';

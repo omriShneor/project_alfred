@@ -137,7 +137,7 @@ type TopContact struct {
 func (d *DB) GetTopContacts(userID int64, limit int) ([]TopContact, error) {
 	rows, err := d.Query(`
 		SELECT id, email, name, email_count, last_updated
-		FROM gmail_top_contacts
+		FROM google_contacts
 		WHERE user_id = ?
 		ORDER BY email_count DESC
 		LIMIT ?
@@ -172,13 +172,13 @@ func (d *DB) ReplaceTopContacts(userID int64, contacts []TopContact) error {
 	defer tx.Rollback()
 
 	// Clear existing contacts for this user
-	if _, err := tx.Exec(`DELETE FROM gmail_top_contacts WHERE user_id = ?`, userID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM google_contacts WHERE user_id = ?`, userID); err != nil {
 		return fmt.Errorf("failed to clear top contacts: %w", err)
 	}
 
 	// Insert new contacts
 	stmt, err := tx.Prepare(`
-		INSERT INTO gmail_top_contacts (user_id, email, name, email_count, last_updated)
+		INSERT INTO google_contacts (user_id, email, name, email_count, last_updated)
 		VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
 	`)
 	if err != nil {
@@ -201,6 +201,37 @@ func (d *DB) ReplaceTopContacts(userID int64, contacts []TopContact) error {
 	}
 
 	return nil
+}
+
+// SearchGoogleContacts searches all cached contacts by email or name for a user
+func (d *DB) SearchGoogleContacts(userID int64, query string, limit int) ([]TopContact, error) {
+	pattern := "%" + query + "%"
+	rows, err := d.Query(`
+		SELECT id, email, name, email_count, last_updated
+		FROM google_contacts
+		WHERE user_id = ? AND (LOWER(email) LIKE LOWER(?) OR LOWER(name) LIKE LOWER(?))
+		ORDER BY email_count DESC
+		LIMIT ?
+	`, userID, pattern, pattern, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search google contacts: %w", err)
+	}
+	defer rows.Close()
+
+	var contacts []TopContact
+	for rows.Next() {
+		var c TopContact
+		var name sql.NullString
+		if err := rows.Scan(&c.ID, &c.Email, &name, &c.EmailCount, &c.LastUpdated); err != nil {
+			return nil, fmt.Errorf("failed to scan google contact: %w", err)
+		}
+		if name.Valid {
+			c.Name = name.String
+		}
+		contacts = append(contacts, c)
+	}
+
+	return contacts, nil
 }
 
 // GetTopContactsComputedAt returns when top contacts were last computed for a user

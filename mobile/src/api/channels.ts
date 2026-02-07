@@ -31,8 +31,16 @@ export async function getWhatsAppTopContacts(): Promise<SourceTopContact[]> {
   return response.contacts || [];
 }
 
-export async function addWhatsAppCustomSource(phoneNumber: string): Promise<Channel> {
+export async function addWhatsAppCustomSource(contactName: string): Promise<Channel> {
   return apiClient.post<Channel>('/api/whatsapp/sources/custom', {
-    phone_number: phoneNumber,
+    name: contactName,
   });
+}
+
+export async function searchWhatsAppContacts(query: string): Promise<SourceTopContact[]> {
+  const response = await apiClient.get<{ contacts: SourceTopContact[] }>(
+    '/api/whatsapp/contacts/search',
+    { params: { query } }
+  );
+  return response.contacts || [];
 }

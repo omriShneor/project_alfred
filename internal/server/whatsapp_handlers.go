@@ -11,6 +11,7 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/source"
+	"go.mau.fi/whatsmeow/types"
 )
 
 // WhatsApp Top Contacts API
@@ -92,6 +93,106 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (s *Server) handleWhatsAppContactSearch(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("query"))
+	if len(query) < 2 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TopContactResponse{},
+		})
+		return
+	}
+
+	if s.clientManager == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TopContactResponse{},
+		})
+		return
+	}
+
+	waClient, err := s.clientManager.GetWhatsAppClient(userID)
+	if err != nil || waClient == nil || waClient.WAClient == nil || waClient.WAClient.Store == nil || waClient.WAClient.Store.Contacts == nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TopContactResponse{},
+		})
+		return
+	}
+
+	allContacts, err := waClient.WAClient.Store.Contacts.GetAllContacts(r.Context())
+	if err != nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": []TopContactResponse{},
+		})
+		return
+	}
+
+	queryLower := strings.ToLower(query)
+	var results []TopContactResponse
+	for jid, contact := range allContacts {
+		if jid.Server != "s.whatsapp.net" {
+			continue
+		}
+
+		full := strings.TrimSpace(contact.FullName)
+		push := strings.TrimSpace(contact.PushName)
+
+		matched := false
+		if full != "" && strings.Contains(strings.ToLower(full), queryLower) {
+			matched = true
+		} else if push != "" && strings.Contains(strings.ToLower(push), queryLower) {
+			matched = true
+		}
+
+		if !matched {
+			continue
+		}
+
+		name := full
+		if name == "" {
+			name = push
+		}
+		if name == "" {
+			name = jid.User
+		}
+
+		identifier := jid.User
+		phone := identifier
+		isTracked := false
+		var channelID *int64
+
+		existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier)
+		if err == nil && existing == nil {
+			existing, _ = s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier+"@s.whatsapp.net")
+		}
+		if existing != nil {
+			isTracked = true
+			channelID = &existing.ID
+		}
+
+		results = append(results, TopContactResponse{
+			Identifier:     identifier,
+			Name:           name,
+			SecondaryLabel: "+" + phone,
+			IsTracked:      isTracked,
+			ChannelID:      channelID,
+			Type:           "sender",
+		})
+
+		if len(results) >= 10 {
+			break
+		}
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"contacts": results,
+	})
+}
+
 func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Request) {
 	userID, err := getUserID(r)
 	if err != nil {
@@ -100,6 +201,7 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req struct {
+		Name        string `json:"name"`
 		PhoneNumber string `json:"phone_number"`
 	}
 
@@ -108,13 +210,109 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if req.PhoneNumber == "" {
-		respondError(w, http.StatusBadRequest, "phone_number is required")
+	nameInput := strings.TrimSpace(req.Name)
+	phoneInput := strings.TrimSpace(req.PhoneNumber)
+
+	if nameInput == "" && phoneInput == "" {
+		respondError(w, http.StatusBadRequest, "name or phone_number is required")
 		return
 	}
 
-	// Normalize phone number - remove spaces, dashes, parentheses
-	phone := req.PhoneNumber
+	// Name-based contact resolution (preferred)
+	if nameInput != "" {
+		if s.clientManager == nil {
+			respondError(w, http.StatusBadRequest, "WhatsApp contacts not available")
+			return
+		}
+
+		waClient, err := s.clientManager.GetWhatsAppClient(userID)
+		if err != nil || waClient == nil || waClient.WAClient == nil || waClient.WAClient.Store == nil || waClient.WAClient.Store.Contacts == nil {
+			respondError(w, http.StatusBadRequest, "WhatsApp contacts not available")
+			return
+		}
+
+		allContacts, err := waClient.WAClient.Store.Contacts.GetAllContacts(r.Context())
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Failed to load WhatsApp contacts")
+			return
+		}
+
+		query := strings.ToLower(nameInput)
+		var matchJID types.JID
+		var matchName string
+		matches := 0
+		for jid, contact := range allContacts {
+			full := strings.TrimSpace(contact.FullName)
+			push := strings.TrimSpace(contact.PushName)
+
+			matched := false
+			if full != "" && strings.Contains(strings.ToLower(full), query) {
+				matched = true
+			} else if push != "" && strings.Contains(strings.ToLower(push), query) {
+				matched = true
+			}
+
+			if matched {
+				matches++
+				if matches == 1 {
+					matchJID = jid
+					if full != "" {
+						matchName = full
+					} else if push != "" {
+						matchName = push
+					} else {
+						matchName = nameInput
+					}
+				}
+				if matches > 1 {
+					break
+				}
+			}
+		}
+
+		if matches == 0 {
+			respondError(w, http.StatusBadRequest, "No matching WhatsApp contact found")
+			return
+		}
+		if matches > 1 {
+			respondError(w, http.StatusConflict, "Multiple contacts match that name. Please be more specific.")
+			return
+		}
+
+		identifier := matchJID.User
+		if identifier == "" {
+			respondError(w, http.StatusBadRequest, "Invalid contact identifier")
+			return
+		}
+
+		legacyIdentifier := identifier + "@s.whatsapp.net"
+		existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier)
+		if err == nil && existing == nil {
+			existing, err = s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, legacyIdentifier)
+		}
+		if err == nil && existing != nil {
+			respondError(w, http.StatusConflict, "This contact is already being tracked")
+			return
+		}
+
+		channel, err := s.db.CreateSourceChannel(
+			userID,
+			source.SourceTypeWhatsApp,
+			source.ChannelTypeSender,
+			identifier,
+			matchName,
+		)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+
+		respondJSON(w, http.StatusCreated, channel)
+		return
+	}
+
+	// Phone-number-based fallback (legacy)
+	phone := phoneInput
 	for _, char := range []string{" ", "-", "(", ")", "+"} {
 		phone = replaceAll(phone, char, "")
 	}
@@ -131,14 +329,34 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Create identifier in WhatsApp format
-	identifier := phone + "@s.whatsapp.net"
+	// Canonical identifier (digits only)
+	identifier := phone
+	legacyIdentifier := phone + "@s.whatsapp.net"
 
 	// Check if already tracked
 	existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier)
+	if err == nil && existing == nil {
+		existing, err = s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, legacyIdentifier)
+	}
 	if err == nil && existing != nil {
 		respondError(w, http.StatusConflict, "This phone number is already being tracked")
 		return
+	}
+
+	name := req.PhoneNumber
+	if s.clientManager != nil {
+		if waClient, err := s.clientManager.GetWhatsAppClient(userID); err == nil &&
+			waClient != nil && waClient.WAClient != nil && waClient.WAClient.Store != nil && waClient.WAClient.Store.Contacts != nil {
+			if jid, err := types.ParseJID(legacyIdentifier); err == nil {
+				if contact, err := waClient.WAClient.Store.Contacts.GetContact(r.Context(), jid); err == nil {
+					if contact.FullName != "" {
+						name = contact.FullName
+					} else if contact.PushName != "" {
+						name = contact.PushName
+					}
+				}
+			}
+		}
 	}
 
 	// Create the channel
@@ -147,7 +365,7 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 		source.SourceTypeWhatsApp,
 		source.ChannelTypeSender,
 		identifier,
-		req.PhoneNumber,
+		name,
 	)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())

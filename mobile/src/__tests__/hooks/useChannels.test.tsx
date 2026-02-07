@@ -9,11 +9,11 @@ import {
   useWhatsAppTopContacts,
   useAddWhatsAppCustomSource,
 } from '../../hooks/useChannels';
-import * as channelsApi from '../../api/whatsapp/channels';
+import * as channelsApi from '../../api/channels';
 import type { Channel, SourceTopContact } from '../../types/channel';
 
 // Mock the API module
-jest.mock('../../api/whatsapp/channels');
+jest.mock('../../api/channels');
 
 const mockChannelsApi = channelsApi as jest.Mocked<typeof channelsApi>;
 
@@ -284,19 +284,19 @@ describe('useChannels hooks', () => {
       });
 
       await act(async () => {
-        result.current.mutate('+1234567890');
+        result.current.mutate('Alice Johnson');
       });
 
       await waitFor(() => {
         expect(result.current.isSuccess).toBe(true);
       });
 
-      expect(mockChannelsApi.addWhatsAppCustomSource).toHaveBeenCalledWith('+1234567890');
+      expect(mockChannelsApi.addWhatsAppCustomSource).toHaveBeenCalledWith('Alice Johnson');
     });
 
     it('handles add custom source error', async () => {
       mockChannelsApi.addWhatsAppCustomSource.mockRejectedValueOnce(
-        new Error('Phone number not found')
+        new Error('Contact not found')
       );
 
       const { result } = renderHook(() => useAddWhatsAppCustomSource(), {
@@ -304,14 +304,14 @@ describe('useChannels hooks', () => {
       });
 
       await act(async () => {
-        result.current.mutate('+9999999999');
+        result.current.mutate('Missing Contact');
       });
 
       await waitFor(() => {
         expect(result.current.isError).toBe(true);
       });
 
-      expect(result.current.error?.message).toBe('Phone number not found');
+      expect(result.current.error?.message).toBe('Contact not found');
     });
   });
 });

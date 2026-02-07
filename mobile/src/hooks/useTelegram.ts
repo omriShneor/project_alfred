@@ -12,6 +12,7 @@ import {
   deleteTelegramChannel,
   getTelegramTopContacts,
   addTelegramCustomSource,
+  searchTelegramContacts,
   type TelegramStatus,
   type CreateTelegramChannelRequest,
   type UpdateTelegramChannelRequest,
@@ -139,6 +140,15 @@ export function useTelegramTopContacts(options?: { enabled?: boolean }) {
     queryFn: getTelegramTopContacts,
     enabled: options?.enabled ?? true,
     staleTime: 0, // Always fetch fresh data when modal opens
+  });
+}
+
+// Hook to search Telegram contacts
+export function useSearchTelegramContacts(query: string) {
+  return useQuery<SourceTopContact[]>({
+    queryKey: ['telegramContactSearch', query],
+    queryFn: () => searchTelegramContacts(query),
+    enabled: query.length >= 2,
   });
 }
 

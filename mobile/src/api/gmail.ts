@@ -53,3 +53,12 @@ export async function getTopContacts(): Promise<TopContact[]> {
 export async function addCustomSource(data: AddCustomSourceRequest): Promise<EmailSource> {
   return apiClient.post<EmailSource>('/api/gmail/sources/custom', data);
 }
+
+// Search all cached contacts by name or email
+export async function searchGmailContacts(query: string): Promise<TopContact[]> {
+  const response = await apiClient.get<{ contacts: TopContact[] }>(
+    '/api/gmail/contacts/search',
+    { params: { query } }
+  );
+  return response.contacts || [];
+}

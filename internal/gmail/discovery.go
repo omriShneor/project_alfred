@@ -39,11 +39,11 @@ func buildExcludeFromQuery() string {
 	return strings.Join(parts, " ")
 }
 
-// DiscoverTopContacts finds the top N email contacts efficiently
-// Uses metadata-only fetching and filters out automated senders
+// DiscoverContacts finds all email contacts from recent messages.
+// Uses metadata-only fetching and filters out automated senders.
 // TODO: Consider adding a simple ML spam filter to decide if a message is human or an auto-reply/mail-list
 // since the current naive solution is not good enough.
-func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
+func (c *Client) DiscoverContacts() ([]EmailSender, error) {
 	if c.service == nil {
 		return nil, fmt.Errorf("Gmail service not initialized")
 	}
@@ -144,28 +144,14 @@ func (c *Client) DiscoverTopContacts(limit int) ([]EmailSender, error) {
 		return scoreList[i].Score > scoreList[j].Score
 	})
 
-	// Prefer contacts with a higher weighted score; if too few, allow lighter ones
-	filtered := make([]*senderScore, 0, len(scoreList))
+	// Build response — return all contacts with score > 0, sorted by score
+	senders := make([]EmailSender, 0, len(scoreList))
 	for _, s := range scoreList {
-		if s.Score >= 1.0 {
-			filtered = append(filtered, s)
-		}
-	}
-	if len(filtered) < limit {
-		filtered = scoreList
-	}
-
-	// Build response
-	senders := make([]EmailSender, 0, len(filtered))
-	for _, s := range filtered {
 		senders = append(senders, EmailSender{
 			Email:      s.Email,
 			Name:       s.Name,
 			EmailCount: int(math.Round(s.Score)),
 		})
-		if len(senders) >= limit {
-			break
-		}
 	}
 
 	return senders, nil

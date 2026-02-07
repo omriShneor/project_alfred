@@ -600,7 +600,7 @@ The project uses unified source types in [internal/source/source.go](internal/so
 | POST | `/api/whatsapp/reconnect` | Yes | Trigger reconnect for user's WhatsApp |
 | POST | `/api/whatsapp/disconnect` | Yes | Disconnect user's WhatsApp |
 | GET | `/api/whatsapp/top-contacts` | Yes | Get top contacts from user's history |
-| POST | `/api/whatsapp/sources/custom` | Yes | Add custom source by phone number |
+| POST | `/api/whatsapp/sources/custom` | Yes | Add custom source by contact name (or legacy phone number) |
 
 ### WhatsApp Channels
 | Method | Path | Auth Required | Description |

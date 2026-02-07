@@ -19,6 +19,8 @@ interface CustomEntry {
   name: string;
 }
 
+const emptyContacts: SourceTopContact[] = [];
+
 export interface AddSourceModalProps {
   visible: boolean;
   onClose: () => void;
@@ -26,6 +28,10 @@ export interface AddSourceModalProps {
   // Top contacts
   topContacts: SourceTopContact[] | undefined;
   contactsLoading: boolean;
+  // Search
+  searchResults?: SourceTopContact[];
+  searchLoading?: boolean;
+  onSearchQueryChange?: (query: string) => void;
   // Custom input
   customInputPlaceholder: string;
   customInputKeyboardType: KeyboardTypeOptions;
@@ -44,6 +50,9 @@ export function AddSourceModal({
   title,
   topContacts,
   contactsLoading,
+  searchResults,
+  searchLoading,
+  onSearchQueryChange,
   customInputPlaceholder,
   customInputKeyboardType,
   validateCustomInput,
@@ -59,6 +68,14 @@ export function AddSourceModal({
   const [isCustomInputFocused, setIsCustomInputFocused] = useState(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isAdding, setIsAdding] = useState(false);
+  const normalizedQuery = customInput.trim();
+  const isSearching = normalizedQuery.length >= 2;
+
+  // When query >= 2 chars and search results available, show search results; otherwise show topContacts
+  const displayedContacts = isSearching
+    ? (searchResults ?? emptyContacts)
+    : (topContacts ?? emptyContacts);
+  const displayedLoading = isSearching ? (searchLoading ?? false) : contactsLoading;
 
   // Track keyboard visibility
   useEffect(() => {
@@ -79,6 +96,13 @@ export function AddSourceModal({
     };
   }, []);
 
+  // Notify parent of search query changes
+  React.useEffect(() => {
+    if (onSearchQueryChange) {
+      onSearchQueryChange(normalizedQuery);
+    }
+  }, [normalizedQuery, onSearchQueryChange]);
+
   // Reset state when modal opens
   React.useEffect(() => {
     if (visible) {
@@ -88,6 +112,34 @@ export function AddSourceModal({
       setCustomInputError(null);
     }
   }, [visible]);
+
+  useEffect(() => {
+    setSelectedContacts((prev) => {
+      if (prev.size === 0) {
+        return prev;
+      }
+
+      const allowed = new Set<string>();
+      for (const contact of displayedContacts) {
+        allowed.add(contact.identifier);
+      }
+      for (const entry of customEntries) {
+        allowed.add(entry.identifier);
+      }
+
+      let changed = false;
+      const next = new Set<string>();
+      for (const id of prev) {
+        if (allowed.has(id)) {
+          next.add(id);
+        } else {
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [displayedContacts, customEntries]);
 
   const toggleContactSelection = (identifier: string) => {
     setSelectedContacts((prev) => {
@@ -118,15 +170,23 @@ export function AddSourceModal({
     }
 
     const trimmedValue = customInput.trim();
+    const normalizedValue = trimmedValue.toLowerCase();
 
     // Check if already in custom entries
-    if (customEntries.some((e) => e.identifier === trimmedValue)) {
+    if (customEntries.some((e) => e.identifier.toLowerCase() === normalizedValue)) {
       setCustomInputError('Already added');
       return;
     }
 
-    // Check if already in top contacts
-    if (topContacts?.some((c) => c.identifier === trimmedValue)) {
+    // Check if already in displayed contacts (topContacts or searchResults)
+    if (
+      displayedContacts.some((c) => {
+        const fields = [c.name, c.secondary_label, c.identifier]
+          .filter((value): value is string => Boolean(value))
+          .map((value) => value.toLowerCase());
+        return fields.some((value) => value === normalizedValue);
+      })
+    ) {
       setCustomInputError('Already in suggested contacts');
       return;
     }
@@ -142,8 +202,8 @@ export function AddSourceModal({
   const handleAddAllSelected = async () => {
     setIsAdding(true);
     try {
-      // Add selected top contacts (always uses Alfred Calendar / 'primary')
-      const contactsToAdd = (topContacts || []).filter(
+      // Add selected contacts (from displayed list)
+      const contactsToAdd = displayedContacts.filter(
         (c) => selectedContacts.has(c.identifier) && !c.is_tracked
       );
       if (contactsToAdd.length > 0) {
@@ -280,15 +340,19 @@ export function AddSourceModal({
       {/* Suggested Contacts Section */}
       <View style={styles.suggestedSection}>
         <Text style={styles.sectionLabel}>Suggested Contacts</Text>
-        {contactsLoading ? (
+        {displayedLoading ? (
           <LoadingSpinner />
-        ) : topContacts && topContacts.length > 0 ? (
+        ) : displayedContacts.length > 0 ? (
           <View style={styles.contactList}>
-            {topContacts.map((item, index) => renderContactItem(item, index, index > 0))}
+            {displayedContacts.map((item: SourceTopContact, index: number) =>
+              renderContactItem(item, index, index > 0)
+            )}
           </View>
         ) : (
           <View style={styles.emptyContacts}>
-            <Text style={styles.emptyContactsText}>No suggested contacts yet</Text>
+            <Text style={styles.emptyContactsText}>
+              {normalizedQuery ? 'No matching contacts' : 'No suggested contacts yet'}
+            </Text>
             <Text style={styles.emptyContactsSubtext}>
               Add a contact manually below
             </Text>
@@ -426,7 +490,6 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
     paddingTop: 16,
-    paddingBottom: 40,
   },
   customInputRow: {
     flexDirection: 'row',
@@ -458,9 +521,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   floatingFooter: {
-    backgroundColor: colors.card,
+    backgroundColor: colors.background,
     padding: 16,
-    paddingBottom: 32,
+    paddingBottom: 24,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },

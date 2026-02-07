@@ -6,6 +6,7 @@ import {
   deleteChannel,
   getWhatsAppTopContacts,
   addWhatsAppCustomSource,
+  searchWhatsAppContacts,
 } from '../api/channels';
 import type {
   Channel,
@@ -65,12 +66,21 @@ export function useWhatsAppTopContacts(options?: { enabled?: boolean }) {
   });
 }
 
+// WhatsApp contact search hook
+export function useSearchWhatsAppContacts(query: string) {
+  return useQuery<SourceTopContact[]>({
+    queryKey: ['whatsappContactSearch', query],
+    queryFn: () => searchWhatsAppContacts(query),
+    enabled: query.length >= 2,
+  });
+}
+
 // WhatsApp custom source mutation
 export function useAddWhatsAppCustomSource() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: (phoneNumber: string) => addWhatsAppCustomSource(phoneNumber),
+    mutationFn: (contactName: string) => addWhatsAppCustomSource(contactName),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['channels'] });
       queryClient.invalidateQueries({ queryKey: ['whatsappTopContacts'] });

@@ -60,6 +60,8 @@ func main() {
 	// Create notify service (with push notifier)
 	pushNotifier := notify.NewExpoPushNotifier()
 	notifyService := notify.NewService(db, nil, pushNotifier)
+	notifyCtx, stopNotifyWorker := context.WithCancel(context.Background())
+	notifyService.StartDueReminderWorker(notifyCtx, time.Minute)
 	fmt.Println("Push notification service configured")
 
 	// Create event analyzer (uses real Claude API if ANTHROPIC_API_KEY is set)
@@ -248,6 +250,7 @@ func main() {
 	<-quit
 
 	fmt.Println("\nShutting down test server...")
+	stopNotifyWorker()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

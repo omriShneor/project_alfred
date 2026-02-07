@@ -3,8 +3,14 @@ package notify
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
+)
+
+const (
+	defaultDueReminderPollInterval = time.Minute
+	dueReminderBatchSize           = 50
 )
 
 // Service orchestrates notifications based on user preferences
@@ -122,6 +128,104 @@ func (s *Service) NotifyPendingReminder(ctx context.Context, reminder *database.
 			}
 		}
 	}
+}
+
+// StartDueReminderWorker polls for due reminders and sends one-time push notifications.
+func (s *Service) StartDueReminderWorker(ctx context.Context, pollInterval time.Duration) {
+	if s == nil || s.db == nil {
+		return
+	}
+	if pollInterval <= 0 {
+		pollInterval = defaultDueReminderPollInterval
+	}
+
+	go func() {
+		ticker := time.NewTicker(pollInterval)
+		defer ticker.Stop()
+
+		s.processDueReminders(ctx)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.processDueReminders(ctx)
+			}
+		}
+	}()
+}
+
+func (s *Service) processDueReminders(ctx context.Context) {
+	reminders, err := s.db.GetDueRemindersForNotification(time.Now(), dueReminderBatchSize)
+	if err != nil {
+		fmt.Printf("Notification: Failed to fetch due reminders: %v\n", err)
+		return
+	}
+	if len(reminders) == 0 {
+		return
+	}
+
+	for i := range reminders {
+		reminder := &reminders[i]
+
+		processed, err := s.sendDueReminderNotification(ctx, reminder)
+		if err != nil {
+			fmt.Printf("Notification: Failed sending due reminder %d: %v\n", reminder.ID, err)
+			continue
+		}
+		if !processed {
+			continue
+		}
+
+		if _, err := s.db.MarkReminderDueNotificationSent(reminder.ID, time.Now()); err != nil {
+			fmt.Printf("Notification: Failed to mark reminder %d as notified: %v\n", reminder.ID, err)
+		}
+	}
+}
+
+func (s *Service) sendDueReminderNotification(ctx context.Context, reminder *database.Reminder) (bool, error) {
+	prefs, err := s.db.GetUserNotificationPrefs(reminder.UserID)
+	if err != nil {
+		return false, fmt.Errorf("load notification prefs: %w", err)
+	}
+
+	// If push isn't enabled for this user, mark as processed to avoid reprocessing forever.
+	if !prefs.PushEnabled || prefs.PushToken == "" {
+		return true, nil
+	}
+
+	expoPush, ok := s.pushNotifier.(*ExpoPushNotifier)
+	if !ok || expoPush == nil || !expoPush.IsConfigured() {
+		fmt.Println("Notification: Due reminder push skipped - notifier not configured")
+		return true, nil
+	}
+
+	scheduledAt := reminder.DueDate
+	if reminder.ReminderTime != nil {
+		scheduledAt = reminder.ReminderTime
+	}
+
+	body := "It's time for this reminder."
+	if scheduledAt != nil {
+		body = fmt.Sprintf("Scheduled for %s", scheduledAt.Local().Format("Jan 2 at 3:04 PM"))
+	}
+	if reminder.Description != "" {
+		body = reminder.Description + "\n" + body
+	}
+
+	if err := expoPush.SendSimple(
+		ctx,
+		prefs.PushToken,
+		"⏰ Reminder: "+reminder.Title,
+		body,
+		"Home",
+	); err != nil {
+		return false, err
+	}
+
+	fmt.Printf("Notification: Due reminder push sent for reminder %d\n", reminder.ID)
+	return true, nil
 }
 
 func (s *Service) NotifyWhatsAppConnected(ctx context.Context, userID int64) {

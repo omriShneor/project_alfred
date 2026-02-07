@@ -33,6 +33,8 @@ func main() {
 	state := sse.NewState()
 
 	notifyService := initNotifyService(db, cfg)
+	notifyCtx, stopNotifyWorker := context.WithCancel(context.Background())
+	notifyService.StartDueReminderWorker(notifyCtx, time.Minute)
 
 	eventAnalyzer := initEventAnalyzer(cfg)
 	reminderAnalyzer := initReminderAnalyzer(cfg)
@@ -103,7 +105,7 @@ func main() {
 	// Start background services for eligible users (cached auth/sessions)
 	userServiceManager.StartServicesForEligibleUsers()
 
-	waitForShutdown(srv, clientManager, userServiceManager)
+	waitForShutdown(srv, clientManager, userServiceManager, stopNotifyWorker)
 }
 
 func initDatabase(cfg *config.Config) (*database.DB, error) {
@@ -201,12 +203,20 @@ func fatal(context string, err error) {
 	os.Exit(1)
 }
 
-func waitForShutdown(srv *server.Server, clientManager *clients.ClientManager, userServiceManager *server.UserServiceManager) {
+func waitForShutdown(
+	srv *server.Server,
+	clientManager *clients.ClientManager,
+	userServiceManager *server.UserServiceManager,
+	stopNotifyWorker context.CancelFunc,
+) {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	<-c
 
 	fmt.Println("Shutting down...")
+	if stopNotifyWorker != nil {
+		stopNotifyWorker()
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

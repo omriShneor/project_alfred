@@ -174,6 +174,7 @@ npm run android                   # Android Emulator (requires Android Studio)
 | Issue | Cause | Solution |
 |-------|-------|----------|
 | "ANTHROPIC_API_KEY not set" | Missing env var | Export the API key |
+| "credit balance is too low" | API credits are empty for that key/workspace | Add credits in Anthropic Console (`console.anthropic.com/settings/plans`), ensure deployed key is from the same workspace |
 | WhatsApp won't connect | Session expired | Delete `whatsapp.db`, restart |
 | Pairing code fails | Already linked | Unlink device in WhatsApp first |
 | Google Calendar errors | Token expired | Delete `token.json`, reconnect via app |

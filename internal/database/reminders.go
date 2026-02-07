@@ -360,3 +360,68 @@ func (d *DB) GetUpcomingReminders(window time.Duration) ([]Reminder, error) {
 
 	return reminders, nil
 }
+
+// GetDueRemindersForNotification retrieves active reminders that reached their scheduled notification time.
+// Uses reminder_time when present, otherwise falls back to due_date.
+func (d *DB) GetDueRemindersForNotification(now time.Time, limit int) ([]Reminder, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+		SELECT r.id, r.user_id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
+			r.description, r.location, r.due_date, r.reminder_time, r.priority, r.status,
+			r.action_type, r.original_message_id, r.llm_reasoning, r.source, r.email_source_id,
+			r.created_at, r.updated_at,
+			COALESCE(c.name, 'Alfred') as channel_name
+		FROM reminders r
+		LEFT JOIN channels c ON r.channel_id = c.id
+		WHERE r.status IN (?, ?)
+		  AND COALESCE(r.reminder_time, r.due_date) IS NOT NULL
+		  AND COALESCE(r.reminder_time, r.due_date) <= ?
+		  AND r.due_notification_sent_at IS NULL
+		ORDER BY COALESCE(r.reminder_time, r.due_date) ASC
+		LIMIT ?
+	`
+
+	rows, err := d.Query(query, ReminderStatusConfirmed, ReminderStatusSynced, now, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get due reminders for notification: %w", err)
+	}
+	defer rows.Close()
+
+	var reminders []Reminder
+	for rows.Next() {
+		reminder, err := scanReminder(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan reminder: %w", err)
+		}
+		reminders = append(reminders, *reminder)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating due reminders: %w", err)
+	}
+
+	return reminders, nil
+}
+
+// MarkReminderDueNotificationSent marks a reminder as already notified.
+// Returns true only when this call changed the row.
+func (d *DB) MarkReminderDueNotificationSent(id int64, sentAt time.Time) (bool, error) {
+	result, err := d.Exec(`
+		UPDATE reminders
+		SET due_notification_sent_at = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND due_notification_sent_at IS NULL
+	`, sentAt, id)
+	if err != nil {
+		return false, fmt.Errorf("failed to mark reminder notification sent: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("failed to read rows affected: %w", err)
+	}
+
+	return rowsAffected > 0, nil
+}

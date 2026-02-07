@@ -4,19 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
 const (
-	defaultAPIURL        = "https://api.anthropic.com/v1/messages"
-	defaultModel         = "claude-sonnet-4-20250514"
-	defaultMaxTokens     = 4096
-	anthropicVersion     = "2023-06-01"
-	anthropicBetaHeader  = "tools-2024-04-04"
+	defaultAPIURL       = "https://api.anthropic.com/v1/messages"
+	defaultModel        = "claude-sonnet-4-20250514"
+	defaultMaxTokens    = 4096
+	anthropicVersion    = "2023-06-01"
+	anthropicBetaHeader = "tools-2024-04-04"
+	anthropicBillingURL = "https://console.anthropic.com/settings/plans"
 )
+
+var ErrInsufficientCredits = errors.New("anthropic API credits are insufficient")
 
 // APIClient handles communication with the Anthropic API
 type APIClient struct {
@@ -49,23 +54,23 @@ func NewAPIClient(apiKey, model string, temperature float64) *APIClient {
 
 // apiRequest represents the Anthropic API request with tools
 type apiRequest struct {
-	Model       string                   `json:"model"`
-	MaxTokens   int                      `json:"max_tokens"`
-	Temperature float64                  `json:"temperature"`
-	System      string                   `json:"system,omitempty"`
+	Model       string           `json:"model"`
+	MaxTokens   int              `json:"max_tokens"`
+	Temperature float64          `json:"temperature"`
+	System      string           `json:"system,omitempty"`
 	Tools       []map[string]any `json:"tools,omitempty"`
-	ToolChoice  *toolChoice              `json:"tool_choice,omitempty"`
-	Messages    []apiMessage             `json:"messages"`
+	ToolChoice  *toolChoice      `json:"tool_choice,omitempty"`
+	Messages    []apiMessage     `json:"messages"`
 }
 
 type toolChoice struct {
-	Type string `json:"type"` // "auto", "any", or "tool"
+	Type string `json:"type"`           // "auto", "any", or "tool"
 	Name string `json:"name,omitempty"` // Only for type="tool"
 }
 
 type apiMessage struct {
-	Role    string      `json:"role"`
-	Content any `json:"content"` // string or []ContentBlock
+	Role    string `json:"role"`
+	Content any    `json:"content"` // string or []ContentBlock
 }
 
 // apiResponse represents the Anthropic API response
@@ -85,11 +90,20 @@ type apiResponse struct {
 	} `json:"error,omitempty"`
 }
 
+type apiErrorResponse struct {
+	Type      string `json:"type"`
+	RequestID string `json:"request_id"`
+	Error     struct {
+		Type    string `json:"type"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
 type apiContentBlock struct {
-	Type  string                 `json:"type"`
-	Text  string                 `json:"text,omitempty"`
-	ID    string                 `json:"id,omitempty"`
-	Name  string                 `json:"name,omitempty"`
+	Type  string         `json:"type"`
+	Text  string         `json:"text,omitempty"`
+	ID    string         `json:"id,omitempty"`
+	Name  string         `json:"name,omitempty"`
 	Input map[string]any `json:"input,omitempty"`
 }
 
@@ -186,7 +200,7 @@ func (c *APIClient) Call(ctx context.Context, messages []Message, opts CallOptio
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, formatAPIError(resp.StatusCode, body)
 	}
 
 	var apiResp apiResponse
@@ -266,4 +280,48 @@ func convertContentToAPI(content []ContentBlock) any {
 // IsConfigured returns true if the client has an API key
 func (c *APIClient) IsConfigured() bool {
 	return c.apiKey != ""
+}
+
+func formatAPIError(statusCode int, body []byte) error {
+	var parsed apiErrorResponse
+	if err := json.Unmarshal(body, &parsed); err == nil && parsed.Error.Message != "" {
+		errorMessage := strings.TrimSpace(parsed.Error.Message)
+		errorType := strings.TrimSpace(parsed.Error.Type)
+
+		if isInsufficientCreditsMessage(errorMessage) {
+			if parsed.RequestID != "" {
+				return fmt.Errorf(
+					"%w (request_id=%s): insufficient Anthropic API credits for this ANTHROPIC_API_KEY. Claude app budgets/subscriptions do not cover API usage. Add API credits in %s. Upstream message: %s",
+					ErrInsufficientCredits,
+					parsed.RequestID,
+					anthropicBillingURL,
+					errorMessage,
+				)
+			}
+			return fmt.Errorf(
+				"%w: insufficient Anthropic API credits for this ANTHROPIC_API_KEY. Claude app budgets/subscriptions do not cover API usage. Add API credits in %s. Upstream message: %s",
+				ErrInsufficientCredits,
+				anthropicBillingURL,
+				errorMessage,
+			)
+		}
+
+		if parsed.RequestID != "" {
+			return fmt.Errorf("API error (status %d, request_id=%s): %s - %s", statusCode, parsed.RequestID, errorType, errorMessage)
+		}
+		return fmt.Errorf("API error (status %d): %s - %s", statusCode, errorType, errorMessage)
+	}
+
+	raw := strings.TrimSpace(string(body))
+	if raw == "" {
+		return fmt.Errorf("API error (status %d)", statusCode)
+	}
+	return fmt.Errorf("API error (status %d): %s", statusCode, raw)
+}
+
+func isInsufficientCreditsMessage(message string) bool {
+	normalized := strings.ToLower(message)
+	return strings.Contains(normalized, "credit balance is too low") ||
+		strings.Contains(normalized, "insufficient credits") ||
+		strings.Contains(normalized, "purchase credits")
 }

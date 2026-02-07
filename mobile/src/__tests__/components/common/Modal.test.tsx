@@ -62,7 +62,7 @@ describe('Modal', () => {
         </Modal>
       );
 
-      expect(screen.getByText('✕')).toBeTruthy();
+      expect(screen.getByLabelText('Close modal')).toBeTruthy();
     });
 
     it('calls onClose when close button is pressed', () => {
@@ -72,7 +72,7 @@ describe('Modal', () => {
         </Modal>
       );
 
-      fireEvent.press(screen.getByText('✕'));
+      fireEvent.press(screen.getByLabelText('Close modal'));
 
       expect(mockOnClose).toHaveBeenCalledTimes(1);
     });
@@ -179,7 +179,7 @@ describe('Modal', () => {
         </Modal>
       );
 
-      expect(screen.getByText('✕')).toBeTruthy();
+      expect(screen.getByLabelText('Close modal')).toBeTruthy();
     });
 
     it('handles long title', () => {

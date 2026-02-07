@@ -133,6 +133,25 @@ func (d *DB) DeleteSourceChannel(userID int64, id int64) error {
 	return nil
 }
 
+// DeleteSourceChannelByIdentifier deletes a channel by source type + identifier for a specific user
+func (d *DB) DeleteSourceChannelByIdentifier(userID int64, sourceType source.SourceType, identifier string) error {
+	result, err := d.Exec(
+		`DELETE FROM channels WHERE user_id = ? AND source_type = ? AND identifier = ?`,
+		userID, sourceType, identifier,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to delete source channel: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to delete source channel: %w", err)
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("channel not found")
+	}
+	return nil
+}
+
 // IsSourceChannelTracked checks if a channel is tracked and enabled for a specific source type and user
 // Returns: isTracked, channelID, channelType, error
 func (d *DB) IsSourceChannelTracked(userID int64, sourceType source.SourceType, identifier string) (bool, int64, source.ChannelType, error) {

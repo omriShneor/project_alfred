@@ -165,13 +165,15 @@ func (s *Server) handleWhatsAppContactSearch(w http.ResponseWriter, r *http.Requ
 		isTracked := false
 		var channelID *int64
 
-		existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier)
-		if err == nil && existing == nil {
-			existing, _ = s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, identifier+"@s.whatsapp.net")
-		}
-		if existing != nil {
+		if tracked, id, _, _ := s.db.IsSourceChannelTracked(userID, source.SourceTypeWhatsApp, identifier); tracked {
 			isTracked = true
-			channelID = &existing.ID
+			channelID = &id
+		} else {
+			legacyIdentifier := identifier + "@s.whatsapp.net"
+			if tracked, id, _, _ := s.db.IsSourceChannelTracked(userID, source.SourceTypeWhatsApp, legacyIdentifier); tracked {
+				isTracked = true
+				channelID = &id
+			}
 		}
 
 		results = append(results, TopContactResponse{
@@ -500,6 +502,12 @@ func (s *Server) handleDeleteWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	channel, err := s.db.GetSourceChannelByID(userID, id)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "channel not found")
+		return
+	}
+
 	if err := s.db.DeleteSourceChannel(userID, id); err != nil {
 		if err.Error() == "channel not found" {
 			respondError(w, http.StatusNotFound, "channel not found")
@@ -507,6 +515,18 @@ func (s *Server) handleDeleteWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		}
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+
+	// Remove legacy/alternate identifier if present to avoid "ghost" tracking.
+	if channel != nil {
+		identifier := channel.Identifier
+		legacyIdentifier := identifier + "@s.whatsapp.net"
+		if strings.HasSuffix(identifier, "@s.whatsapp.net") {
+			legacyIdentifier = strings.TrimSuffix(identifier, "@s.whatsapp.net")
+		}
+		if legacyIdentifier != identifier {
+			_ = s.db.DeleteSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, legacyIdentifier)
+		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})

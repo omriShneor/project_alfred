@@ -138,14 +138,28 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	identifier := req.Identifier
+	name := req.Name
+	if sourceType == database.EmailSourceTypeSender {
+		identifier = strings.ToLower(strings.TrimSpace(identifier))
+		if identifier != "" {
+			name = identifier
+		}
+	} else if sourceType == database.EmailSourceTypeDomain {
+		identifier = strings.ToLower(strings.TrimSpace(strings.TrimPrefix(identifier, "@")))
+		if identifier != "" {
+			name = identifier
+		}
+	}
+
 	// Check if already exists
-	existing, _ := s.db.GetEmailSourceByIdentifier(userID, sourceType, req.Identifier)
+	existing, _ := s.db.GetEmailSourceByIdentifier(userID, sourceType, identifier)
 	if existing != nil {
 		respondError(w, http.StatusConflict, "email source already exists")
 		return
 	}
 
-	source, err := s.db.CreateEmailSource(userID, sourceType, req.Identifier, req.Name)
+	source, err := s.db.CreateEmailSource(userID, sourceType, identifier, name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

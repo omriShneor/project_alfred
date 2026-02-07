@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -152,6 +153,69 @@ func (c *Client) Connect() error {
 			}
 		}
 	}
+}
+
+// ResolveUsername resolves a Telegram username to a user ID and display name.
+func (c *Client) ResolveUsername(ctx context.Context, username string) (int64, string, string, error) {
+	normalized := strings.TrimPrefix(strings.TrimSpace(username), "@")
+	if normalized == "" {
+		return 0, "", "", fmt.Errorf("username is required")
+	}
+
+	c.mu.RLock()
+	api := c.api
+	c.mu.RUnlock()
+	if api == nil {
+		return 0, "", "", fmt.Errorf("client not connected")
+	}
+
+	resolved, err := api.ContactsResolveUsername(ctx, &tg.ContactsResolveUsernameRequest{
+		Username: normalized,
+	})
+	if err != nil {
+		return 0, "", "", fmt.Errorf("failed to resolve username: %w", err)
+	}
+
+	peer, ok := resolved.Peer.(*tg.PeerUser)
+	if !ok || peer.UserID == 0 {
+		return 0, "", "", fmt.Errorf("username not found")
+	}
+
+	var displayName string
+	var resolvedUsername string
+	for _, user := range resolved.Users {
+		u, ok := user.(*tg.User)
+		if !ok || u.ID != peer.UserID {
+			continue
+		}
+		displayName = formatUserName(u)
+		if u.Username != "" {
+			resolvedUsername = u.Username
+		}
+		break
+	}
+
+	if resolvedUsername == "" {
+		resolvedUsername = normalized
+	}
+	if displayName == "" {
+		displayName = "@" + resolvedUsername
+	}
+
+	return peer.UserID, displayName, resolvedUsername, nil
+}
+
+func formatUserName(user *tg.User) string {
+	if user.FirstName != "" {
+		if user.LastName != "" {
+			return user.FirstName + " " + user.LastName
+		}
+		return user.FirstName
+	}
+	if user.Username != "" {
+		return "@" + user.Username
+	}
+	return fmt.Sprintf("User %d", user.ID)
 }
 
 // Disconnect closes the Telegram connection and waits for cleanup

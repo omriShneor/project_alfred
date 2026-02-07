@@ -534,8 +534,6 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	// Note: This endpoint doesn't require Telegram to be connected
-	// It just creates a channel entry in the database
 
 	var req TelegramCustomSourceRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -564,8 +562,27 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Use username as identifier (Telegram-style)
-	identifier := username
+	if s.clientManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "Telegram client not available")
+		return
+	}
+	tgClient, err := s.clientManager.GetTelegramClient(userID)
+	if err != nil || !tgClient.IsConnected() {
+		respondError(w, http.StatusBadRequest, "Telegram not connected")
+		return
+	}
+
+	resolvedID, displayName, resolvedUsername, err := tgClient.ResolveUsername(r.Context(), username)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	// Use numeric Telegram user ID as identifier for consistency.
+	identifier := fmt.Sprintf("%d", resolvedID)
+	if displayName == "" {
+		displayName = "@" + resolvedUsername
+	}
 
 	// Check if already tracked
 	existing, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeTelegram, identifier)
@@ -575,7 +592,7 @@ func (s *Server) handleTelegramCustomSource(w http.ResponseWriter, r *http.Reque
 	}
 
 	// Create the channel as a contact type
-	channel, err := s.db.CreateSourceChannel(userID, source.SourceTypeTelegram, source.ChannelTypeSender, identifier, "@"+username)
+	channel, err := s.db.CreateSourceChannel(userID, source.SourceTypeTelegram, source.ChannelTypeSender, identifier, displayName)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
 		return

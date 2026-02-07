@@ -319,7 +319,7 @@ export function AddSourceModal({
         ) : totalSelected > 0 ? (
           <View style={styles.floatingFooter}>
             <Button
-              title={`Add ${totalSelected} Contact${totalSelected !== 1 ? 's' : ''}`}
+              title={`Add ${totalSelected} sources`}
               onPress={handleAddAllSelected}
               loading={isAdding || addContactsLoading || addCustomLoading}
             />
@@ -330,7 +330,7 @@ export function AddSourceModal({
       {/* Custom Entries Section (shown at top if any) */}
       {customEntries.length > 0 && (
         <View style={styles.customEntriesSection}>
-          <Text style={styles.sectionLabel}>Custom Entries</Text>
+          <Text style={styles.sectionLabel}>Added manually</Text>
           <View style={styles.contactList}>
             {customEntries.map((entry, index) => renderCustomEntry(entry, index))}
           </View>
@@ -362,7 +362,7 @@ export function AddSourceModal({
 
       {/* Custom Input Section */}
       <View style={styles.customSection}>
-        <Text style={styles.sectionLabel}>Add manually</Text>
+        <Text style={styles.sectionLabel}>Search or add manually</Text>
         <View style={styles.customInputRow}>
           <TextInput
             style={[styles.customInput, customInputError && styles.customInputError]}

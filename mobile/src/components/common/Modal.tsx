@@ -41,7 +41,14 @@ export function Modal({ visible, onClose, title, children, scrollable = true, fo
           style={styles.container}
         >
           <View style={styles.header}>
-            <TouchableOpacity onPress={onClose} style={styles.backButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <TouchableOpacity
+              onPress={onClose}
+              style={styles.backButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close modal"
+              testID="modal-close-button"
+            >
               <Feather name="arrow-left" size={24} color={colors.text} />
             </TouchableOpacity>
             {title && <Text style={styles.title}>{title}</Text>}

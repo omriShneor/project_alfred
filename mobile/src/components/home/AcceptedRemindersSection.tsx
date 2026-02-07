@@ -16,7 +16,13 @@ export function AcceptedRemindersSection() {
   // Combine and sort by due date
   const reminders: Reminder[] = React.useMemo(() => {
     const all = [...(confirmedReminders || []), ...(syncedReminders || [])];
-    return all.sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+    const nonManual = all.filter((reminder) => reminder.source !== 'manual');
+
+    return nonManual.sort((a, b) => {
+      const aTime = a.due_date ? new Date(a.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      const bTime = b.due_date ? new Date(b.due_date).getTime() : Number.MAX_SAFE_INTEGER;
+      return aTime - bTime;
+    });
   }, [confirmedReminders, syncedReminders]);
 
   if (isLoading) {

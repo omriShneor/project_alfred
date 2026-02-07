@@ -123,6 +123,7 @@ export function WhatsAppPreferencesScreen() {
   const renderChannelItem = ({ item }: { item: Channel }) => {
     // Show identifier only if it's different from the name
     const showIdentifier = item.name !== item.identifier;
+    const showPushName = Boolean(item.push_name && item.push_name !== item.name);
 
     return (
       <View style={styles.channelItem}>
@@ -135,6 +136,9 @@ export function WhatsAppPreferencesScreen() {
               </Text>
             </View>
           </View>
+          {showPushName && (
+            <Text style={styles.channelPushName}>{item.push_name}</Text>
+          )}
           {showIdentifier && (
             <Text style={styles.channelIdentifier}>+{item.identifier}</Text>
           )}
@@ -271,6 +275,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: colors.text,
     marginRight: 8,
+  },
+  channelPushName: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginBottom: 2,
   },
   typeBadge: {
     paddingHorizontal: 8,

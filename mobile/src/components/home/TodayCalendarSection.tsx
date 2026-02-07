@@ -5,7 +5,29 @@ import { useTodayEvents } from '../../hooks/useTodayEvents';
 import { colors } from '../../theme/colors';
 import type { TodayEvent } from '../../types/calendar';
 
-function TimelineEvent({ event }: { event: TodayEvent }) {
+type TimingBadge = 'now' | 'next' | null;
+
+function getTimingBadge(event: TodayEvent): TimingBadge {
+  if (event.all_day) {
+    return null;
+  }
+
+  const now = Date.now();
+  const start = new Date(event.start_time).getTime();
+  const end = new Date(event.end_time).getTime();
+
+  if (now >= start && now <= end) {
+    return 'now';
+  }
+
+  if (start > now && start - now <= 60 * 60 * 1000) {
+    return 'next';
+  }
+
+  return null;
+}
+
+function TimelineEvent({ event, isLast }: { event: TodayEvent; isLast: boolean }) {
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     return date.toLocaleTimeString(undefined, {
@@ -18,18 +40,43 @@ function TimelineEvent({ event }: { event: TodayEvent }) {
     return `${formatTime(start)} - ${formatTime(end)}`;
   };
 
+  const timingBadge = getTimingBadge(event);
+
   return (
-    <View style={styles.timelineItem}>
+    <View style={[styles.timelineItem, isLast && styles.timelineItemLast]}>
       <View style={styles.timeColumn}>
         <Text style={styles.timeText}>
           {event.all_day ? 'All day' : formatTime(event.start_time)}
         </Text>
-        <View style={styles.timeLine} />
+        {!isLast && <View style={styles.timeLine} />}
       </View>
       <View style={styles.eventDetails}>
-        <Text style={styles.eventTitle} numberOfLines={1}>
-          {event.summary}
-        </Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.eventTitle} numberOfLines={1}>
+            {event.summary}
+          </Text>
+          {timingBadge && (
+            <View
+              style={[
+                styles.timingBadge,
+                timingBadge === 'now'
+                  ? styles.timingBadgeNow
+                  : styles.timingBadgeNext,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.timingBadgeText,
+                  timingBadge === 'now'
+                    ? styles.timingBadgeTextNow
+                    : styles.timingBadgeTextNext,
+                ]}
+              >
+                {timingBadge === 'now' ? 'Now' : 'Up next'}
+              </Text>
+            </View>
+          )}
+        </View>
         {!event.all_day && (
           <Text style={styles.eventTimeRange}>
             {formatTimeRange(event.start_time, event.end_time)}
@@ -89,8 +136,12 @@ export function TodayCalendarSection() {
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>TODAY'S SCHEDULE ({events.length})</Text>
       <View style={styles.timeline}>
-        {events.map((event) => (
-          <TimelineEvent key={event.id} event={event} />
+        {events.map((event, index) => (
+          <TimelineEvent
+            key={event.id}
+            event={event}
+            isLast={index === events.length - 1}
+          />
         ))}
       </View>
     </View>
@@ -122,6 +173,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  timelineItemLast: {
+    borderBottomWidth: 0,
+  },
   timeColumn: {
     width: 70,
     alignItems: 'center',
@@ -141,11 +195,43 @@ const styles = StyleSheet.create({
   eventDetails: {
     flex: 1,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
   eventTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 2,
+    flex: 1,
+    marginRight: 6,
+  },
+  timingBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  timingBadgeNow: {
+    borderColor: colors.success + '60',
+    backgroundColor: colors.success + '12',
+  },
+  timingBadgeNext: {
+    borderColor: colors.primary + '60',
+    backgroundColor: colors.primary + '12',
+  },
+  timingBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  timingBadgeTextNow: {
+    color: colors.success,
+  },
+  timingBadgeTextNext: {
+    color: colors.primary,
   },
   eventTimeRange: {
     fontSize: 12,

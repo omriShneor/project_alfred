@@ -1,5 +1,6 @@
 import { apiClient } from './client';
 import type {
+  CreateReminderRequest,
   Reminder,
   ReminderWithMessage,
   UpdateReminderRequest,
@@ -16,6 +17,10 @@ export async function listReminders(params?: ListRemindersParams): Promise<Remin
 
 export async function getReminder(id: number): Promise<ReminderWithMessage> {
   return apiClient.get<ReminderWithMessage>(`/api/reminders/${id}`);
+}
+
+export async function createReminder(data: CreateReminderRequest): Promise<Reminder> {
+  return apiClient.post<Reminder>('/api/reminders', data);
 }
 
 export async function updateReminder(

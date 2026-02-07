@@ -3,3 +3,4 @@ export { PendingEventsSection } from './PendingEventsSection';
 export { TodayCalendarSection } from './TodayCalendarSection';
 export { PendingRemindersSection } from './PendingRemindersSection';
 export { AcceptedRemindersSection } from './AcceptedRemindersSection';
+export { HomeOverviewSection } from './HomeOverviewSection';

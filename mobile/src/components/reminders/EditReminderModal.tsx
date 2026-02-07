@@ -22,6 +22,7 @@ const priorities: { value: ReminderPriority; label: string; color: string }[] = 
 export function EditReminderModal({ visible, onClose, reminder }: EditReminderModalProps) {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [location, setLocation] = useState('');
   const [dueDate, setDueDate] = useState<Date | null>(null);
   const [priority, setPriority] = useState<ReminderPriority>('normal');
 
@@ -31,7 +32,8 @@ export function EditReminderModal({ visible, onClose, reminder }: EditReminderMo
     if (reminder) {
       setTitle(reminder.title);
       setDescription(reminder.description || '');
-      setDueDate(new Date(reminder.due_date));
+      setLocation(reminder.location || '');
+      setDueDate(reminder.due_date ? new Date(reminder.due_date) : null);
       setPriority(reminder.priority);
     }
   }, [reminder]);
@@ -39,18 +41,14 @@ export function EditReminderModal({ visible, onClose, reminder }: EditReminderMo
   const handleSave = () => {
     if (!reminder) return;
 
-    if (!dueDate) {
-      Alert.alert('Invalid Date', 'Please select a due date');
-      return;
-    }
-
     updateReminder.mutate(
       {
         id: reminder.id,
         data: {
           title,
           description: description || undefined,
-          due_date: dueDate.toISOString(),
+          location: location || '',
+          due_date: dueDate ? dueDate.toISOString() : '',
           priority,
         },
       },
@@ -82,8 +80,11 @@ export function EditReminderModal({ visible, onClose, reminder }: EditReminderMo
           label="Due Date"
           value={dueDate}
           onChange={setDueDate}
-          placeholder="Select due date"
+          placeholder="Optional"
         />
+        <TouchableOpacity onPress={() => setDueDate(null)} style={styles.clearDateButton}>
+          <Text style={styles.clearDateText}>Clear due date</Text>
+        </TouchableOpacity>
 
         <View style={styles.field}>
           <Text style={styles.label}>Priority</Text>
@@ -123,6 +124,16 @@ export function EditReminderModal({ visible, onClose, reminder }: EditReminderMo
             placeholder="Reminder description"
             multiline
             numberOfLines={4}
+          />
+        </View>
+
+        <View style={styles.field}>
+          <Text style={styles.label}>Location</Text>
+          <TextInput
+            style={styles.input}
+            value={location}
+            onChangeText={setLocation}
+            placeholder="Optional location"
           />
         </View>
 
@@ -176,6 +187,15 @@ const styles = StyleSheet.create({
   priorityRow: {
     flexDirection: 'row',
     gap: 8,
+  },
+  clearDateButton: {
+    marginTop: -8,
+    marginBottom: 8,
+  },
+  clearDateText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '500',
   },
   priorityButton: {
     flex: 1,

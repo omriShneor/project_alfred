@@ -185,15 +185,6 @@ export function SettingsScreen() {
             />
           )}
         </Card>
-
-        {/* About Section */}
-        <Text style={styles.sectionTitle}>About</Text>
-        <Card>
-          <View style={styles.aboutRow}>
-            <Text style={styles.aboutLabel}>Version</Text>
-            <Text style={styles.aboutValue}>1.0.0</Text>
-          </View>
-        </Card>
       </ScrollView>
     </SafeAreaView>
   );
@@ -269,19 +260,5 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginTop: 20,
-  },
-  aboutRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-  },
-  aboutLabel: {
-    fontSize: 14,
-    color: colors.textSecondary,
-  },
-  aboutValue: {
-    fontSize: 14,
-    color: colors.text,
-    fontWeight: '500',
   },
 });

@@ -214,18 +214,22 @@ func (w *Worker) poll() {
 		return
 	}
 
-	fmt.Printf("Gmail worker: found %d emails to process\n", len(results))
+	fmt.Printf("Gmail worker: found %d emails matching tracked sources\n", len(results))
 
 	// Process each email
 	processedCount := 0
+	alreadyProcessedCount := 0
+	processedCheckErrorCount := 0
 	for _, result := range results {
 		// Check if already processed
 		processed, err := w.db.IsEmailProcessed(w.userID, result.Email.ID)
 		if err != nil {
 			fmt.Printf("Gmail worker: failed to check processed status: %v\n", err)
+			processedCheckErrorCount++
 			continue
 		}
 		if processed {
+			alreadyProcessedCount++
 			continue
 		}
 
@@ -254,7 +258,17 @@ func (w *Worker) poll() {
 		processedCount++
 	}
 
-	fmt.Printf("Gmail worker: processed %d new emails\n", processedCount)
+	fmt.Printf(
+		"Gmail worker: processed %d new emails, skipped %d already processed\n",
+		processedCount,
+		alreadyProcessedCount,
+	)
+	if processedCheckErrorCount > 0 {
+		fmt.Printf(
+			"Gmail worker: skipped %d emails due to processed-status check errors\n",
+			processedCheckErrorCount,
+		)
+	}
 
 	// Update last poll time
 	if err := w.db.UpdateGmailLastPoll(w.userID); err != nil {

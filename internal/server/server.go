@@ -273,6 +273,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	// Reminders API
 	mux.HandleFunc("GET /api/reminders", s.requireAuth(s.handleListReminders))
+	mux.HandleFunc("POST /api/reminders", s.requireAuth(s.handleCreateReminder))
 	mux.HandleFunc("GET /api/reminders/{id}", s.requireAuth(s.handleGetReminder))
 	mux.HandleFunc("PUT /api/reminders/{id}", s.requireAuth(s.handleUpdateReminder))
 	mux.HandleFunc("POST /api/reminders/{id}/confirm", s.requireAuth(s.handleConfirmReminder))

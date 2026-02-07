@@ -22,6 +22,12 @@ type SourceChannel struct {
 	CreatedAt         time.Time          `json:"created_at"`
 }
 
+const (
+	manualReminderSourceType  source.SourceType = "manual"
+	manualReminderChannelID                     = "manual:todo"
+	manualReminderChannelName                   = "My Tasks"
+)
+
 // ToSourceChannel converts a SourceChannel to source.Channel
 func (sc *SourceChannel) ToSourceChannel() source.Channel {
 	return source.Channel{
@@ -52,6 +58,36 @@ func (d *DB) CreateSourceChannel(userID int64, sourceType source.SourceType, cha
 	}
 
 	return d.GetSourceChannelByID(userID, id)
+}
+
+// EnsureManualReminderChannel returns a stable per-user channel for manually created reminders.
+func (d *DB) EnsureManualReminderChannel(userID int64) (*SourceChannel, error) {
+	channel, err := d.GetSourceChannelByIdentifier(userID, manualReminderSourceType, manualReminderChannelID)
+	if err != nil {
+		return nil, err
+	}
+	if channel != nil {
+		return channel, nil
+	}
+
+	created, err := d.CreateSourceChannel(
+		userID,
+		manualReminderSourceType,
+		source.ChannelTypeSender,
+		manualReminderChannelID,
+		manualReminderChannelName,
+	)
+	if err == nil {
+		return created, nil
+	}
+
+	// Handle races where another request created the channel first.
+	channel, lookupErr := d.GetSourceChannelByIdentifier(userID, manualReminderSourceType, manualReminderChannelID)
+	if lookupErr == nil && channel != nil {
+		return channel, nil
+	}
+
+	return nil, fmt.Errorf("failed to ensure manual reminder channel: %w", err)
 }
 
 // GetSourceChannelByID retrieves a channel by ID for a specific user

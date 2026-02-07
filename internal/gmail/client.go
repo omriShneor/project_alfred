@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strings"
+	"time"
 
 	"golang.org/x/oauth2"
 	"google.golang.org/api/gmail/v1"
@@ -20,16 +21,17 @@ type Client struct {
 
 // Email represents a parsed email message
 type Email struct {
-	ID        string
-	ThreadID  string
-	Subject   string
-	From      string
-	To        string
-	Date      string
-	Body      string // Plain text body
-	Snippet   string
-	Labels    []string
-	MessageID string // RFC 2822 Message-ID header
+	ID         string
+	ThreadID   string
+	Subject    string
+	From       string
+	To         string
+	Date       string
+	ReceivedAt time.Time
+	Body       string // Plain text body
+	Snippet    string
+	Labels     []string
+	MessageID  string // RFC 2822 Message-ID header
 }
 
 // NewClient creates a new Gmail client using an existing OAuth2 config and token
@@ -182,6 +184,11 @@ func (c *Client) parseMessage(msg *gmail.Message) *Email {
 		ThreadID: msg.ThreadId,
 		Snippet:  msg.Snippet,
 		Labels:   msg.LabelIds,
+	}
+
+	// Gmail internal date is epoch milliseconds in UTC.
+	if msg.InternalDate > 0 {
+		email.ReceivedAt = time.Unix(0, msg.InternalDate*int64(time.Millisecond)).UTC()
 	}
 
 	// Extract headers

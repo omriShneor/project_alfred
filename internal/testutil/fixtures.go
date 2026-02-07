@@ -429,7 +429,8 @@ type ReminderBuilder struct {
 	calendarID   string
 	title        string
 	description  string
-	dueDate      time.Time
+	location     string
+	dueDate      *time.Time
 	reminderTime *time.Time
 	priority     database.ReminderPriority
 	status       database.ReminderStatus
@@ -446,7 +447,7 @@ func NewReminderBuilder(channelID int64) *ReminderBuilder {
 		channelID:  channelID,
 		calendarID: "primary",
 		title:      "Test Reminder",
-		dueDate:    dueDate,
+		dueDate:    &dueDate,
 		priority:   database.ReminderPriorityNormal,
 		status:     database.ReminderStatusPending,
 		actionType: database.ReminderActionCreate,
@@ -473,9 +474,21 @@ func (b *ReminderBuilder) WithDescription(desc string) *ReminderBuilder {
 	return b
 }
 
+// WithLocation sets the location
+func (b *ReminderBuilder) WithLocation(location string) *ReminderBuilder {
+	b.location = location
+	return b
+}
+
 // WithDueDate sets the due date
 func (b *ReminderBuilder) WithDueDate(t time.Time) *ReminderBuilder {
-	b.dueDate = t
+	b.dueDate = &t
+	return b
+}
+
+// WithoutDueDate clears the due date
+func (b *ReminderBuilder) WithoutDueDate() *ReminderBuilder {
+	b.dueDate = nil
 	return b
 }
 
@@ -583,6 +596,7 @@ func (b *ReminderBuilder) Build(db *database.DB) (*database.Reminder, error) {
 		CalendarID:   b.calendarID,
 		Title:        b.title,
 		Description:  b.description,
+		Location:     b.location,
 		DueDate:      b.dueDate,
 		ReminderTime: b.reminderTime,
 		Priority:     b.priority,

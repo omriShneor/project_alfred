@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
@@ -44,8 +45,115 @@ func (s *Server) handleListReminders(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, reminders)
 }
 
+// handleCreateReminder creates a manual reminder/todo for the authenticated user.
+func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	var req struct {
+		Title        string  `json:"title"`
+		Description  string  `json:"description"`
+		Location     string  `json:"location"`
+		DueDate      *string `json:"due_date"`
+		ReminderTime *string `json:"reminder_time"`
+		Priority     string  `json:"priority"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		respondError(w, http.StatusBadRequest, "title is required")
+		return
+	}
+
+	var dueDate *time.Time
+	if req.DueDate != nil && strings.TrimSpace(*req.DueDate) != "" {
+		parsed, err := parseReminderDateTime(strings.TrimSpace(*req.DueDate))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid due_date format")
+			return
+		}
+		dueDate = &parsed
+	}
+
+	var reminderTime *time.Time
+	if req.ReminderTime != nil && strings.TrimSpace(*req.ReminderTime) != "" {
+		parsed, err := parseReminderDateTime(strings.TrimSpace(*req.ReminderTime))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid reminder_time format")
+			return
+		}
+		reminderTime = &parsed
+	}
+
+	priority, err := parseReminderPriority(req.Priority)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	manualChannel, err := s.db.EnsureManualReminderChannel(userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to setup manual reminders channel: %v", err))
+		return
+	}
+
+	calendarID, err := s.db.GetSelectedCalendarID(userID)
+	if err != nil || calendarID == "" {
+		calendarID = "primary"
+	}
+
+	reminder := &database.Reminder{
+		UserID:       userID,
+		ChannelID:    manualChannel.ID,
+		CalendarID:   calendarID,
+		Title:        title,
+		Description:  strings.TrimSpace(req.Description),
+		Location:     strings.TrimSpace(req.Location),
+		DueDate:      dueDate,
+		ReminderTime: reminderTime,
+		Priority:     priority,
+		ActionType:   database.ReminderActionCreate,
+		LLMReasoning: "manual reminder created by user",
+		Source:       "manual",
+	}
+
+	created, err := s.db.CreatePendingReminder(reminder)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to create reminder: %v", err))
+		return
+	}
+
+	// Manual reminders are user-approved by default.
+	if err := s.db.UpdateReminderStatus(created.ID, database.ReminderStatusConfirmed); err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to finalize reminder creation: %v", err))
+		return
+	}
+
+	updated, err := s.db.GetReminderByID(created.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "reminder created but could not be reloaded")
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, updated)
+}
+
 // handleGetReminder returns a single reminder by ID
 func (s *Server) handleGetReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -53,7 +161,7 @@ func (s *Server) handleGetReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reminder, err := s.db.GetReminderByID(id)
-	if err != nil {
+	if err != nil || reminder.UserID != userID {
 		respondError(w, http.StatusNotFound, "reminder not found")
 		return
 	}
@@ -75,6 +183,12 @@ func (s *Server) handleGetReminder(w http.ResponseWriter, r *http.Request) {
 
 // handleUpdateReminder updates a pending reminder's details
 func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -82,7 +196,7 @@ func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reminder, err := s.db.GetReminderByID(id)
-	if err != nil {
+	if err != nil || reminder.UserID != userID {
 		respondError(w, http.StatusNotFound, "reminder not found")
 		return
 	}
@@ -93,11 +207,12 @@ func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Title        string `json:"title"`
-		Description  string `json:"description"`
-		DueDate      string `json:"due_date"`
-		ReminderTime string `json:"reminder_time"`
-		Priority     string `json:"priority"`
+		Title        *string `json:"title"`
+		Description  *string `json:"description"`
+		Location     *string `json:"location"`
+		DueDate      *string `json:"due_date"`
+		ReminderTime *string `json:"reminder_time"`
+		Priority     *string `json:"priority"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -105,51 +220,66 @@ func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Use existing values if not provided
 	title := reminder.Title
-	if req.Title != "" {
-		title = req.Title
+	if req.Title != nil {
+		title = strings.TrimSpace(*req.Title)
+		if title == "" {
+			respondError(w, http.StatusBadRequest, "title cannot be empty")
+			return
+		}
 	}
 
 	description := reminder.Description
-	if req.Description != "" {
-		description = req.Description
+	if req.Description != nil {
+		description = strings.TrimSpace(*req.Description)
+	}
+
+	location := reminder.Location
+	if req.Location != nil {
+		location = strings.TrimSpace(*req.Location)
 	}
 
 	dueDate := reminder.DueDate
-	if req.DueDate != "" {
-		parsed, err := time.Parse(time.RFC3339, req.DueDate)
-		if err != nil {
-			parsed, err = time.Parse("2006-01-02T15:04:05", req.DueDate)
+	if req.DueDate != nil {
+		dueDateText := strings.TrimSpace(*req.DueDate)
+		if dueDateText == "" {
+			dueDate = nil
+		} else {
+			parsed, err := parseReminderDateTime(dueDateText)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid due_date format")
 				return
 			}
+			dueDate = &parsed
 		}
-		dueDate = parsed
 	}
 
-	var reminderTime *time.Time
-	if req.ReminderTime != "" {
-		parsed, err := time.Parse(time.RFC3339, req.ReminderTime)
-		if err != nil {
-			parsed, err = time.Parse("2006-01-02T15:04:05", req.ReminderTime)
+	reminderTime := reminder.ReminderTime
+	if req.ReminderTime != nil {
+		reminderTimeText := strings.TrimSpace(*req.ReminderTime)
+		if reminderTimeText == "" {
+			reminderTime = nil
+		} else {
+			parsed, err := parseReminderDateTime(reminderTimeText)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid reminder_time format")
 				return
 			}
+			reminderTime = &parsed
 		}
-		reminderTime = &parsed
-	} else {
-		reminderTime = reminder.ReminderTime
 	}
 
 	priority := reminder.Priority
-	if req.Priority != "" {
-		priority = database.ReminderPriority(req.Priority)
+	if req.Priority != nil && strings.TrimSpace(*req.Priority) != "" {
+		parsedPriority, err := parseReminderPriority(*req.Priority)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		priority = parsedPriority
 	}
 
-	if err := s.db.UpdatePendingReminder(id, title, description, dueDate, reminderTime, priority); err != nil {
+	if err := s.db.UpdatePendingReminder(id, title, description, location, dueDate, reminderTime, priority); err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update reminder: %v", err))
 		return
 	}
@@ -160,6 +290,12 @@ func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
 
 // handleConfirmReminder confirms a pending reminder, optionally syncing to Google Calendar
 func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -167,7 +303,7 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reminder, err := s.db.GetReminderByID(id)
-	if err != nil {
+	if err != nil || reminder.UserID != userID {
 		respondError(w, http.StatusNotFound, "reminder not found")
 		return
 	}
@@ -178,11 +314,6 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if sync is enabled and Google Calendar is connected
-	userID, err := getUserID(r)
-	if err != nil {
-		respondError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
 	gcalSettings, _ := s.db.GetGCalSettings(userID)
 	userGCalClient := s.getGCalClientForUser(userID)
 	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && userGCalClient != nil && userGCalClient.IsAuthenticated()
@@ -209,14 +340,21 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 	// Sync to Google Calendar as a reminder event
 	switch reminder.ActionType {
 	case database.ReminderActionCreate:
-		// Create reminder event in Google Calendar
-		// Use a 30-minute event block at the due date
-		endTime := reminder.DueDate.Add(30 * time.Minute)
+		if reminder.DueDate == nil {
+			// Cannot sync without a timestamp; keep reminder locally.
+			if err := s.db.UpdateReminderStatus(id, database.ReminderStatusConfirmed); err != nil {
+				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to confirm reminder: %v", err))
+				return
+			}
+			break
+		}
 
+		endTime := reminder.DueDate.Add(30 * time.Minute)
 		googleEventID, err := userGCalClient.CreateEvent(reminder.CalendarID, gcal.EventInput{
 			Summary:     "[Reminder] " + reminder.Title,
 			Description: reminder.Description,
-			StartTime:   reminder.DueDate,
+			Location:    reminder.Location,
+			StartTime:   *reminder.DueDate,
 			EndTime:     endTime,
 		})
 		if err != nil {
@@ -231,28 +369,30 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 		}
 
 	case database.ReminderActionUpdate:
-		// If no Google event ID, just confirm locally
-		if reminder.GoogleEventID == nil {
+		// If no Google event ID or due date, just confirm locally
+		if reminder.GoogleEventID == nil || reminder.DueDate == nil {
 			if err := s.db.UpdateReminderStatus(id, database.ReminderStatusConfirmed); err != nil {
 				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to confirm reminder: %v", err))
 				return
 			}
-		} else {
-			endTime := reminder.DueDate.Add(30 * time.Minute)
-			err = userGCalClient.UpdateEvent(reminder.CalendarID, *reminder.GoogleEventID, gcal.EventInput{
-				Summary:     "[Reminder] " + reminder.Title,
-				Description: reminder.Description,
-				StartTime:   reminder.DueDate,
-				EndTime:     endTime,
-			})
-			if err != nil {
-				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update calendar reminder: %v", err))
-				return
-			}
-			if err := s.db.UpdateReminderStatus(id, database.ReminderStatusSynced); err != nil {
-				respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update reminder status: %v", err))
-				return
-			}
+			break
+		}
+
+		endTime := reminder.DueDate.Add(30 * time.Minute)
+		err = userGCalClient.UpdateEvent(reminder.CalendarID, *reminder.GoogleEventID, gcal.EventInput{
+			Summary:     "[Reminder] " + reminder.Title,
+			Description: reminder.Description,
+			Location:    reminder.Location,
+			StartTime:   *reminder.DueDate,
+			EndTime:     endTime,
+		})
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update calendar reminder: %v", err))
+			return
+		}
+		if err := s.db.UpdateReminderStatus(id, database.ReminderStatusSynced); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to update reminder status: %v", err))
+			return
 		}
 
 	case database.ReminderActionDelete:
@@ -274,6 +414,12 @@ func (s *Server) handleConfirmReminder(w http.ResponseWriter, r *http.Request) {
 
 // handleRejectReminder rejects a pending reminder
 func (s *Server) handleRejectReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -281,7 +427,7 @@ func (s *Server) handleRejectReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reminder, err := s.db.GetReminderByID(id)
-	if err != nil {
+	if err != nil || reminder.UserID != userID {
 		respondError(w, http.StatusNotFound, "reminder not found")
 		return
 	}
@@ -302,6 +448,12 @@ func (s *Server) handleRejectReminder(w http.ResponseWriter, r *http.Request) {
 
 // handleCompleteReminder marks a confirmed/synced reminder as completed
 func (s *Server) handleCompleteReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -309,7 +461,7 @@ func (s *Server) handleCompleteReminder(w http.ResponseWriter, r *http.Request) 
 	}
 
 	reminder, err := s.db.GetReminderByID(id)
-	if err != nil {
+	if err != nil || reminder.UserID != userID {
 		respondError(w, http.StatusNotFound, "reminder not found")
 		return
 	}
@@ -331,6 +483,12 @@ func (s *Server) handleCompleteReminder(w http.ResponseWriter, r *http.Request) 
 
 // handleDismissReminder dismisses a reminder (user no longer wants to be reminded)
 func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -338,7 +496,7 @@ func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	reminder, err := s.db.GetReminderByID(id)
-	if err != nil {
+	if err != nil || reminder.UserID != userID {
 		respondError(w, http.StatusNotFound, "reminder not found")
 		return
 	}
@@ -350,11 +508,6 @@ func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// If synced to Google Calendar, delete the event
-	userID, err := getUserID(r)
-	if err != nil {
-		respondError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
 	userGCalClient := s.getGCalClientForUser(userID)
 	if reminder.GoogleEventID != nil && userGCalClient != nil && userGCalClient.IsAuthenticated() {
 		if err := userGCalClient.DeleteEvent(reminder.CalendarID, *reminder.GoogleEventID); err != nil {
@@ -369,4 +522,31 @@ func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
 
 	updatedReminder, _ := s.db.GetReminderByID(id)
 	respondJSON(w, http.StatusOK, updatedReminder)
+}
+
+func parseReminderDateTime(s string) (time.Time, error) {
+	if t, err := parseEventTime(s); err == nil {
+		return t, nil
+	}
+
+	// Accept date-only values and default them to 09:00 local time.
+	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+		return time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, time.Local), nil
+	}
+
+	return time.Time{}, fmt.Errorf("unrecognized datetime format")
+}
+
+func parseReminderPriority(raw string) (database.ReminderPriority, error) {
+	normalized := strings.TrimSpace(raw)
+	if normalized == "" {
+		return database.ReminderPriorityNormal, nil
+	}
+
+	switch database.ReminderPriority(normalized) {
+	case database.ReminderPriorityLow, database.ReminderPriorityNormal, database.ReminderPriorityHigh:
+		return database.ReminderPriority(normalized), nil
+	default:
+		return "", fmt.Errorf("invalid priority: must be one of low, normal, high")
+	}
 }

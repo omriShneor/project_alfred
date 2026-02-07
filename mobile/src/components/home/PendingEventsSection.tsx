@@ -7,6 +7,16 @@ import { colors } from '../../theme/colors';
 
 export function PendingEventsSection() {
   const { data: events, isLoading } = useEvents({ status: 'pending' });
+  const sortedEvents = React.useMemo(() => {
+    if (!events) {
+      return [];
+    }
+
+    return [...events].sort(
+      (a, b) =>
+        new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+    );
+  }, [events]);
 
   if (isLoading) {
     return (
@@ -17,7 +27,7 @@ export function PendingEventsSection() {
     );
   }
 
-  if (!events || events.length === 0) {
+  if (sortedEvents.length === 0) {
     return (
       <View style={styles.container}>
         <Text style={styles.sectionTitle}>PENDING EVENTS</Text>
@@ -33,8 +43,8 @@ export function PendingEventsSection() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.sectionTitle}>PENDING EVENTS ({events.length})</Text>
-      {events.map((event) => (
+      <Text style={styles.sectionTitle}>PENDING EVENTS ({sortedEvents.length})</Text>
+      {sortedEvents.map((event) => (
         <CompactEventCard key={event.id} event={event} />
       ))}
     </View>

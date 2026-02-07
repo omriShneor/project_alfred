@@ -10,7 +10,8 @@ export interface Reminder {
   calendar_id: string;
   title: string;
   description: string;
-  due_date: string;
+  location?: string;
+  due_date?: string;
   reminder_time?: string;
   priority: ReminderPriority;
   status: ReminderStatus;
@@ -37,6 +38,16 @@ export interface ReminderWithMessage extends Reminder {
 export interface UpdateReminderRequest {
   title?: string;
   description?: string;
+  location?: string;
+  due_date?: string;
+  reminder_time?: string;
+  priority?: ReminderPriority;
+}
+
+export interface CreateReminderRequest {
+  title: string;
+  description?: string;
+  location?: string;
   due_date?: string;
   reminder_time?: string;
   priority?: ReminderPriority;

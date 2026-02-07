@@ -23,7 +23,10 @@ export function CompactReminderCard({ reminder }: CompactReminderCardProps) {
   const confirmReminder = useConfirmReminder();
   const rejectReminder = useRejectReminder();
 
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = (dateString?: string) => {
+    if (!dateString) {
+      return 'No due date';
+    }
     const date = new Date(dateString);
     return date.toLocaleString(undefined, {
       weekday: 'short',
@@ -97,6 +100,9 @@ export function CompactReminderCard({ reminder }: CompactReminderCardProps) {
               )}
             </View>
             <Text style={styles.dateTime}>Due: {formatDateTime(reminder.due_date)}</Text>
+            {reminder.location ? (
+              <Text style={styles.location}>Location: {reminder.location}</Text>
+            ) : null}
           </View>
 
           <View style={styles.actions}>
@@ -180,6 +186,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginLeft: 16,
+  },
+  location: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginLeft: 16,
+    marginTop: 2,
   },
   actions: {
     flexDirection: 'row',

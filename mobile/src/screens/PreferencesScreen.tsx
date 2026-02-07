@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Text, StyleSheet, ScrollView, TouchableOpacity, View, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
 import * as ExpoLinking from 'expo-linking';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, useFocusEffect } from '@react-navigation/native';
+import { useNavigation, useFocusEffect, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Card, Button, LoadingSpinner } from '../components/common';
@@ -23,10 +23,12 @@ import {
   useDisconnectTelegram,
   useGmailStatus,
 } from '../hooks';
+import { useAppStatus } from '../hooks/useAppStatus';
 import { disconnectGScope, requestAdditionalScopes, exchangeAddScopesCode } from '../api';
-import type { MainStackParamList } from '../navigation/MainNavigator';
+import type { MainStackParamList, TabParamList } from '../navigation/MainNavigator';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
+type PreferencesRouteProp = RouteProp<TabParamList, 'Preferences'>;
 
 interface PreferenceCardProps {
   title: string;
@@ -35,6 +37,8 @@ interface PreferenceCardProps {
   connected: boolean;
   onPress: () => void;
 }
+
+type AccountIssueKey = 'whatsapp' | 'telegram' | 'gmail' | 'gcal';
 
 function PreferenceCard({ title, description, icon, connected, onPress }: PreferenceCardProps) {
   return (
@@ -61,6 +65,8 @@ function PreferenceCard({ title, description, icon, connected, onPress }: Prefer
 
 export function PreferencesScreen() {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<PreferencesRouteProp>();
+  const { data: appStatus } = useAppStatus();
   const { data: waStatus, isLoading: waLoading, refetch: refetchWaStatus } = useWhatsAppStatus();
   const { data: gcalStatus, isLoading: gcalLoading, refetch: refetchGcalStatus } = useGCalStatus();
   const { data: gmailStatus, isLoading: gmailLoading, refetch: refetchGmailStatus } = useGmailStatus();
@@ -96,6 +102,70 @@ export function PreferencesScreen() {
   const gmailHasScopes = gmailStatus?.has_scopes ?? false;
   // Check if Google Calendar has scopes (not just connected)
   const gcalHasScopes = gcalStatus?.has_scopes ?? false;
+
+  const reauthSourceSet = useMemo(() => {
+    const requested = route.params?.reauthSources ?? [];
+    return new Set(requested);
+  }, [route.params?.reauthSources]);
+
+  const accountIssues = useMemo<Partial<Record<AccountIssueKey, string>>>(() => {
+    const issues: Partial<Record<AccountIssueKey, string>> = {};
+
+    const whatsappNeedsReauth =
+      !whatsappConnected &&
+      (Boolean(appStatus?.whatsapp?.enabled) || reauthSourceSet.has('whatsapp'));
+    if (whatsappNeedsReauth) {
+      issues.whatsapp =
+        waStatus?.message ??
+        'Session is no longer authenticated. Reconnect to resume tracking messages.';
+    }
+
+    const telegramNeedsReauth =
+      !telegramConnected &&
+      (Boolean(appStatus?.telegram?.enabled) || reauthSourceSet.has('telegram'));
+    if (telegramNeedsReauth) {
+      issues.telegram =
+        telegramStatus?.message ??
+        'Session is no longer authenticated. Reconnect to resume tracking messages.';
+    }
+
+    const gmailNeedsReauth =
+      !gmailHasScopes &&
+      (Boolean(appStatus?.gmail?.enabled) || reauthSourceSet.has('gmail'));
+    if (gmailNeedsReauth) {
+      issues.gmail =
+        gmailStatus?.message ??
+        'Gmail authorization is missing. Reconnect Gmail to keep scanning emails.';
+    }
+
+    const gcalNeedsReauth =
+      !gcalHasScopes &&
+      (Boolean(appStatus?.google_calendar?.enabled) ||
+        reauthSourceSet.has('google_calendar'));
+    if (gcalNeedsReauth) {
+      issues.gcal =
+        gcalStatus?.message ??
+        'Google Calendar authorization is missing. Reconnect to restore calendar sync.';
+    }
+
+    return issues;
+  }, [
+    appStatus?.whatsapp?.enabled,
+    appStatus?.telegram?.enabled,
+    appStatus?.gmail?.enabled,
+    appStatus?.google_calendar?.enabled,
+    whatsappConnected,
+    telegramConnected,
+    gmailHasScopes,
+    gcalHasScopes,
+    waStatus?.message,
+    telegramStatus?.message,
+    gmailStatus?.message,
+    gcalStatus?.message,
+    reauthSourceSet,
+  ]);
+
+  const issueCount = Object.keys(accountIssues).length;
 
   // Reset WhatsApp connect UI when connected
   useEffect(() => {
@@ -328,7 +398,7 @@ export function PreferencesScreen() {
   // Show loading state during initial data fetch to prevent flash
   if (isInitialLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.loadingContainer}>
           <LoadingSpinner />
         </View>
@@ -337,7 +407,7 @@ export function PreferencesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -351,6 +421,18 @@ export function PreferencesScreen() {
         <Text style={styles.sectionDescription}>
             Select where Alfred should look for event, reminder and task suggestions.
         </Text>
+
+        {issueCount > 0 && (
+          <Card style={styles.issueBannerCard}>
+            <View style={styles.issueBannerHeader}>
+              <Ionicons name="warning-outline" size={16} color={colors.warning} />
+              <Text style={styles.issueBannerTitle}>Re-authentication needed</Text>
+            </View>
+            <Text style={styles.issueBannerText}>
+              Reconnect the highlighted source{issueCount === 1 ? '' : 's'} below to restore full coverage.
+            </Text>
+          </Card>
+        )}
 
         {whatsappConnected && (
           <PreferenceCard
@@ -439,6 +521,18 @@ export function PreferencesScreen() {
                           <Text style={styles.accountStatus}>
                             {whatsappConnected ? 'Connected' : 'Not connected'}
                           </Text>
+                          {accountIssues.whatsapp ? (
+                            <View style={styles.accountIssueRow}>
+                              <Ionicons
+                                name="warning-outline"
+                                size={14}
+                                color={colors.warning}
+                              />
+                              <Text style={styles.accountIssueText}>
+                                {accountIssues.whatsapp}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                       </TouchableOpacity>
                       {whatsappConnected ? (
@@ -529,6 +623,18 @@ export function PreferencesScreen() {
                           <Text style={styles.accountStatus}>
                             {telegramConnected ? 'Connected' : 'Not connected'}
                           </Text>
+                          {accountIssues.telegram ? (
+                            <View style={styles.accountIssueRow}>
+                              <Ionicons
+                                name="warning-outline"
+                                size={14}
+                                color={colors.warning}
+                              />
+                              <Text style={styles.accountIssueText}>
+                                {accountIssues.telegram}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                       </TouchableOpacity>
                       {telegramConnected ? (
@@ -618,6 +724,18 @@ export function PreferencesScreen() {
                           <Text style={styles.accountStatus}>
                             {gmailHasScopes ? 'Connected' : 'Not connected'}
                           </Text>
+                          {accountIssues.gmail ? (
+                            <View style={styles.accountIssueRow}>
+                              <Ionicons
+                                name="warning-outline"
+                                size={14}
+                                color={colors.warning}
+                              />
+                              <Text style={styles.accountIssueText}>
+                                {accountIssues.gmail}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                       </View>
                       {gmailHasScopes ? (
@@ -651,6 +769,18 @@ export function PreferencesScreen() {
                           <Text style={styles.accountStatus}>
                             {gcalHasScopes ? 'Connected' : 'Not connected'}
                           </Text>
+                          {accountIssues.gcal ? (
+                            <View style={styles.accountIssueRow}>
+                              <Ionicons
+                                name="warning-outline"
+                                size={14}
+                                color={colors.warning}
+                              />
+                              <Text style={styles.accountIssueText}>
+                                {accountIssues.gcal}
+                              </Text>
+                            </View>
+                          ) : null}
                         </View>
                       </View>
                       {gcalHasScopes ? (
@@ -721,6 +851,28 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
+  issueBannerCard: {
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.warning + '55',
+    backgroundColor: colors.warning + '10',
+  },
+  issueBannerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  issueBannerTitle: {
+    marginLeft: 6,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  issueBannerText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
   // Account styles
   accountRow: {
     flexDirection: 'row',
@@ -749,6 +901,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  accountIssueRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginTop: 4,
+    marginRight: 8,
+  },
+  accountIssueText: {
+    flex: 1,
+    marginLeft: 5,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.warning,
   },
   disconnectButton: {
     paddingHorizontal: 12,

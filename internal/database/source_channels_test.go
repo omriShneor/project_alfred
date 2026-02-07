@@ -145,6 +145,25 @@ func TestCreateSourceChannel_SameIdentifierDifferentUsers(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestEnsureManualReminderChannel(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+
+	first, err := db.EnsureManualReminderChannel(user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Equal(t, user.ID, first.UserID)
+	assert.Equal(t, source.SourceType("manual"), first.SourceType)
+	assert.Equal(t, source.ChannelTypeSender, first.Type)
+	assert.Equal(t, "manual:todo", first.Identifier)
+	assert.Equal(t, "My Tasks", first.Name)
+
+	second, err := db.EnsureManualReminderChannel(user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	assert.Equal(t, first.ID, second.ID, "channel should be reused")
+}
+
 func TestGetSourceChannelByID(t *testing.T) {
 	db := NewTestDB(t)
 	user := CreateTestUser(t, db)

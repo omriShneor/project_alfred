@@ -73,10 +73,11 @@ func (rc *ReminderCreator) createReminder(_ context.Context, params ReminderCrea
 	reminderData := params.Analysis.Reminder
 
 	// Parse due date
-	dueDate, err := parseReminderTime(reminderData.DueDate)
+	parsedDueDate, err := parseReminderTime(reminderData.DueDate)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse due date: %w", err)
 	}
+	dueDate := &parsedDueDate
 
 	// Parse reminder time (optional, defaults to due date)
 	var reminderTime *time.Time
@@ -97,17 +98,18 @@ func (rc *ReminderCreator) createReminder(_ context.Context, params ReminderCrea
 	}
 
 	reminder := &database.Reminder{
-		ChannelID:    params.ChannelID,
-		CalendarID:   calendarID,
-		Title:        reminderData.Title,
-		Description:  reminderData.Description,
-		DueDate:      dueDate,
-		ReminderTime: reminderTime,
-		Priority:     priority,
-		ActionType:   database.ReminderActionCreate,
+		UserID:        params.UserID,
+		ChannelID:     params.ChannelID,
+		CalendarID:    calendarID,
+		Title:         reminderData.Title,
+		Description:   reminderData.Description,
+		DueDate:       dueDate,
+		ReminderTime:  reminderTime,
+		Priority:      priority,
+		ActionType:    database.ReminderActionCreate,
 		OriginalMsgID: params.MessageID,
-		LLMReasoning: params.Analysis.Reasoning,
-		Source:       string(params.SourceType),
+		LLMReasoning:  params.Analysis.Reasoning,
+		Source:        string(params.SourceType),
 	}
 
 	created, err := rc.db.CreatePendingReminder(reminder)
@@ -121,8 +123,12 @@ func (rc *ReminderCreator) createReminder(_ context.Context, params ReminderCrea
 			*params.EmailSourceID, created.ID)
 	}
 
+	dueLabel := "none"
+	if created.DueDate != nil {
+		dueLabel = created.DueDate.Format("2006-01-02 15:04")
+	}
 	fmt.Printf("Created pending reminder: %s (ID: %d, Due: %s, Priority: %s, Source: %s)\n",
-		created.Title, created.ID, created.DueDate.Format("2006-01-02 15:04"), created.Priority, params.SourceType)
+		created.Title, created.ID, dueLabel, created.Priority, params.SourceType)
 
 	// Send notification (non-blocking, don't fail reminder creation)
 	if rc.notifyService != nil {
@@ -170,7 +176,7 @@ func (rc *ReminderCreator) updateReminder(_ context.Context, params ReminderCrea
 	if reminderData.DueDate != "" {
 		parsed, err := parseReminderTime(reminderData.DueDate)
 		if err == nil {
-			dueDate = parsed
+			dueDate = &parsed
 		}
 	}
 
@@ -194,6 +200,7 @@ func (rc *ReminderCreator) updateReminder(_ context.Context, params ReminderCrea
 		existing.ID,
 		title,
 		description,
+		existing.Location,
 		dueDate,
 		reminderTime,
 		priority,

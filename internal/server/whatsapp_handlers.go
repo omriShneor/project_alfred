@@ -20,6 +20,7 @@ import (
 type TopContactResponse struct {
 	Identifier     string `json:"identifier"`
 	Name           string `json:"name"`
+	PushName       string `json:"push_name,omitempty"`
 	SecondaryLabel string `json:"secondary_label"` // Pre-formatted: "+1234567890"
 	MessageCount   int    `json:"message_count"`
 	IsTracked      bool   `json:"is_tracked"`
@@ -179,6 +180,7 @@ func (s *Server) handleWhatsAppContactSearch(w http.ResponseWriter, r *http.Requ
 		results = append(results, TopContactResponse{
 			Identifier:     identifier,
 			Name:           name,
+			PushName:       push,
 			SecondaryLabel: "+" + phone,
 			IsTracked:      isTracked,
 			ChannelID:      channelID,
@@ -390,7 +392,42 @@ func (s *Server) handleListWhatsappChannels(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	respondJSON(w, http.StatusOK, channels)
+
+	pushNameByIdentifier := map[string]string{}
+	if s.clientManager != nil {
+		if waClient, err := s.clientManager.GetWhatsAppClient(userID); err == nil &&
+			waClient != nil && waClient.WAClient != nil && waClient.WAClient.Store != nil && waClient.WAClient.Store.Contacts != nil {
+			if allContacts, err := waClient.WAClient.Store.Contacts.GetAllContacts(r.Context()); err == nil {
+				for jid, contact := range allContacts {
+					if jid.Server != "s.whatsapp.net" {
+						continue
+					}
+					push := strings.TrimSpace(contact.PushName)
+					if push == "" {
+						continue
+					}
+					identifier := jid.User
+					pushNameByIdentifier[identifier] = push
+					pushNameByIdentifier[identifier+"@s.whatsapp.net"] = push
+				}
+			}
+		}
+	}
+
+	type whatsappChannelResponse struct {
+		*database.SourceChannel
+		PushName string `json:"push_name,omitempty"`
+	}
+
+	response := make([]whatsappChannelResponse, 0, len(channels))
+	for _, channel := range channels {
+		response = append(response, whatsappChannelResponse{
+			SourceChannel: channel,
+			PushName:      pushNameByIdentifier[channel.Identifier],
+		})
+	}
+
+	respondJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Request) {

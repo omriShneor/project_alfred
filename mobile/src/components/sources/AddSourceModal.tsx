@@ -191,7 +191,7 @@ export function AddSourceModal({
     }
 
     const matchingContacts = displayedContacts.filter((c) => {
-      const fields = [c.name, c.secondary_label, c.identifier]
+      const fields = [c.name, c.push_name, c.secondary_label, c.identifier]
         .filter((value): value is string => Boolean(value))
         .map((value) => value.toLowerCase());
       return fields.some((value) => value === normalizedValue);
@@ -263,6 +263,8 @@ export function AddSourceModal({
 
   const renderContactItem = (item: SourceTopContact, index: number, showSeparator: boolean) => {
     const selected = selectedContacts.has(item.identifier);
+    const subtitle =
+      item.push_name && item.push_name !== item.name ? item.push_name : item.secondary_label;
     return (
       <React.Fragment key={item.identifier}>
         {showSeparator && <View style={styles.separator} />}
@@ -279,9 +281,9 @@ export function AddSourceModal({
             <Text style={styles.contactName} numberOfLines={1}>
               {item.name || item.secondary_label || item.identifier}
             </Text>
-            {item.name && item.secondary_label && (
+            {item.name && subtitle && (
               <Text style={styles.contactIdentifier} numberOfLines={1}>
-                {item.secondary_label}
+                {subtitle}
               </Text>
             )}
           </View>
@@ -340,20 +342,20 @@ export function AddSourceModal({
       onClose={onClose}
       title={title}
       footer={
-        isCustomInputFocused && keyboardHeight > 0 ? (
-          <View style={styles.floatingFooter}>
-            <Button
-              title="Add source"
-              onPress={handleAddCustomToList}
-              disabled={!customInput.trim()}
-            />
-          </View>
-        ) : totalSelected > 0 ? (
+        totalSelected > 0 ? (
           <View style={styles.floatingFooter}>
             <Button
               title={`Add ${totalSelected} sources`}
               onPress={handleAddAllSelected}
               loading={isAdding || addContactsLoading || addCustomLoading}
+            />
+          </View>
+        ) : isCustomInputFocused && keyboardHeight > 0 ? (
+          <View style={styles.floatingFooter}>
+            <Button
+              title="Add source"
+              onPress={handleAddCustomToList}
+              disabled={!customInput.trim()}
             />
           </View>
         ) : undefined

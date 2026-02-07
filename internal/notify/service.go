@@ -101,7 +101,10 @@ func (s *Service) NotifyPendingReminder(ctx context.Context, reminder *database.
 	if prefs.PushEnabled && prefs.PushToken != "" {
 		expoPush, ok := s.pushNotifier.(*ExpoPushNotifier)
 		if ok && expoPush.IsConfigured() {
-			body := fmt.Sprintf("Due: %s", reminder.DueDate.Format("Jan 2 at 3:04 PM"))
+			body := "No due date"
+			if reminder.DueDate != nil {
+				body = fmt.Sprintf("Due: %s", reminder.DueDate.Format("Jan 2 at 3:04 PM"))
+			}
 			if reminder.Description != "" {
 				body = reminder.Description + "\n" + body
 			}

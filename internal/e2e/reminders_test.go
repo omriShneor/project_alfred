@@ -93,6 +93,71 @@ func TestReminderLifecycle(t *testing.T) {
 	})
 }
 
+func TestManualReminderCreation(t *testing.T) {
+	ts := testutil.NewTestServer(t)
+
+	t.Run("create manual reminder without due date", func(t *testing.T) {
+		payload := map[string]interface{}{
+			"title":       "Buy new running shoes",
+			"description": "Check weekend sales",
+			"location":    "City Mall",
+			"priority":    "normal",
+		}
+		body, _ := json.Marshal(payload)
+
+		req, err := http.NewRequest("POST", ts.BaseURL()+"/api/reminders", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var created database.Reminder
+		err = json.NewDecoder(resp.Body).Decode(&created)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Buy new running shoes", created.Title)
+		assert.Equal(t, "Check weekend sales", created.Description)
+		assert.Equal(t, "City Mall", created.Location)
+		assert.Equal(t, database.ReminderStatusConfirmed, created.Status)
+		assert.Equal(t, "manual", created.Source)
+		assert.Nil(t, created.DueDate)
+	})
+
+	t.Run("create manual reminder with due date", func(t *testing.T) {
+		due := time.Now().Add(36 * time.Hour).Truncate(time.Second)
+		payload := map[string]interface{}{
+			"title":       "Renew car registration",
+			"description": "Submit online",
+			"due_date":    due.Format(time.RFC3339),
+			"priority":    "high",
+		}
+		body, _ := json.Marshal(payload)
+
+		req, err := http.NewRequest("POST", ts.BaseURL()+"/api/reminders", bytes.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := ts.Client().Do(req)
+		require.NoError(t, err)
+		defer resp.Body.Close()
+
+		assert.Equal(t, http.StatusCreated, resp.StatusCode)
+
+		var created database.Reminder
+		err = json.NewDecoder(resp.Body).Decode(&created)
+		require.NoError(t, err)
+
+		require.NotNil(t, created.DueDate)
+		assert.WithinDuration(t, due, *created.DueDate, time.Second)
+		assert.Equal(t, database.ReminderPriorityHigh, created.Priority)
+		assert.Equal(t, database.ReminderStatusConfirmed, created.Status)
+	})
+}
+
 func TestReminderConfirmation(t *testing.T) {
 	ts := testutil.NewTestServer(t)
 

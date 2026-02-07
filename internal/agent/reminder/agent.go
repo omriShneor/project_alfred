@@ -134,12 +134,16 @@ func buildUserPrompt(
 	if len(existingReminders) > 0 {
 		prompt.WriteString("\n## Existing Reminders for this channel\n\n")
 		for _, reminder := range existingReminders {
+			dueLabel := "No due date"
+			if reminder.DueDate != nil {
+				dueLabel = reminder.DueDate.Format("2006-01-02 15:04")
+			}
 			prompt.WriteString(fmt.Sprintf("- [AlfredID: %d, Status: %s, Priority: %s] %s - Due: %s",
 				reminder.ID,
 				reminder.Status,
 				reminder.Priority,
 				reminder.Title,
-				reminder.DueDate.Format("2006-01-02 15:04"),
+				dueLabel,
 			))
 			if reminder.Description != "" {
 				prompt.WriteString(fmt.Sprintf(" (%s)", reminder.Description))

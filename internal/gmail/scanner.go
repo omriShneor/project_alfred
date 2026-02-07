@@ -83,7 +83,8 @@ func BuildCombinedQuery(sources []*EmailSource, sinceTime *time.Time) string {
 
 	combined := strings.Join(queries, " OR ")
 
-	// Add time filter if provided
+	// Add coarse date filter if provided. Gmail's after: operator is date-only,
+	// so we still apply an exact timestamp cutoff after fetching each message.
 	if sinceTime != nil {
 		dateStr := sinceTime.Format("2006/01/02")
 		combined = fmt.Sprintf("(%s) after:%s", combined, dateStr)
@@ -115,6 +116,9 @@ func (s *Scanner) ScanForEmails(sources []*EmailSource, sinceTime *time.Time, ma
 			fmt.Printf("Warning: failed to get message %s: %v\n", msg.Id, err)
 			continue
 		}
+		if !passesSinceTimeFilter(email, sinceTime) {
+			continue
+		}
 
 		// Determine which source this email matches
 		source := s.matchSource(email, sources)
@@ -139,7 +143,8 @@ func (s *Scanner) ScanSourceEmails(source *EmailSource, sinceTime *time.Time, ma
 		return nil, fmt.Errorf("invalid source configuration")
 	}
 
-	// Add time filter if provided
+	// Add coarse date filter if provided. Gmail's after: operator is date-only,
+	// so we still apply an exact timestamp cutoff after fetching each message.
 	if sinceTime != nil {
 		dateStr := sinceTime.Format("2006/01/02")
 		query = fmt.Sprintf("%s after:%s", query, dateStr)
@@ -155,6 +160,9 @@ func (s *Scanner) ScanSourceEmails(source *EmailSource, sinceTime *time.Time, ma
 		email, err := s.client.GetMessage(msg.Id)
 		if err != nil {
 			fmt.Printf("Warning: failed to get message %s: %v\n", msg.Id, err)
+			continue
+		}
+		if !passesSinceTimeFilter(email, sinceTime) {
 			continue
 		}
 
@@ -199,4 +207,16 @@ func (s *Scanner) matchSource(email *Email, sources []*EmailSource) *EmailSource
 	}
 
 	return nil
+}
+
+// passesSinceTimeFilter applies an exact timestamp cutoff after message fetch.
+func passesSinceTimeFilter(email *Email, sinceTime *time.Time) bool {
+	if sinceTime == nil || email == nil {
+		return true
+	}
+	if email.ReceivedAt.IsZero() {
+		// If timestamp is unavailable, keep behavior permissive.
+		return true
+	}
+	return email.ReceivedAt.After(*sinceTime)
 }

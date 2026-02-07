@@ -5,10 +5,10 @@ export interface ConnectionStatus {
 
 export interface AppStatus {
   onboarding_complete: boolean;
-  whatsapp: ConnectionStatus;
-  telegram: ConnectionStatus;
-  gmail: ConnectionStatus;
-  google_calendar: ConnectionStatus;
+  whatsapp?: ConnectionStatus;
+  telegram?: ConnectionStatus;
+  gmail?: ConnectionStatus;
+  google_calendar?: ConnectionStatus;
 }
 
 export interface CompleteOnboardingRequest {

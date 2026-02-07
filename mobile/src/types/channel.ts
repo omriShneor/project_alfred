@@ -7,6 +7,7 @@ export interface Channel {
   type: ChannelType;
   identifier: string;
   name: string;
+  push_name?: string; // WhatsApp profile name, when available
   enabled: boolean;
   created_at: string;
 }
@@ -34,6 +35,7 @@ export interface UpdateChannelRequest {
 export interface SourceTopContact {
   identifier: string;
   name: string;
+  push_name?: string; // WhatsApp profile name (if different from full name)
   secondary_label?: string; // Pre-formatted by backend: "+1234567890" or "@username"
   message_count: number;
   is_tracked: boolean;

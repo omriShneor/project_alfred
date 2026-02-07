@@ -20,7 +20,10 @@ export function AcceptedReminderCard({ reminder }: AcceptedReminderCardProps) {
   const completeReminder = useCompleteReminder();
   const dismissReminder = useDismissReminder();
 
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = (dateString?: string) => {
+    if (!dateString) {
+      return 'No due date';
+    }
     const date = new Date(dateString);
     return date.toLocaleString(undefined, {
       weekday: 'short',
@@ -32,6 +35,9 @@ export function AcceptedReminderCard({ reminder }: AcceptedReminderCardProps) {
   };
 
   const isOverdue = () => {
+    if (!reminder.due_date) {
+      return false;
+    }
     const now = new Date();
     const dueDate = new Date(reminder.due_date);
     return dueDate < now;
@@ -86,6 +92,9 @@ export function AcceptedReminderCard({ reminder }: AcceptedReminderCardProps) {
           <Text style={[styles.dateTime, isOverdue() && styles.overdueText]}>
             {isOverdue() ? 'Overdue: ' : 'Due: '}{formatDateTime(reminder.due_date)}
           </Text>
+          {reminder.location ? (
+            <Text style={styles.location}>Location: {reminder.location}</Text>
+          ) : null}
         </View>
 
         <View style={styles.actions}>
@@ -156,6 +165,12 @@ const styles = StyleSheet.create({
   },
   overdueText: {
     color: colors.danger,
+  },
+  location: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginLeft: 16,
+    marginTop: 2,
   },
   actions: {
     flexDirection: 'row',

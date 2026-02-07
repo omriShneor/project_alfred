@@ -1,11 +1,15 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet, RefreshControl } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+  RefreshControl,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  PendingRemindersSection,
+  HomeOverviewSection,
+  TodoSection,
   AcceptedRemindersSection,
-  PendingEventsSection,
   TodayCalendarSection,
 } from '../components/home';
 import { colors } from '../theme/colors';
@@ -20,6 +24,7 @@ export function HomeScreen() {
       queryClient.invalidateQueries({ queryKey: ['events'] }),
       queryClient.invalidateQueries({ queryKey: ['reminders'] }),
       queryClient.invalidateQueries({ queryKey: ['todayEvents'] }),
+      queryClient.invalidateQueries({ queryKey: ['appStatus'] }),
     ]);
     setRefreshing(false);
   }, [queryClient]);
@@ -29,6 +34,7 @@ export function HomeScreen() {
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -38,9 +44,9 @@ export function HomeScreen() {
           />
         }
       >
-        <PendingRemindersSection />
+        <HomeOverviewSection />
+        <TodoSection />
         <AcceptedRemindersSection />
-        <PendingEventsSection />
         <TodayCalendarSection />
       </ScrollView>
     </SafeAreaView>
@@ -57,5 +63,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
+    paddingBottom: 32,
   },
 });

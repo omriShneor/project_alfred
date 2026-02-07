@@ -6,18 +6,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { HomeScreen } from '../screens/HomeScreen';
 import { PreferencesScreen } from '../screens/PreferencesScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { NeedsReviewScreen } from '../screens/NeedsReviewScreen';
 import { WhatsAppPreferencesScreen, TelegramPreferencesScreen, GmailPreferencesScreen, GoogleCalendarPreferencesScreen } from '../screens/smart-calendar';
 import type { PreferenceStackParamList } from './PreferenceStackNavigator';
 import { colors } from '../theme/colors';
 
 export type TabParamList = {
   Home: undefined;
-  Preferences: undefined;
-  Settings: undefined;
+  Preferences:
+    | {
+        reauthSources?: Array<
+          'whatsapp' | 'telegram' | 'gmail' | 'google_calendar'
+        >;
+      }
+    | undefined;
 };
 
 export type MainStackParamList = {
   MainTabs: undefined;
+  Settings: undefined;
+  NeedsReview: undefined;
   // Use shared types for preference screens
 } & PreferenceStackParamList;
 
@@ -54,21 +62,25 @@ function TabNavigator() {
       <Tab.Screen
         name="Preferences"
         component={PreferencesScreen}
-        options={{
-          tabBarLabel: 'Sources',
+        options={({ navigation }) => ({
+          headerShown: true,
+          title: 'Connections',
+          headerStyle: { backgroundColor: colors.background},
+          headerTintColor: colors.text,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.navigate('Home')}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+          tabBarLabel: 'Connections',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="options-outline" size={size} color={color} />
           ),
-        }}
-      />
-      <Tab.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
-          ),
-        }}
+        })}
       />
     </Tab.Navigator>
   );
@@ -83,6 +95,44 @@ export function MainNavigator() {
       }}
     >
       <Stack.Screen name="MainTabs" component={TabNavigator} />
+      <Stack.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={({ navigation }) => ({
+          headerShown: true,
+          title: 'Notifications',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        })}
+      />
+      <Stack.Screen
+        name="NeedsReview"
+        component={NeedsReviewScreen}
+        options={({ navigation }) => ({
+          headerShown: true,
+          title: 'Needs Review',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        })}
+      />
       <Stack.Screen
         name="WhatsAppPreferences"
         component={WhatsAppPreferencesScreen}

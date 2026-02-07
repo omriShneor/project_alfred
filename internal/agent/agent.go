@@ -68,6 +68,8 @@ func (a *Agent) executeWithPrompt(ctx context.Context, input AgentInput, systemP
 
 	var totalUsage UsageStats
 	var allToolCalls []ToolCall
+	turnsUsed := 0
+	lastStopReason := ""
 
 	for turn := 0; turn < maxTurns; turn++ {
 		// Make API call
@@ -76,8 +78,11 @@ func (a *Agent) executeWithPrompt(ctx context.Context, input AgentInput, systemP
 			Tools:  a.registry.Tools(),
 		})
 		if err != nil {
+			a.logExecutionSummary("failure", turn+1, maxTurns, len(allToolCalls), totalUsage, "api_error", err)
 			return nil, fmt.Errorf("API call failed on turn %d: %w", turn+1, err)
 		}
+		turnsUsed = turn + 1
+		lastStopReason = response.StopReason
 		totalUsage.Add(response.Usage)
 
 		// Check stop reason
@@ -85,12 +90,14 @@ func (a *Agent) executeWithPrompt(ctx context.Context, input AgentInput, systemP
 		case "end_turn":
 			// Agent is done - extract final text
 			finalText := extractFinalText(response.Content)
-			return &AgentOutput{
+			output := &AgentOutput{
 				ToolCalls:    allToolCalls,
 				Conversation: messages,
 				Usage:        totalUsage,
 				FinalText:    finalText,
-			}, nil
+			}
+			a.logExecutionSummary("success", turnsUsed, maxTurns, len(allToolCalls), totalUsage, response.StopReason, nil)
+			return output, nil
 
 		case "tool_use":
 			// Process tool calls
@@ -105,16 +112,64 @@ func (a *Agent) executeWithPrompt(ctx context.Context, input AgentInput, systemP
 			continue
 
 		default:
+			a.logExecutionSummary("failure", turnsUsed, maxTurns, len(allToolCalls), totalUsage, response.StopReason, nil)
 			return nil, fmt.Errorf("unexpected stop reason: %s", response.StopReason)
 		}
 	}
 
 	// Max turns exceeded - return what we have
-	return &AgentOutput{
+	output := &AgentOutput{
 		ToolCalls:    allToolCalls,
 		Conversation: messages,
 		Usage:        totalUsage,
-	}, fmt.Errorf("max turns (%d) exceeded", maxTurns)
+	}
+	err := fmt.Errorf("max turns (%d) exceeded", maxTurns)
+	stopReason := lastStopReason
+	if stopReason == "" {
+		stopReason = "max_turns_exceeded"
+	}
+	a.logExecutionSummary("failure", turnsUsed, maxTurns, len(allToolCalls), totalUsage, stopReason, err)
+	return output, err
+}
+
+func (a *Agent) logExecutionSummary(
+	status string,
+	turnsUsed int,
+	maxTurns int,
+	toolCalls int,
+	usage UsageStats,
+	stopReason string,
+	err error,
+) {
+	if err != nil {
+		fmt.Printf(
+			"Agent run: name=%s status=%s turns=%d/%d tool_calls=%d stop_reason=%s tokens_in=%d tokens_out=%d tokens_total=%d error=%v\n",
+			a.name,
+			status,
+			turnsUsed,
+			maxTurns,
+			toolCalls,
+			stopReason,
+			usage.InputTokens,
+			usage.OutputTokens,
+			usage.TotalTokens,
+			err,
+		)
+		return
+	}
+
+	fmt.Printf(
+		"Agent run: name=%s status=%s turns=%d/%d tool_calls=%d stop_reason=%s tokens_in=%d tokens_out=%d tokens_total=%d\n",
+		a.name,
+		status,
+		turnsUsed,
+		maxTurns,
+		toolCalls,
+		stopReason,
+		usage.InputTokens,
+		usage.OutputTokens,
+		usage.TotalTokens,
+	)
 }
 
 // executeTools runs all tool_use blocks and returns results
@@ -172,7 +227,7 @@ func (a *Agent) ExecuteSingleTool(ctx context.Context, userMessage string) (*Too
 				Content: []ContentBlock{TextBlock{Type: "text", Text: userMessage}},
 			},
 		},
-		MaxTurns: 1,
+		MaxTurns: 6,
 	}
 
 	output, err := a.Execute(ctx, input)

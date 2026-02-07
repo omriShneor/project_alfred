@@ -36,6 +36,7 @@ export interface AddSourceModalProps {
   customInputPlaceholder: string;
   customInputKeyboardType: KeyboardTypeOptions;
   validateCustomInput: (value: string) => string | null;
+  blockManualAddWhenSearchResults?: boolean;
   // Actions - always uses 'primary' (Alfred Calendar) as the target
   onAddContacts: (contacts: SourceTopContact[]) => Promise<void>;
   onAddCustom: (value: string) => Promise<void>;
@@ -56,6 +57,7 @@ export function AddSourceModal({
   customInputPlaceholder,
   customInputKeyboardType,
   validateCustomInput,
+  blockManualAddWhenSearchResults = false,
   onAddContacts,
   onAddCustom,
   addContactsLoading,
@@ -76,6 +78,16 @@ export function AddSourceModal({
     ? (searchResults ?? emptyContacts)
     : (topContacts ?? emptyContacts);
   const displayedLoading = isSearching ? (searchLoading ?? false) : contactsLoading;
+  const allKnownContacts = React.useMemo(() => {
+    const byIdentifier = new Map<string, SourceTopContact>();
+    for (const contact of topContacts ?? emptyContacts) {
+      byIdentifier.set(contact.identifier, contact);
+    }
+    for (const contact of searchResults ?? emptyContacts) {
+      byIdentifier.set(contact.identifier, contact);
+    }
+    return Array.from(byIdentifier.values());
+  }, [topContacts, searchResults]);
 
   // Track keyboard visibility
   useEffect(() => {
@@ -120,7 +132,7 @@ export function AddSourceModal({
       }
 
       const allowed = new Set<string>();
-      for (const contact of displayedContacts) {
+      for (const contact of allKnownContacts) {
         allowed.add(contact.identifier);
       }
       for (const entry of customEntries) {
@@ -139,7 +151,7 @@ export function AddSourceModal({
 
       return changed ? next : prev;
     });
-  }, [displayedContacts, customEntries]);
+  }, [allKnownContacts, customEntries]);
 
   const toggleContactSelection = (identifier: string) => {
     setSelectedContacts((prev) => {
@@ -178,16 +190,36 @@ export function AddSourceModal({
       return;
     }
 
-    // Check if already in displayed contacts (topContacts or searchResults)
-    if (
-      displayedContacts.some((c) => {
-        const fields = [c.name, c.secondary_label, c.identifier]
-          .filter((value): value is string => Boolean(value))
-          .map((value) => value.toLowerCase());
-        return fields.some((value) => value === normalizedValue);
-      })
-    ) {
-      setCustomInputError('Already in suggested contacts');
+    const matchingContacts = displayedContacts.filter((c) => {
+      const fields = [c.name, c.secondary_label, c.identifier]
+        .filter((value): value is string => Boolean(value))
+        .map((value) => value.toLowerCase());
+      return fields.some((value) => value === normalizedValue);
+    });
+
+    if (matchingContacts.length > 1) {
+      setCustomInputError('Multiple matches found above');
+      return;
+    }
+
+    if (matchingContacts.length === 1) {
+      const match = matchingContacts[0];
+      if (match.is_tracked) {
+        setCustomInputError('Already added');
+        return;
+      }
+
+      setSelectedContacts((prev) => new Set(prev).add(match.identifier));
+      setCustomInput('');
+      setCustomInputError(null);
+      Keyboard.dismiss();
+      return;
+    }
+
+    // For sources that resolve manual entries by name (e.g. WhatsApp),
+    // avoid ambiguous custom additions when search already found contacts.
+    if (blockManualAddWhenSearchResults && isSearching && displayedContacts.length > 0) {
+      setCustomInputError('Select a contact from the results above');
       return;
     }
 
@@ -202,8 +234,8 @@ export function AddSourceModal({
   const handleAddAllSelected = async () => {
     setIsAdding(true);
     try {
-      // Add selected contacts (from displayed list)
-      const contactsToAdd = displayedContacts.filter(
+      // Add selected contacts from both top contacts and search results.
+      const contactsToAdd = allKnownContacts.filter(
         (c) => selectedContacts.has(c.identifier) && !c.is_tracked
       );
       if (contactsToAdd.length > 0) {
@@ -311,7 +343,7 @@ export function AddSourceModal({
         isCustomInputFocused && keyboardHeight > 0 ? (
           <View style={styles.floatingFooter}>
             <Button
-              title="Add to List"
+              title="Add source"
               onPress={handleAddCustomToList}
               disabled={!customInput.trim()}
             />

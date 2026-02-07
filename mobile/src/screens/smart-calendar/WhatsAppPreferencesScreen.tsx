@@ -202,6 +202,7 @@ export function WhatsAppPreferencesScreen() {
         customInputPlaceholder="e.g., John Appleseed"
         customInputKeyboardType="default"
         validateCustomInput={validateContactName}
+        blockManualAddWhenSearchResults
         onAddContacts={handleAddContacts}
         onAddCustom={handleAddCustom}
         addContactsLoading={createChannel.isPending}

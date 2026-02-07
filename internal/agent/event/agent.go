@@ -67,7 +67,7 @@ func (a *Agent) AnalyzeMessages(
 				},
 			},
 		},
-		MaxTurns: 3, // Allow extraction + action + final response
+		MaxTurns: 6, // Allow extraction + action + final response
 	}
 
 	output, err := a.Execute(ctx, input)
@@ -92,7 +92,7 @@ func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*ag
 				},
 			},
 		},
-		MaxTurns: 3,
+		MaxTurns: 6,
 	}
 
 	output, err := a.Execute(ctx, input)

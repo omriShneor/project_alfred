@@ -99,10 +99,11 @@ func TestTelegramChannelCRUD(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-		// Verify deleted - GetSourceChannelByID returns nil, nil for deleted channels
-		deleted, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
-		assert.NoError(t, err)
-		assert.Nil(t, deleted)
+		// Verify soft-deleted (disabled)
+		updated, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
+		require.NoError(t, err)
+		require.NotNil(t, updated)
+		assert.False(t, updated.Enabled)
 	})
 }
 

@@ -293,6 +293,22 @@ func (s *Server) handleCreateTelegramChannel(w http.ResponseWriter, r *http.Requ
 	}
 	channelType := source.ChannelTypeSender
 
+	existingChannel, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeTelegram, req.Identifier)
+	if err == nil && existingChannel != nil {
+		wasDisabled := !existingChannel.Enabled
+		if err := s.db.UpdateSourceChannel(userID, existingChannel.ID, req.Name, true); err != nil {
+			respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to enable channel: %v", err))
+			return
+		}
+		existingChannel.Name = req.Name
+		existingChannel.Enabled = true
+		if wasDisabled {
+			s.startChannelBackfill(userID, existingChannel)
+		}
+		respondJSON(w, http.StatusOK, existingChannel)
+		return
+	}
+
 	channel, err := s.db.CreateSourceChannel(userID, source.SourceTypeTelegram, channelType, req.Identifier, req.Name)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to create channel: %v", err))
@@ -357,13 +373,23 @@ func (s *Server) handleDeleteTelegramChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := s.db.DeleteSourceChannel(userID, id); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to delete channel: %v", err))
+	channel, err := s.db.GetSourceChannelByID(userID, id)
+	if err != nil || channel == nil {
+		respondError(w, http.StatusNotFound, "channel not found")
+		return
+	}
+
+	if err := s.db.UpdateSourceChannel(userID, id, channel.Name, false); err != nil {
+		if err.Error() == "channel not found" {
+			respondError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("Failed to disable channel: %v", err))
 		return
 	}
 
 	respondJSON(w, http.StatusOK, map[string]string{
-		"message": "Channel deleted",
+		"message": "Channel disabled",
 	})
 }
 

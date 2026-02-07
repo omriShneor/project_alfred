@@ -424,6 +424,7 @@ func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 	// Check if channel already exists (may have been created by history sync)
 	existingChannel, err := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, req.Identifier)
 	if err == nil && existingChannel != nil {
+		wasDisabled := !existingChannel.Enabled
 		// Channel exists - update it (enable it, update name)
 		if err := s.db.UpdateSourceChannel(userID, existingChannel.ID, req.Name, true); err != nil {
 			respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to enable channel: %v", err))
@@ -432,6 +433,9 @@ func (s *Server) handleCreateWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		// Return updated channel
 		existingChannel.Name = req.Name
 		existingChannel.Enabled = true
+		if wasDisabled {
+			s.startChannelBackfill(userID, existingChannel)
+		}
 		respondJSON(w, http.StatusOK, existingChannel)
 		return
 	}
@@ -503,12 +507,12 @@ func (s *Server) handleDeleteWhatsappChannel(w http.ResponseWriter, r *http.Requ
 	}
 
 	channel, err := s.db.GetSourceChannelByID(userID, id)
-	if err != nil {
+	if err != nil || channel == nil {
 		respondError(w, http.StatusNotFound, "channel not found")
 		return
 	}
 
-	if err := s.db.DeleteSourceChannel(userID, id); err != nil {
+	if err := s.db.UpdateSourceChannel(userID, id, channel.Name, false); err != nil {
 		if err.Error() == "channel not found" {
 			respondError(w, http.StatusNotFound, "channel not found")
 			return
@@ -517,7 +521,7 @@ func (s *Server) handleDeleteWhatsappChannel(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Remove legacy/alternate identifier if present to avoid "ghost" tracking.
+	// Disable legacy/alternate identifier if present to avoid accidental re-tracking.
 	if channel != nil {
 		identifier := channel.Identifier
 		legacyIdentifier := identifier + "@s.whatsapp.net"
@@ -525,11 +529,14 @@ func (s *Server) handleDeleteWhatsappChannel(w http.ResponseWriter, r *http.Requ
 			legacyIdentifier = strings.TrimSuffix(identifier, "@s.whatsapp.net")
 		}
 		if legacyIdentifier != identifier {
-			_ = s.db.DeleteSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, legacyIdentifier)
+			legacyChannel, legacyErr := s.db.GetSourceChannelByIdentifier(userID, source.SourceTypeWhatsApp, legacyIdentifier)
+			if legacyErr == nil && legacyChannel != nil {
+				_ = s.db.UpdateSourceChannel(userID, legacyChannel.ID, legacyChannel.Name, false)
+			}
 		}
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	respondJSON(w, http.StatusOK, map[string]string{"status": "disabled"})
 }
 
 // WhatsApp API

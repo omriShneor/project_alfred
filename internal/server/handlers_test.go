@@ -568,9 +568,11 @@ func TestHandleDeleteWhatsappChannel(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, w.Code)
 
-		// Verify deleted
-		deleted, _ := s.db.GetSourceChannelByID(user.ID, channel.ID)
-		assert.Nil(t, deleted)
+		// Verify soft-deleted (disabled)
+		updated, err := s.db.GetSourceChannelByID(user.ID, channel.ID)
+		require.NoError(t, err)
+		require.NotNil(t, updated)
+		assert.False(t, updated.Enabled)
 	})
 
 	t.Run("delete non-existent channel returns 404", func(t *testing.T) {

@@ -26,12 +26,22 @@ Notifications.setNotificationHandler({
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 2,
+      retry: (failureCount, error) => {
+        if (error instanceof Error && error.name === 'AuthError') {
+          return false;
+        }
+        return failureCount < 2;
+      },
       staleTime: 30000,
       refetchOnWindowFocus: true,
     },
     mutations: {
-      retry: 1,
+      retry: (failureCount, error) => {
+        if (error instanceof Error && error.name === 'AuthError') {
+          return false;
+        }
+        return failureCount < 1;
+      },
     },
   },
 });

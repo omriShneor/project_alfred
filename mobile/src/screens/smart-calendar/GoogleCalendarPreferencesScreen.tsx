@@ -6,14 +6,12 @@ import {
   ScrollView,
   Alert,
   Switch,
-  TouchableOpacity,
-  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import * as ExpoLinking from 'expo-linking';
 import { useQueryClient } from '@tanstack/react-query';
-import { LoadingSpinner, Card, Select } from '../../components/common';
+import { LoadingSpinner, Card, Select, Button } from '../../components/common';
 import { colors } from '../../theme/colors';
 import {
   useGCalStatus,
@@ -175,20 +173,12 @@ export function GoogleCalendarPreferencesScreen() {
                 Grant calendar access to sync your confirmed events to Google Calendar.
                 This allows Alfred to create and manage events on your behalf.
               </Text>
-              <TouchableOpacity
-                style={[styles.connectButton, isConnecting && styles.connectButtonDisabled]}
+              <Button
+                title="Connect Google Calendar"
                 onPress={handleConnectCalendar}
-                disabled={isConnecting}
-              >
-                {isConnecting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Feather name="link" size={18} color="#fff" />
-                    <Text style={styles.connectButtonText}>Connect Calendar</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={isConnecting}
+                style={styles.connectButton}
+              />
             </View>
           </Card>
         </ScrollView>
@@ -245,7 +235,7 @@ export function GoogleCalendarPreferencesScreen() {
             <Text style={styles.sectionTitle}>Target Calendar</Text>
             <Card>
               <Text style={styles.helpText}>
-                Events detected from all sources (WhatsApp, Telegram, Gmail) will sync to this calendar.
+                Events detected from connected apps (WhatsApp, Telegram, and Gmail) will sync to this calendar.
               </Text>
               <View style={styles.selectContainer}>
                 <Select
@@ -349,7 +339,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
-  // Connect Calendar styles
+  // Connect Google Calendar styles
   connectContainer: {
     alignItems: 'center',
     paddingVertical: 32,
@@ -378,22 +368,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   connectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    minWidth: 180,
-  },
-  connectButtonDisabled: {
-    opacity: 0.7,
-  },
-  connectButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginLeft: 8,
+    minWidth: 220,
   },
 });

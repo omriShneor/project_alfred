@@ -56,13 +56,13 @@ export function TelegramPreferencesScreen() {
         },
       });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update source');
+      Alert.alert('Error', error.message || 'Failed to update chat');
     }
   };
 
-  const handleDeleteWhatsappChannel = (channel: Channel) => {
+  const handleDeleteTelegramChannel = (channel: Channel) => {
     Alert.alert(
-      'Delete Source',
+      'Remove Chat',
       `Are you sure you want to delete "${channel.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -73,7 +73,7 @@ export function TelegramPreferencesScreen() {
             try {
               await deleteChannel.mutateAsync(channel.id);
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete source');
+              Alert.alert('Error', error.message || 'Failed to remove chat');
             }
           },
         },
@@ -85,7 +85,7 @@ export function TelegramPreferencesScreen() {
     if (!isConnected) {
       Alert.alert(
         'Telegram Not Connected',
-        'Please connect Telegram first to add sources.',
+        'Please connect Telegram first to add chats.',
         [{ text: 'OK' }]
       );
       return;
@@ -115,11 +115,11 @@ export function TelegramPreferencesScreen() {
     await addCustomSource.mutateAsync(value.trim());
   };
 
-  const getTypeLabel = (type: ChannelType) => {
-    return 'Contact';
+  const getTypeLabel = (_type: ChannelType) => {
+    return 'Chat';
   };
 
-  const getTypeColor = (type: ChannelType) => {
+  const getTypeColor = (_type: ChannelType) => {
     return colors.success;
   };
 
@@ -143,7 +143,7 @@ export function TelegramPreferencesScreen() {
           trackColor={{ false: colors.border, true: colors.primary }}
           thumbColor="#ffffff"
         />
-        <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteWhatsappChannel(item)}>
+        <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteTelegramChannel(item)}>
           <Feather name="trash-2" size={18} color={colors.danger} />
         </TouchableOpacity>
       </View>
@@ -154,10 +154,10 @@ export function TelegramPreferencesScreen() {
     <View style={styles.screen}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Telegram Sources</Text>
+          <Text style={styles.sectionTitle}>Telegram Chats</Text>
           <TouchableOpacity style={styles.addButton} onPress={handleOpenAddSourceModal}>
             <Feather name="plus" size={18} color={colors.primary} />
-            <Text style={styles.addButtonText}>Add Source</Text>
+            <Text style={styles.addButtonText}>Add Chat</Text>
           </TouchableOpacity>
         </View>
         <Card>
@@ -174,9 +174,9 @@ export function TelegramPreferencesScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Feather name="send" size={40} color={colors.textSecondary} />
-              <Text style={styles.emptyStateText}>No Telegram sources configured</Text>
+              <Text style={styles.emptyStateText}>No Telegram chats selected</Text>
               <Text style={styles.emptyStateSubtext}>
-                Add contacts to track for events
+                Add chats to track for events, reminders, and tasks
               </Text>
             </View>
           )}
@@ -189,7 +189,7 @@ export function TelegramPreferencesScreen() {
           setSearchQuery('');
           setAddSourceModalVisible(false);
         }}
-        title="Add Telegram Source"
+        title="Add Telegram Chat"
         topContacts={topContacts}
         contactsLoading={contactsLoading}
         searchResults={searchResults}

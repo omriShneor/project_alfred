@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, Linking } from 'react-native';
 import * as ExpoLinking from 'expo-linking';
 import { useExchangeOAuthCode, useHealth, useAppStatus } from '../hooks';
@@ -18,15 +18,22 @@ export function RootNavigator() {
   const { data: appStatus, isLoading: statusLoading, refetch: refetchAppStatus } = useAppStatus();
   const exchangeCode = useExchangeOAuthCode();
   const exchangeAddScopesCode = useExchangeAddScopesCode();
+  const handlingAuthErrorRef = useRef(false);
 
   // Listen for auth errors (401 responses) to handle session expiry
   useEffect(() => {
     const unsubscribe = onAuthError(() => {
-      // Auth error occurred, user will be logged out automatically
-      // The auth context will update isAuthenticated to false
+      // Prevent concurrent 401 handlers while logout is in progress
+      if (handlingAuthErrorRef.current) {
+        return;
+      }
+      handlingAuthErrorRef.current = true;
+      void logout().finally(() => {
+        handlingAuthErrorRef.current = false;
+      });
     });
     return unsubscribe;
-  }, []);
+  }, [logout]);
 
   // Handle OAuth callback deep link globally (for Google Calendar OAuth)
   const handleOAuthCallback = useCallback(

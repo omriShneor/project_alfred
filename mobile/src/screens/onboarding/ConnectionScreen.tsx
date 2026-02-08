@@ -25,7 +25,6 @@ import {
   useWhatsAppStatus,
   useGCalStatus,
   useGeneratePairingCode,
-  useGetOAuthURL,
   useTelegramStatus,
   useSendTelegramCode,
   useVerifyTelegramCode,
@@ -64,8 +63,6 @@ function getStatusLabel(status: IntegrationStatusType) {
   }
 }
 
-// Official Google "G" logo as PNG data URI (follows Google's branding guidelines)
-
 function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading?: boolean }) {
   return (
     <TouchableOpacity
@@ -79,7 +76,7 @@ function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading
         style={styles.googleLogo}
       />
       <Text style={styles.googleButtonText}>
-        {loading ? 'Connecting...' : 'Sign in with Google'}
+        {loading ? 'Connecting...' : 'Connect Google'}
       </Text>
     </TouchableOpacity>
   );
@@ -107,7 +104,6 @@ export function ConnectionScreen() {
   const { data: gcalStatus } = useGCalStatus();
   const { data: telegramStatus } = useTelegramStatus();
   const generatePairingCode = useGeneratePairingCode();
-  const getOAuthURL = useGetOAuthURL();
   const sendTelegramCode = useSendTelegramCode();
   const verifyTelegramCode = useVerifyTelegramCode();
   const requestAdditionalScopes = useRequestAdditionalScopes();
@@ -134,6 +130,51 @@ export function ConnectionScreen() {
 
     return checks.length > 0 && checks.every(Boolean);
   }, [gmailEnabled, whatsappEnabled, telegramEnabled, googleStatus, whatsappStatus, telegramStatusType]);
+
+  const requiredAppsCount = React.useMemo(
+    () => [gmailEnabled, whatsappEnabled, telegramEnabled].filter(Boolean).length,
+    [gmailEnabled, whatsappEnabled, telegramEnabled]
+  );
+
+  const connectedAppsCount = React.useMemo(
+    () =>
+      [
+        gmailEnabled ? googleStatus === 'available' : false,
+        whatsappEnabled ? whatsappStatus === 'available' : false,
+        telegramEnabled ? telegramStatusType === 'available' : false,
+      ].filter(Boolean).length,
+    [
+      gmailEnabled,
+      whatsappEnabled,
+      telegramEnabled,
+      googleStatus,
+      whatsappStatus,
+      telegramStatusType,
+    ]
+  );
+
+  const remainingApps = React.useMemo(() => {
+    const pending: string[] = [];
+    if (gmailEnabled && googleStatus !== 'available') pending.push('Google');
+    if (whatsappEnabled && whatsappStatus !== 'available') pending.push('WhatsApp');
+    if (telegramEnabled && telegramStatusType !== 'available') pending.push('Telegram');
+    return pending;
+  }, [
+    gmailEnabled,
+    googleStatus,
+    whatsappEnabled,
+    whatsappStatus,
+    telegramEnabled,
+    telegramStatusType,
+  ]);
+
+  const continueTitle = allAvailable
+    ? 'Continue to choose contacts'
+    : `Connect ${remainingApps.length} more app${remainingApps.length === 1 ? '' : 's'}`;
+
+  const heroHint = allAvailable
+    ? 'All selected apps are connected. Continue to choose contacts and senders.'
+    : `Remaining: ${remainingApps.join(', ')}`;
 
   // Reset pairing code when WhatsApp connects
   useEffect(() => {
@@ -274,18 +315,46 @@ export function ConnectionScreen() {
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-        <Text style={styles.step}>Step 2 of 3</Text>
-        <Text style={styles.title}>Connect Your Accounts</Text>
-        <Text style={styles.description}>
-          Connect the services you selected to start receiving event, reminder, and task suggestions.
-        </Text>
+          <Card style={styles.heroCard}>
+            <View style={styles.heroTopRow}>
+              <Text style={styles.step}>Step 2 of 3</Text>
+              <View
+                style={[
+                  styles.heroStatusBadge,
+                  allAvailable ? styles.heroStatusBadgeSuccess : styles.heroStatusBadgeWarning,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.heroStatusText,
+                    allAvailable ? styles.heroStatusTextSuccess : styles.heroStatusTextWarning,
+                  ]}
+                >
+                  {connectedAppsCount}/{requiredAppsCount} connected
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.title}>Connect Your Apps</Text>
+            <Text style={styles.description}>
+              Connect each selected app so Alfred can start detecting events, reminders, and tasks.
+            </Text>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${(connectedAppsCount / Math.max(requiredAppsCount, 1)) * 100}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.heroHint}>{heroHint}</Text>
+          </Card>
 
         {gmailEnabled && (
           <Card style={styles.card}>
             <View style={styles.integrationRow}>
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
-                  <Text style={styles.integrationName}>Google Account</Text>
+                  <Text style={styles.integrationName}>Google (Gmail & Calendar)</Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(googleStatus) }]} />
@@ -295,7 +364,7 @@ export function ConnectionScreen() {
               {googleStatus !== 'available' && (
                 <GoogleSignInButton
                   onPress={handleConnectGoogle}
-                  loading={getOAuthURL.isPending}
+                  loading={requestAdditionalScopes.isPending || exchangeAddScopesCode.isPending}
                 />
               )}
             </View>
@@ -320,7 +389,7 @@ export function ConnectionScreen() {
                   {!pairingCode ? (
                     <>
                       <Text style={styles.phoneInputLabel}>
-                        Enter your phone number with country code
+                        Phone number (include country code)
                       </Text>
                       <TextInput
                         style={styles.phoneInput}
@@ -342,7 +411,7 @@ export function ConnectionScreen() {
                   ) : (
                     <>
                       <View style={styles.pairingCodeContainer}>
-                        <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
+                        <Text style={styles.pairingCodeLabel}>Your pairing code</Text>
                         <View style={styles.pairingCodeRow}>
                           <Text style={styles.pairingCode}>{pairingCode}</Text>
                           <TouchableOpacity style={styles.copyButton} onPress={handleCopyCode}>
@@ -355,10 +424,10 @@ export function ConnectionScreen() {
                         </View>
                       </View>
                       <Text style={styles.pairingInstructions}>
-                        Open WhatsApp {'>'} Settings {'>'} Linked Devices {'>'} Link with phone number
+                        In WhatsApp: Settings {'>'} Linked Devices {'>'} Link with phone number
                       </Text>
                       <Text style={styles.pairingSubInstructions}>
-                        Enter this 8-digit code in WhatsApp
+                        Enter this code in WhatsApp to finish linking
                       </Text>
                       <Button
                         title="Generate New Code"
@@ -393,7 +462,7 @@ export function ConnectionScreen() {
                   {!telegramCodeSent ? (
                     <>
                       <Text style={styles.phoneInputLabel}>
-                        Enter your phone number with country code
+                        Phone number (include country code)
                       </Text>
                       <TextInput
                         style={styles.phoneInput}
@@ -415,7 +484,7 @@ export function ConnectionScreen() {
                   ) : (
                     <>
                       <Text style={styles.phoneInputLabel}>
-                        Enter the verification code sent to Telegram
+                        Enter the code sent to your Telegram app
                       </Text>
                       <TextInput
                         style={styles.phoneInput}
@@ -448,17 +517,8 @@ export function ConnectionScreen() {
           </Card>
         )}
 
-        {!allAvailable && (
-          <View style={styles.statusSummary}>
-            <Feather name="info" size={16} color={colors.textSecondary} />
-            <Text style={styles.statusSummaryText}>
-              Connect all services above to continue
-            </Text>
-          </View>
-        )}
-
         <Button
-          title="Continue"
+          title={continueTitle}
           onPress={handleContinue}
           disabled={!allAvailable}
           style={styles.continueButton}
@@ -484,23 +544,76 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 48,
   },
+  heroCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primary + '22',
+    backgroundColor: colors.infoBackground,
+    marginBottom: 16,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   step: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.primary,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  heroStatusBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  heroStatusBadgeSuccess: {
+    borderColor: colors.success + '45',
+    backgroundColor: colors.success + '12',
+  },
+  heroStatusBadgeWarning: {
+    borderColor: colors.warning + '45',
+    backgroundColor: colors.warning + '12',
+  },
+  heroStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroStatusTextSuccess: {
+    color: colors.success,
+  },
+  heroStatusTextWarning: {
+    color: colors.warning,
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   description: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: 32,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+  },
+  heroHint: {
+    marginTop: 8,
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   card: {
     marginBottom: 16,
@@ -629,18 +742,6 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 8,
-  },
-  statusSummary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  statusSummaryText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    marginLeft: 8,
   },
   continueButton: {
     marginTop: 8,

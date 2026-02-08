@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
-import { Button } from '../../components/common';
+import { Button, Card } from '../../components/common';
 import { colors } from '../../theme/colors';
 import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
 
@@ -13,6 +13,7 @@ type NavigationProp = NativeStackNavigationProp<OnboardingParamList, 'InputSelec
 interface InputOption {
   id: 'whatsapp' | 'telegram' | 'gmail';
   title: string;
+  description: string;
   icon: keyof typeof Ionicons.glyphMap;
 }
 
@@ -20,16 +21,19 @@ const inputOptions: InputOption[] = [
   {
     id: 'whatsapp',
     title: 'WhatsApp',
+    description: 'Detect reminders and events from selected chats',
     icon: 'chatbubble-outline',
   },
   {
     id: 'telegram',
     title: 'Telegram',
+    description: 'Detect reminders and events from selected chats',
     icon: 'paper-plane-outline',
   },
   {
     id: 'gmail',
     title: 'Gmail',
+    description: 'Detect reminders and events from selected senders',
     icon: 'mail-outline',
   },
 ];
@@ -37,6 +41,13 @@ const inputOptions: InputOption[] = [
 export function InputSelectionScreen() {
   const navigation = useNavigation<NavigationProp>();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const selectedCount = selected.size;
+  const totalOptions = inputOptions.length;
+  const progress = (selectedCount / totalOptions) * 100;
+  const continueTitle =
+    selectedCount > 0
+      ? `Continue (${selectedCount} selected)`
+      : 'Select at least one app';
 
   const toggleSelection = (id: string) => {
     const newSelected = new Set(selected);
@@ -50,7 +61,7 @@ export function InputSelectionScreen() {
 
   const handleContinue = () => {
     if (selected.size === 0) {
-      Alert.alert('Select at least one', 'Please select at least one input source to continue.');
+      Alert.alert('Select at least one', 'Please select at least one app to continue.');
       return;
     }
 
@@ -65,10 +76,31 @@ export function InputSelectionScreen() {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.content}>
         <Text style={styles.step}>Step 1 of 3</Text>
-        <Text style={styles.title}>Choose Your Sources</Text>
+        <Text style={styles.title}>Choose Your Apps</Text>
         <Text style={styles.description}>
-            Select where Alfred should look for event, reminder and task suggestions. You can change this later.
+          Select which apps Alfred should use. You can change this anytime.
         </Text>
+
+        <Card style={styles.summaryCard}>
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryTitle}>
+              {selectedCount} of {totalOptions} apps selected
+            </Text>
+            {selectedCount > 0 && (
+              <TouchableOpacity onPress={() => setSelected(new Set())} style={styles.clearButton}>
+                <Text style={styles.clearButtonText}>Clear</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          <View style={styles.progressTrack}>
+            <View style={[styles.progressFill, { width: `${progress}%` }]} />
+          </View>
+          <Text style={styles.summaryText}>
+            {selectedCount === 0
+              ? 'Select at least one app to continue.'
+              : 'Next, you will connect each selected app.'}
+          </Text>
+        </Card>
 
         <View style={styles.options}>
           {inputOptions.map((option) => {
@@ -90,6 +122,7 @@ export function InputSelectionScreen() {
                   </View>
                   <View style={styles.optionText}>
                     <Text style={styles.optionTitle}>{option.title}</Text>
+                    <Text style={styles.optionDescription}>{option.description}</Text>
                   </View>
                 </View>
                 <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
@@ -103,7 +136,7 @@ export function InputSelectionScreen() {
 
       <View style={styles.footer}>
         <Button
-          title="Continue"
+          title={continueTitle}
           onPress={handleContinue}
           disabled={selected.size === 0}
           style={styles.button}
@@ -130,7 +163,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontWeight: '700',
     color: colors.text,
     marginBottom: 12,
   },
@@ -138,10 +171,52 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.textSecondary,
     lineHeight: 22,
-    marginBottom: 32,
+    marginBottom: 16,
+  },
+  summaryCard: {
+    marginBottom: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.primary + '20',
+    backgroundColor: colors.infoBackground,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  summaryTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  clearButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  clearButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+  },
+  summaryText: {
+    marginTop: 8,
+    fontSize: 12,
+    color: colors.textSecondary,
   },
   options: {
-    gap: 16,
+    gap: 12,
   },
   option: {
     flexDirection: 'row',
@@ -181,11 +256,12 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   optionDescription: {
     fontSize: 13,
     color: colors.textSecondary,
+    lineHeight: 18,
   },
   checkbox: {
     width: 24,
@@ -202,7 +278,7 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingTop: 24,
-    paddingBottom: 50
+    paddingBottom: 50,
   },
   button: {
     width: '100%',

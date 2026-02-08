@@ -21,6 +21,7 @@ import {
   useTelegramStatus,
 } from '../../hooks/useTelegram';
 import { useEmailSources, useGmailStatus } from '../../hooks/useGmail';
+import { useAuth } from '../../auth';
 import { colors } from '../../theme/colors';
 import type { TodayEvent } from '../../types/calendar';
 import type { AppStatus, ConnectionStatus } from '../../types/app';
@@ -49,6 +50,19 @@ function getGreetingHour(hour: number) {
     return 'Good afternoon';
   }
   return 'Good evening';
+}
+
+function getFirstName(name?: string | null) {
+  if (!name) {
+    return null;
+  }
+
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    return null;
+  }
+
+  return trimmedName.split(/\s+/)[0];
 }
 
 function formatTodayDate() {
@@ -101,6 +115,7 @@ function hasEnabledSource(items?: Array<{ enabled?: boolean }>) {
 
 export function HomeOverviewSection() {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
+  const { user } = useAuth();
 
   const { data: appStatus, isLoading: loadingAppStatus } = useAppStatus();
   const { data: whatsappStatus, isLoading: loadingWhatsAppStatus } =
@@ -307,7 +322,7 @@ export function HomeOverviewSection() {
     if (connectedSources.enabled === 0 && unconfiguredConnectedSources.length === 0) {
       warnings.push({
         id: 'no-enabled-sources',
-        text: 'Enable at least one source so Alfred can start detecting events and reminders.',
+        text: 'Connect at least one app so Alfred can start detecting events and reminders.',
         icon: 'link-outline',
         color: colors.primary,
         onPress: () => navigation.navigate('Preferences'),
@@ -340,6 +355,8 @@ export function HomeOverviewSection() {
 
   const now = new Date();
   const greeting = getGreetingHour(now.getHours());
+  const firstName = getFirstName(user?.name);
+  const greetingText = firstName ? `${greeting}, ${firstName}` : greeting;
 
   if (initialLoading) {
     return (
@@ -361,7 +378,7 @@ export function HomeOverviewSection() {
         <View style={styles.headerRow}>
           <View style={styles.headerText}>
             <Text style={styles.sectionLabel}>TODAY OVERVIEW</Text>
-            <Text style={styles.title}>{greeting}</Text>
+            <Text style={styles.title}>{greetingText}</Text>
             <Text style={styles.subtitle}>{formatTodayDate()}</Text>
           </View>
         </View>

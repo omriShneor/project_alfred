@@ -53,13 +53,13 @@ export function WhatsAppPreferencesScreen() {
         data: { enabled: !channel.enabled },
       });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update source');
+      Alert.alert('Error', error.message || 'Failed to update chat');
     }
   };
 
-  const handleDeleteWhatsappChannel = (channel: Channel) => {
+  const handleDeleteWhatsAppChannel = (channel: Channel) => {
     Alert.alert(
-      'Delete Source',
+      'Remove Chat',
       `Are you sure you want to delete "${channel.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -70,7 +70,7 @@ export function WhatsAppPreferencesScreen() {
             try {
               await deleteChannel.mutateAsync(channel.id);
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete source');
+              Alert.alert('Error', error.message || 'Failed to remove chat');
             }
           },
         },
@@ -82,7 +82,7 @@ export function WhatsAppPreferencesScreen() {
     if (!isConnected) {
       Alert.alert(
         'WhatsApp Not Connected',
-        'Please connect WhatsApp first to add sources.',
+        'Please connect WhatsApp first to add chats.',
         [{ text: 'OK' }]
       );
       return;
@@ -90,7 +90,7 @@ export function WhatsAppPreferencesScreen() {
     setAddSourceModalVisible(true);
   };
 
-  const validateContactName = (value: string): string | null => {
+  const validateChatName = (value: string): string | null => {
     if (!value.trim()) return null;
     return null;
   };
@@ -109,16 +109,15 @@ export function WhatsAppPreferencesScreen() {
     await addCustomSource.mutateAsync(value.trim());
   };
 
-  const getTypeLabel = (type: ChannelType) => {
-    return 'Contact';
+  const getTypeLabel = (_type: ChannelType) => {
+    return 'Chat';
   };
 
-  const getTypeColor = (type: ChannelType) => {
+  const getTypeColor = (_type: ChannelType) => {
     return colors.success;
   };
 
-  // Filter to only show enabled (connected) sources
-  const enabledChannels = channels?.filter(channel => channel.enabled) ?? [];
+  const enabledChannels = channels?.filter((channel) => channel.enabled) ?? [];
 
   const renderChannelItem = ({ item }: { item: Channel }) => {
     // Show identifier only if it's different from the name
@@ -150,7 +149,7 @@ export function WhatsAppPreferencesScreen() {
             trackColor={{ false: colors.border, true: colors.primary }}
             thumbColor="#ffffff"
           />
-          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteWhatsappChannel(item)}>
+          <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteWhatsAppChannel(item)}>
             <Feather name="trash-2" size={18} color={colors.danger} />
           </TouchableOpacity>
         </View>
@@ -162,10 +161,10 @@ export function WhatsAppPreferencesScreen() {
     <View style={styles.screen}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>WhatsApp Contacts</Text>
+          <Text style={styles.sectionTitle}>WhatsApp Chats</Text>
           <TouchableOpacity style={styles.addButton} onPress={handleOpenAddSourceModal}>
             <Feather name="plus" size={18} color={colors.primary} />
-            <Text style={styles.addButtonText}>Add Contact</Text>
+            <Text style={styles.addButtonText}>Add Chat</Text>
           </TouchableOpacity>
         </View>
         <Card>
@@ -182,9 +181,9 @@ export function WhatsAppPreferencesScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Feather name="message-circle" size={40} color={colors.textSecondary} />
-              <Text style={styles.emptyStateText}>No WhatsApp contacts configured</Text>
+              <Text style={styles.emptyStateText}>No WhatsApp chats selected</Text>
               <Text style={styles.emptyStateSubtext}>
-                Add contacts to track for events
+                Add chats to track for events, reminders, and tasks
               </Text>
             </View>
           )}
@@ -197,15 +196,15 @@ export function WhatsAppPreferencesScreen() {
           setSearchQuery('');
           setAddSourceModalVisible(false);
         }}
-        title="Add WhatsApp Source"
+        title="Add WhatsApp Chat"
         topContacts={topContacts}
         contactsLoading={contactsLoading}
         searchResults={searchResults}
         searchLoading={searchLoading}
         onSearchQueryChange={setSearchQuery}
-        customInputPlaceholder="e.g., John Appleseed"
+        customInputPlaceholder="e.g. Levi Ackerman"
         customInputKeyboardType="default"
-        validateCustomInput={validateContactName}
+        validateCustomInput={validateChatName}
         blockManualAddWhenSearchResults
         onAddContacts={handleAddContacts}
         onAddCustom={handleAddCustom}

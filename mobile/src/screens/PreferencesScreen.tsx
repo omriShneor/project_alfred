@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Text, StyleSheet, ScrollView, TouchableOpacity, View, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
@@ -15,7 +15,6 @@ import {
   useGCalStatus,
   useGCalSettings,
   useDisconnectWhatsApp,
-  useGetOAuthURL,
   useGeneratePairingCode,
   useTelegramStatus,
   useSendTelegramCode,
@@ -39,6 +38,14 @@ interface PreferenceCardProps {
 }
 
 type AccountIssueKey = 'whatsapp' | 'telegram' | 'gmail' | 'gcal';
+type HeroStatusTone = 'warning' | 'neutral' | 'success';
+
+interface AccountSummary {
+  id: AccountIssueKey;
+  label: string;
+  connected: boolean;
+  issue?: string;
+}
 
 function PreferenceCard({ title, description, icon, connected, onPress }: PreferenceCardProps) {
   return (
@@ -72,7 +79,6 @@ export function PreferencesScreen() {
   const { data: gmailStatus, isLoading: gmailLoading, refetch: refetchGmailStatus } = useGmailStatus();
   const { data: gcalSettings } = useGCalSettings();
   const disconnectWhatsApp = useDisconnectWhatsApp();
-  const getOAuthURL = useGetOAuthURL();
   const generatePairingCode = useGeneratePairingCode();
 
   const [disconnectingGmail, setDisconnectingGmail] = useState(false);
@@ -91,6 +97,8 @@ export function PreferencesScreen() {
   const [telegramPhoneNumber, setTelegramPhoneNumber] = useState('');
   const [telegramCode, setTelegramCode] = useState('');
   const [telegramCodeSent, setTelegramCodeSent] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [accountsSectionY, setAccountsSectionY] = useState(0);
 
 
   // Check if any query is doing its initial load (no cached data yet)
@@ -166,6 +174,94 @@ export function PreferencesScreen() {
   ]);
 
   const issueCount = Object.keys(accountIssues).length;
+
+  const accountSummaries = useMemo<AccountSummary[]>(
+    () => [
+      {
+        id: 'whatsapp',
+        label: 'WhatsApp',
+        connected: whatsappConnected,
+        issue: accountIssues.whatsapp,
+      },
+      {
+        id: 'telegram',
+        label: 'Telegram',
+        connected: telegramConnected,
+        issue: accountIssues.telegram,
+      },
+      {
+        id: 'gmail',
+        label: 'Gmail',
+        connected: gmailHasScopes,
+        issue: accountIssues.gmail,
+      },
+      {
+        id: 'gcal',
+        label: 'Google Calendar',
+        connected: gcalHasScopes,
+        issue: accountIssues.gcal,
+      },
+    ],
+    [
+      whatsappConnected,
+      telegramConnected,
+      gmailHasScopes,
+      gcalHasScopes,
+      accountIssues.whatsapp,
+      accountIssues.telegram,
+      accountIssues.gmail,
+      accountIssues.gcal,
+    ]
+  );
+
+  const sortedAccounts = useMemo(
+    () =>
+      [...accountSummaries].sort((a, b) => {
+        const aNeedsAttention = Boolean(a.issue);
+        const bNeedsAttention = Boolean(b.issue);
+
+        if (aNeedsAttention !== bNeedsAttention) {
+          return aNeedsAttention ? -1 : 1;
+        }
+
+        if (a.connected !== b.connected) {
+          return a.connected ? 1 : -1;
+        }
+
+        return 0;
+      }),
+    [accountSummaries]
+  );
+
+  const totalAccounts = accountSummaries.length;
+  const connectedAccountsCount = accountSummaries.filter((account) => account.connected).length;
+  const disconnectedAccountsCount = totalAccounts - connectedAccountsCount;
+  const firstIssueAccount = accountSummaries.find((account) => Boolean(account.issue));
+  const firstDisconnectedAccount = accountSummaries.find((account) => !account.connected);
+
+  const primaryCtaLabel = firstIssueAccount
+    ? `Reconnect ${firstIssueAccount.label}`
+    : firstDisconnectedAccount
+      ? `Connect ${firstDisconnectedAccount.label}`
+      : 'Manage app connections';
+
+  const heroDescription = firstIssueAccount
+    ? 'Reconnect the highlighted app to restore full event and reminder coverage.'
+    : firstDisconnectedAccount
+      ? 'Connect another app so Alfred can catch more tasks, reminders, and events.'
+      : 'All apps are connected. Review your connected app settings below.';
+
+  const heroStatusTone: HeroStatusTone = firstIssueAccount
+    ? 'warning'
+    : firstDisconnectedAccount
+      ? 'neutral'
+      : 'success';
+
+  const heroStatusText = firstIssueAccount
+    ? `${issueCount} need${issueCount === 1 ? 's' : ''} attention`
+    : disconnectedAccountsCount > 0
+      ? `${disconnectedAccountsCount} to connect`
+      : 'All good';
 
   // Reset WhatsApp connect UI when connected
   useEffect(() => {
@@ -395,6 +491,60 @@ export function PreferencesScreen() {
     }
   };
 
+  const scrollToAccountsSection = useCallback(() => {
+    scrollViewRef.current?.scrollTo({
+      y: Math.max(accountsSectionY - 12, 0),
+      animated: true,
+    });
+  }, [accountsSectionY]);
+
+  const getAccountStatusText = (connected: boolean, issue?: string) => {
+    if (issue) {
+      return 'Needs reconnection';
+    }
+
+    return connected ? 'Connected' : 'Not connected';
+  };
+
+  const handleOpenConnectionFlow = (accountId: AccountIssueKey) => {
+    if (accountId === 'whatsapp') {
+      handleShowWhatsAppConnect();
+      setShowTelegramConnect(false);
+      setTelegramCodeSent(false);
+      setTelegramPhoneNumber('');
+      setTelegramCode('');
+      scrollToAccountsSection();
+      return;
+    }
+
+    if (accountId === 'telegram') {
+      handleShowTelegramConnect();
+      setShowWhatsAppConnect(false);
+      setPairingCode(null);
+      setPhoneNumber('');
+      scrollToAccountsSection();
+      return;
+    }
+
+    if (accountId === 'gmail') {
+      void handleConnectGmail();
+      return;
+    }
+
+    void handleConnectGCal();
+  };
+
+  const handlePrimaryConnectionAction = () => {
+    const targetAccount = firstIssueAccount ?? firstDisconnectedAccount;
+
+    if (!targetAccount) {
+      scrollToAccountsSection();
+      return;
+    }
+
+    handleOpenConnectionFlow(targetAccount.id);
+  };
+
   // Show loading state during initial data fetch to prevent flash
   if (isInitialLoading) {
     return (
@@ -413,97 +563,139 @@ export function PreferencesScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         <ScrollView
+          ref={scrollViewRef}
           style={styles.scrollView}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
         >
-        {/* Sources Section */}
-        <Text style={styles.sectionDescription}>
-            Select where Alfred should look for event, reminder and task suggestions.
-        </Text>
-
-        {issueCount > 0 && (
-          <Card style={styles.issueBannerCard}>
-            <View style={styles.issueBannerHeader}>
-              <Ionicons name="warning-outline" size={16} color={colors.warning} />
-              <Text style={styles.issueBannerTitle}>Re-authentication needed</Text>
+          <Card style={styles.heroCard}>
+            <View style={styles.heroTopRow}>
+              <View style={styles.heroTitleBlock}>
+                <Text style={styles.heroEyebrow}>Connection Status</Text>
+                <Text style={styles.heroTitle}>
+                  {connectedAccountsCount} of {totalAccounts} apps connected
+                </Text>
+              </View>
+              <View
+                style={[
+                  styles.heroStatusBadge,
+                  heroStatusTone === 'warning'
+                    ? styles.heroStatusBadgeWarning
+                    : heroStatusTone === 'success'
+                      ? styles.heroStatusBadgeSuccess
+                      : styles.heroStatusBadgeNeutral,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.heroStatusText,
+                    heroStatusTone === 'warning'
+                      ? styles.heroStatusTextWarning
+                      : heroStatusTone === 'success'
+                        ? styles.heroStatusTextSuccess
+                        : styles.heroStatusTextNeutral,
+                  ]}
+                >
+                  {heroStatusText}
+                </Text>
+              </View>
             </View>
-            <Text style={styles.issueBannerText}>
-              Reconnect the highlighted source{issueCount === 1 ? '' : 's'} below to restore full coverage.
-            </Text>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${(connectedAccountsCount / totalAccounts) * 100}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.heroDescription}>{heroDescription}</Text>
+            <Button
+              title={primaryCtaLabel}
+              onPress={handlePrimaryConnectionAction}
+              style={styles.heroCtaButton}
+            />
           </Card>
-        )}
 
-        {whatsappConnected && (
-          <PreferenceCard
-            title="WhatsApp"
-            description="Manage tracked contacts"
-            icon="chatbubble-outline"
-            connected={whatsappConnected}
-            onPress={() => navigation.navigate('WhatsAppPreferences')}
-          />
-        )}
+          <Text style={styles.sectionLabel}>Connected App Settings</Text>
+          <Text style={styles.sectionDescription}>
+            After an app is connected, choose what Alfred should monitor.
+          </Text>
 
-        {telegramConnected && (
-          <PreferenceCard
-            title="Telegram"
-            description="Manage tracked contacts"
-            icon="paper-plane-outline"
-            connected={telegramConnected}
-            onPress={() => navigation.navigate('TelegramPreferences')}
-          />
-        )}
+          {whatsappConnected && (
+            <PreferenceCard
+              title="WhatsApp"
+              description="Manage chats Alfred scans for reminders and events"
+              icon="chatbubble-outline"
+              connected={whatsappConnected}
+              onPress={() => navigation.navigate('WhatsAppPreferences')}
+            />
+          )}
 
-        {gmailHasScopes && (
-          <PreferenceCard
-            title="Gmail"
-            description="Manage tracked senders and domains"
-            icon="mail-outline"
-            connected={gmailHasScopes}
-            onPress={() => navigation.navigate('GmailPreferences')}
-          />
-        )}
+          {telegramConnected && (
+            <PreferenceCard
+              title="Telegram"
+              description="Manage chats Alfred scans for reminders and events"
+              icon="paper-plane-outline"
+              connected={telegramConnected}
+              onPress={() => navigation.navigate('TelegramPreferences')}
+            />
+          )}
 
-        {gcalHasScopes && (
-          <PreferenceCard
-            title="Google Calendar"
-            description={gcalSettings?.sync_enabled
-              ? `Syncing to ${gcalSettings.selected_calendar_name}`
-              : "Manage calender to sync with"}
-            icon="calendar-outline"
-            connected={gcalHasScopes}
-            onPress={() => navigation.navigate('GoogleCalendarPreferences')}
-          />
-        )}
+          {gmailHasScopes && (
+            <PreferenceCard
+              title="Gmail"
+              description="Manage senders and domains Alfred monitors"
+              icon="mail-outline"
+              connected={gmailHasScopes}
+              onPress={() => navigation.navigate('GmailPreferences')}
+            />
+          )}
 
-        {!whatsappConnected && !telegramConnected && !gmailHasScopes && !gcalHasScopes && (
-          <Card style={styles.emptyCard}>
-            <Text style={styles.emptyText}>
-              No connected sources
+          {gcalHasScopes && (
+            <PreferenceCard
+              title="Google Calendar"
+              description={
+                gcalSettings?.sync_enabled
+                  ? `Syncing to ${gcalSettings.selected_calendar_name}`
+                  : 'Choose which calendar Alfred syncs with'
+              }
+              icon="calendar-outline"
+              connected={gcalHasScopes}
+              onPress={() => navigation.navigate('GoogleCalendarPreferences')}
+            />
+          )}
+
+          {!whatsappConnected && !telegramConnected && !gmailHasScopes && !gcalHasScopes && (
+            <Card style={styles.emptyCard}>
+              <Ionicons
+                name="link-outline"
+                size={26}
+                color={colors.textMuted}
+                style={styles.emptyIcon}
+              />
+              <Text style={styles.emptyText}>No connected apps yet</Text>
+              <Text style={styles.emptySubtext}>
+                Connect your first app below to start receiving suggestions.
+              </Text>
+              <Button
+                title={primaryCtaLabel}
+                onPress={handlePrimaryConnectionAction}
+                style={styles.emptyCardButton}
+              />
+            </Card>
+          )}
+
+          <View
+            onLayout={(event) => setAccountsSectionY(event.nativeEvent.layout.y)}
+            style={styles.accountsSectionHeader}
+          >
+            <Text style={styles.sectionLabel}>App Connections</Text>
+            <Text style={styles.sectionDescription}>
+              Connect, reconnect, or disconnect the apps Alfred can use.
             </Text>
-            <Text style={styles.emptySubtext}>
-              Connect an account below to get suggestions
-            </Text>
-          </Card>
-        )}
-
-        {/* Connected Accounts Section */}
-        <Text style={styles.sectionLabel}>Connected Accounts</Text>
-        <Card>
-          {/* Sort accounts: disconnected first, then connected */}
-          {(() => {
-            const accounts = [
-              { id: 'whatsapp', connected: whatsappConnected },
-              { id: 'telegram', connected: telegramConnected },
-              { id: 'gmail', connected: gmailHasScopes },
-              { id: 'gcal', connected: gcalHasScopes },
-            ].sort((a, b) => {
-              if (!a.connected && b.connected) return -1;
-              if (a.connected && !b.connected) return 1;
-              return 0;
-            });
-
-            return accounts.map((account, index) => {
+          </View>
+          <Card>
+            {sortedAccounts.map((account, index) => {
               const needsBorder = index > 0;
 
               if (account.id === 'whatsapp') {
@@ -518,8 +710,17 @@ export function PreferencesScreen() {
                         <Ionicons name="chatbubble-outline" size={20} color={colors.text} />
                         <View style={styles.accountText}>
                           <Text style={styles.accountName}>WhatsApp</Text>
-                          <Text style={styles.accountStatus}>
-                            {whatsappConnected ? 'Connected' : 'Not connected'}
+                          <Text
+                            style={[
+                              styles.accountStatus,
+                              accountIssues.whatsapp
+                                ? styles.accountStatusWarning
+                                : whatsappConnected
+                                  ? styles.accountStatusConnected
+                                  : undefined,
+                            ]}
+                          >
+                            {getAccountStatusText(whatsappConnected, accountIssues.whatsapp)}
                           </Text>
                           {accountIssues.whatsapp ? (
                             <View style={styles.accountIssueRow}>
@@ -545,8 +746,8 @@ export function PreferencesScreen() {
                         />
                       ) : !showWhatsAppConnect ? (
                         <Button
-                          title="Connect"
-                          onPress={handleShowWhatsAppConnect}
+                          title={accountIssues.whatsapp ? 'Reconnect' : 'Connect'}
+                          onPress={() => handleOpenConnectionFlow('whatsapp')}
                           style={styles.connectButton}
                         />
                       ) : null}
@@ -556,7 +757,7 @@ export function PreferencesScreen() {
                         {!pairingCode ? (
                           <>
                             <Text style={styles.connectLabel}>
-                              Enter your phone number with country code
+                              Enter your phone number (include country code)
                             </Text>
                             <TextInput
                               style={styles.input}
@@ -578,7 +779,7 @@ export function PreferencesScreen() {
                         ) : (
                           <>
                             <View style={styles.pairingCodeContainer}>
-                              <Text style={styles.pairingCodeLabel}>Your Pairing Code</Text>
+                              <Text style={styles.pairingCodeLabel}>Your pairing code</Text>
                               <View style={styles.pairingCodeRow}>
                                 <Text style={styles.pairingCode}>{pairingCode}</Text>
                                 <TouchableOpacity style={styles.copyButton} onPress={handleCopyCode}>
@@ -591,7 +792,7 @@ export function PreferencesScreen() {
                               </View>
                             </View>
                             <Text style={styles.pairingInstructions}>
-                              Open WhatsApp → Settings → Linked Devices → Link with phone number
+                              In WhatsApp: Settings → Linked Devices → Link with phone number
                             </Text>
                             <Button
                               title="Generate New Code"
@@ -620,8 +821,17 @@ export function PreferencesScreen() {
                         <Ionicons name="paper-plane-outline" size={20} color={colors.text} />
                         <View style={styles.accountText}>
                           <Text style={styles.accountName}>Telegram</Text>
-                          <Text style={styles.accountStatus}>
-                            {telegramConnected ? 'Connected' : 'Not connected'}
+                          <Text
+                            style={[
+                              styles.accountStatus,
+                              accountIssues.telegram
+                                ? styles.accountStatusWarning
+                                : telegramConnected
+                                  ? styles.accountStatusConnected
+                                  : undefined,
+                            ]}
+                          >
+                            {getAccountStatusText(telegramConnected, accountIssues.telegram)}
                           </Text>
                           {accountIssues.telegram ? (
                             <View style={styles.accountIssueRow}>
@@ -647,8 +857,8 @@ export function PreferencesScreen() {
                         />
                       ) : !showTelegramConnect ? (
                         <Button
-                          title="Connect"
-                          onPress={handleShowTelegramConnect}
+                          title={accountIssues.telegram ? 'Reconnect' : 'Connect'}
+                          onPress={() => handleOpenConnectionFlow('telegram')}
                           style={styles.connectButton}
                         />
                       ) : null}
@@ -658,7 +868,7 @@ export function PreferencesScreen() {
                         {!telegramCodeSent ? (
                           <>
                             <Text style={styles.connectLabel}>
-                              Enter your phone number with country code
+                              Enter your phone number (include country code)
                             </Text>
                             <TextInput
                               style={styles.input}
@@ -680,7 +890,7 @@ export function PreferencesScreen() {
                         ) : (
                           <>
                             <Text style={styles.connectLabel}>
-                              Enter the verification code sent to Telegram
+                              Enter the code sent to your Telegram app
                             </Text>
                             <TextInput
                               style={styles.input}
@@ -721,8 +931,17 @@ export function PreferencesScreen() {
                         <Ionicons name="mail-outline" size={20} color={colors.text} />
                         <View style={styles.accountText}>
                           <Text style={styles.accountName}>Gmail</Text>
-                          <Text style={styles.accountStatus}>
-                            {gmailHasScopes ? 'Connected' : 'Not connected'}
+                          <Text
+                            style={[
+                              styles.accountStatus,
+                              accountIssues.gmail
+                                ? styles.accountStatusWarning
+                                : gmailHasScopes
+                                  ? styles.accountStatusConnected
+                                  : undefined,
+                            ]}
+                          >
+                            {getAccountStatusText(gmailHasScopes, accountIssues.gmail)}
                           </Text>
                           {accountIssues.gmail ? (
                             <View style={styles.accountIssueRow}>
@@ -748,8 +967,8 @@ export function PreferencesScreen() {
                         />
                       ) : (
                         <Button
-                          title="Connect"
-                          onPress={handleConnectGmail}
+                          title={accountIssues.gmail ? 'Reconnect' : 'Connect'}
+                          onPress={() => handleOpenConnectionFlow('gmail')}
                           style={styles.connectButton}
                         />
                       )}
@@ -766,8 +985,17 @@ export function PreferencesScreen() {
                         <Ionicons name="calendar-outline" size={20} color={colors.text} />
                         <View style={styles.accountText}>
                           <Text style={styles.accountName}>Google Calendar</Text>
-                          <Text style={styles.accountStatus}>
-                            {gcalHasScopes ? 'Connected' : 'Not connected'}
+                          <Text
+                            style={[
+                              styles.accountStatus,
+                              accountIssues.gcal
+                                ? styles.accountStatusWarning
+                                : gcalHasScopes
+                                  ? styles.accountStatusConnected
+                                  : undefined,
+                            ]}
+                          >
+                            {getAccountStatusText(gcalHasScopes, accountIssues.gcal)}
                           </Text>
                           {accountIssues.gcal ? (
                             <View style={styles.accountIssueRow}>
@@ -793,8 +1021,8 @@ export function PreferencesScreen() {
                         />
                       ) : (
                         <Button
-                          title="Connect"
-                          onPress={handleConnectGCal}
+                          title={accountIssues.gcal ? 'Reconnect' : 'Connect'}
+                          onPress={() => handleOpenConnectionFlow('gcal')}
                           style={styles.connectButton}
                         />
                       )}
@@ -804,9 +1032,8 @@ export function PreferencesScreen() {
               }
 
               return null;
-            });
-          })()}
-        </Card>
+            })}
+          </Card>
 
         </ScrollView>
       </KeyboardAvoidingView>
@@ -835,11 +1062,95 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 32,
   },
+  heroCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primary + '22',
+    backgroundColor: colors.infoBackground,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  heroTitleBlock: {
+    flex: 1,
+    marginRight: 12,
+  },
+  heroEyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 5,
+  },
+  heroTitle: {
+    fontSize: 21,
+    fontWeight: '700',
+    color: colors.text,
+    lineHeight: 28,
+  },
+  heroStatusBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  heroStatusBadgeWarning: {
+    borderColor: colors.warning + '55',
+    backgroundColor: colors.warning + '12',
+  },
+  heroStatusBadgeNeutral: {
+    borderColor: colors.border,
+    backgroundColor: colors.background,
+  },
+  heroStatusBadgeSuccess: {
+    borderColor: colors.success + '55',
+    backgroundColor: colors.success + '12',
+  },
+  heroStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroStatusTextWarning: {
+    color: colors.warning,
+  },
+  heroStatusTextNeutral: {
+    color: colors.textSecondary,
+  },
+  heroStatusTextSuccess: {
+    color: colors.success,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
+  },
+  heroDescription: {
+    marginTop: 10,
+    marginBottom: 12,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
+  heroCtaButton: {
+    alignSelf: 'flex-start',
+  },
   sectionLabel: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.textSecondary,
-    marginTop: 16,
+    marginTop: 8,
     marginBottom: 8,
     marginLeft: 4,
     textTransform: 'uppercase',
@@ -851,27 +1162,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     lineHeight: 20,
   },
-  issueBannerCard: {
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: colors.warning + '55',
-    backgroundColor: colors.warning + '10',
-  },
-  issueBannerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  issueBannerTitle: {
-    marginLeft: 6,
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  issueBannerText: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
+  accountsSectionHeader: {
+    marginTop: 6,
   },
   // Account styles
   accountRow: {
@@ -891,6 +1183,7 @@ const styles = StyleSheet.create({
   },
   accountText: {
     marginLeft: 12,
+    flex: 1,
   },
   accountName: {
     fontSize: 16,
@@ -901,6 +1194,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  accountStatusConnected: {
+    color: colors.success,
+  },
+  accountStatusWarning: {
+    color: colors.warning,
   },
   accountIssueRow: {
     flexDirection: 'row',
@@ -984,12 +1283,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 12,
   },
-  noAccountsText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingVertical: 16,
-  },
   // Preference card styles
   preferenceCard: {
     marginBottom: 12,
@@ -1045,7 +1338,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     paddingHorizontal: 16,
   },
-  settingsButton: {
-    minWidth: 150,
+  emptyCardButton: {
+    minWidth: 200,
   },
 });

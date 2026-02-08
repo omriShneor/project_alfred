@@ -7,7 +7,6 @@ import {
   TextInput,
   KeyboardTypeOptions,
   Keyboard,
-  Platform,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Modal, Button, LoadingSpinner } from '../common';
@@ -20,6 +19,7 @@ interface CustomEntry {
 }
 
 const emptyContacts: SourceTopContact[] = [];
+const TOP_SUGGESTIONS_LIMIT = 8;
 
 export interface AddSourceModalProps {
   visible: boolean;
@@ -67,17 +67,33 @@ export function AddSourceModal({
   const [customEntries, setCustomEntries] = useState<CustomEntry[]>([]);
   const [customInput, setCustomInput] = useState('');
   const [customInputError, setCustomInputError] = useState<string | null>(null);
-  const [isCustomInputFocused, setIsCustomInputFocused] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const [isAdding, setIsAdding] = useState(false);
+
   const normalizedQuery = customInput.trim();
   const isSearching = normalizedQuery.length >= 2;
 
-  // When query >= 2 chars and search results available, show search results; otherwise show topContacts
+  const entityLabel = React.useMemo(() => {
+    const normalizedTitle = title.toLowerCase();
+    if (normalizedTitle.includes('sender')) return 'sender';
+    if (normalizedTitle.includes('chat')) return 'chat';
+    if (normalizedTitle.includes('contact')) return 'contact';
+    return 'entry';
+  }, [title]);
+  const entityLabelPlural = entityLabel === 'entry' ? 'entries' : `${entityLabel}s`;
+  const entityLabelPluralTitle =
+    entityLabelPlural.charAt(0).toUpperCase() + entityLabelPlural.slice(1);
+
+  const topSuggestedContacts = React.useMemo(() => {
+    const suggestions = [...(topContacts ?? emptyContacts)];
+    suggestions.sort((a, b) => b.message_count - a.message_count);
+    return suggestions.slice(0, TOP_SUGGESTIONS_LIMIT);
+  }, [topContacts]);
+
   const displayedContacts = isSearching
     ? (searchResults ?? emptyContacts)
-    : (topContacts ?? emptyContacts);
+    : topSuggestedContacts;
   const displayedLoading = isSearching ? (searchLoading ?? false) : contactsLoading;
+
   const allKnownContacts = React.useMemo(() => {
     const byIdentifier = new Map<string, SourceTopContact>();
     for (const contact of topContacts ?? emptyContacts) {
@@ -89,33 +105,12 @@ export function AddSourceModal({
     return Array.from(byIdentifier.values());
   }, [topContacts, searchResults]);
 
-  // Track keyboard visibility
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSubscription = Keyboard.addListener(showEvent, (e) => {
-      setKeyboardHeight(e.endCoordinates.height);
-    });
-    const hideSubscription = Keyboard.addListener(hideEvent, () => {
-      setKeyboardHeight(0);
-      setIsCustomInputFocused(false);
-    });
-
-    return () => {
-      showSubscription.remove();
-      hideSubscription.remove();
-    };
-  }, []);
-
-  // Notify parent of search query changes
   React.useEffect(() => {
     if (onSearchQueryChange) {
       onSearchQueryChange(normalizedQuery);
     }
   }, [normalizedQuery, onSearchQueryChange]);
 
-  // Reset state when modal opens
   React.useEffect(() => {
     if (visible) {
       setSelectedContacts(new Set());
@@ -155,22 +150,22 @@ export function AddSourceModal({
 
   const toggleContactSelection = (identifier: string) => {
     setSelectedContacts((prev) => {
-      const newSet = new Set(prev);
-      if (newSet.has(identifier)) {
-        newSet.delete(identifier);
+      const next = new Set(prev);
+      if (next.has(identifier)) {
+        next.delete(identifier);
       } else {
-        newSet.add(identifier);
+        next.add(identifier);
       }
-      return newSet;
+      return next;
     });
   };
 
   const removeCustomEntry = (identifier: string) => {
-    setCustomEntries((prev) => prev.filter((e) => e.identifier !== identifier));
+    setCustomEntries((prev) => prev.filter((entry) => entry.identifier !== identifier));
     setSelectedContacts((prev) => {
-      const newSet = new Set(prev);
-      newSet.delete(identifier);
-      return newSet;
+      const next = new Set(prev);
+      next.delete(identifier);
+      return next;
     });
   };
 
@@ -184,14 +179,13 @@ export function AddSourceModal({
     const trimmedValue = customInput.trim();
     const normalizedValue = trimmedValue.toLowerCase();
 
-    // Check if already in custom entries
-    if (customEntries.some((e) => e.identifier.toLowerCase() === normalizedValue)) {
-      setCustomInputError('Already added');
+    if (customEntries.some((entry) => entry.identifier.toLowerCase() === normalizedValue)) {
+      setCustomInputError('Already selected');
       return;
     }
 
-    const matchingContacts = displayedContacts.filter((c) => {
-      const fields = [c.name, c.push_name, c.secondary_label, c.identifier]
+    const matchingContacts = displayedContacts.filter((contact) => {
+      const fields = [contact.name, contact.push_name, contact.secondary_label, contact.identifier]
         .filter((value): value is string => Boolean(value))
         .map((value) => value.toLowerCase());
       return fields.some((value) => value === normalizedValue);
@@ -216,14 +210,11 @@ export function AddSourceModal({
       return;
     }
 
-    // For sources that resolve manual entries by name (e.g. WhatsApp),
-    // avoid ambiguous custom additions when search already found contacts.
     if (blockManualAddWhenSearchResults && isSearching && displayedContacts.length > 0) {
-      setCustomInputError('Select a contact from the results above');
+      setCustomInputError('Select a result from the list above');
       return;
     }
 
-    // Add to custom entries and select it
     setCustomEntries((prev) => [...prev, { identifier: trimmedValue, name: trimmedValue }]);
     setSelectedContacts((prev) => new Set(prev).add(trimmedValue));
     setCustomInput('');
@@ -234,16 +225,14 @@ export function AddSourceModal({
   const handleAddAllSelected = async () => {
     setIsAdding(true);
     try {
-      // Add selected contacts from both top contacts and search results.
       const contactsToAdd = allKnownContacts.filter(
-        (c) => selectedContacts.has(c.identifier) && !c.is_tracked
+        (contact) => selectedContacts.has(contact.identifier) && !contact.is_tracked
       );
       if (contactsToAdd.length > 0) {
         await onAddContacts(contactsToAdd);
       }
 
-      // Add custom entries
-      const customToAdd = customEntries.filter((e) => selectedContacts.has(e.identifier));
+      const customToAdd = customEntries.filter((entry) => selectedContacts.has(entry.identifier));
       for (const entry of customToAdd) {
         await onAddCustom(entry.identifier);
       }
@@ -252,19 +241,35 @@ export function AddSourceModal({
       setCustomEntries([]);
       onClose();
     } catch {
-      // Error handled by parent
+      // Error handled by parent screen
     } finally {
       setIsAdding(false);
     }
   };
 
-  // Total selected count (from top contacts + custom entries)
-  const totalSelected = selectedContacts.size;
+  const handleClearSelection = () => {
+    setSelectedContacts(new Set());
+    setCustomEntries([]);
+  };
 
-  const renderContactItem = (item: SourceTopContact, index: number, showSeparator: boolean) => {
+  const totalSelected = selectedContacts.size;
+  const primaryButtonText =
+    totalSelected > 0
+      ? `Add ${totalSelected} ${totalSelected === 1 ? entityLabel : entityLabelPlural}`
+      : 'Add Selected';
+  const selectionSummaryText =
+    totalSelected > 0
+      ? `${totalSelected} ${totalSelected === 1 ? entityLabel : entityLabelPlural} selected`
+      : `Select ${entityLabelPlural} to add`;
+
+  const renderContactItem = (
+    item: SourceTopContact,
+    showSeparator: boolean
+  ) => {
     const selected = selectedContacts.has(item.identifier);
     const subtitle =
       item.push_name && item.push_name !== item.name ? item.push_name : item.secondary_label;
+
     return (
       <React.Fragment key={item.identifier}>
         {showSeparator && <View style={styles.separator} />}
@@ -287,13 +292,17 @@ export function AddSourceModal({
               </Text>
             )}
           </View>
-          {item.is_tracked ? (
-            <Feather name="check-circle" size={20} color={colors.success} />
-          ) : selected ? (
-            <Feather name="check-square" size={20} color={colors.primary} />
-          ) : (
-            <Feather name="square" size={20} color={colors.textSecondary} />
-          )}
+          <View style={styles.contactAction}>
+            {item.is_tracked ? (
+              <View style={styles.trackedBadge}>
+                <Text style={styles.trackedBadgeText}>Tracked</Text>
+              </View>
+            ) : selected ? (
+              <Feather name="check-square" size={20} color={colors.primary} />
+            ) : (
+              <Feather name="square" size={20} color={colors.textSecondary} />
+            )}
+          </View>
         </TouchableOpacity>
       </React.Fragment>
     );
@@ -311,10 +320,10 @@ export function AddSourceModal({
           <View style={styles.contactInfo}>
             <View style={styles.customEntryHeader}>
               <Text style={styles.contactName} numberOfLines={1}>
-                 {entry.identifier}
+                {entry.identifier}
               </Text>
               <View style={styles.customBadge}>
-                <Text style={styles.customBadgeText}>Custom</Text>
+                <Text style={styles.customBadgeText}>Manual</Text>
               </View>
             </View>
           </View>
@@ -327,6 +336,8 @@ export function AddSourceModal({
             <TouchableOpacity
               style={styles.removeButton}
               onPress={() => removeCustomEntry(entry.identifier)}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${entry.identifier}`}
             >
               <Feather name="x" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -342,26 +353,68 @@ export function AddSourceModal({
       onClose={onClose}
       title={title}
       footer={
-        totalSelected > 0 ? (
-          <View style={styles.floatingFooter}>
-            <Button
-              title={`Add ${totalSelected} sources`}
-              onPress={handleAddAllSelected}
-              loading={isAdding || addContactsLoading || addCustomLoading}
-            />
+        <View style={styles.floatingFooter}>
+          <View style={styles.composerSection}>
+            <Text style={styles.sectionLabel}>Search or add manually</Text>
+            <View style={styles.customInputRow}>
+              <TextInput
+                style={[styles.customInput, customInputError && styles.customInputError]}
+                value={customInput}
+                onChangeText={(text) => {
+                  setCustomInput(text);
+                  if (customInputError) setCustomInputError(null);
+                }}
+                placeholder={customInputPlaceholder}
+                placeholderTextColor={colors.textSecondary}
+                keyboardType={customInputKeyboardType}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="done"
+                onSubmitEditing={handleAddCustomToList}
+                onBlur={() => {
+                  if (customInput.trim()) {
+                    setCustomInputError(validateCustomInput(customInput));
+                  }
+                }}
+              />
+            </View>
+            {customInputError ? <Text style={styles.errorText}>{customInputError}</Text> : null}
           </View>
-        ) : isCustomInputFocused && keyboardHeight > 0 ? (
-          <View style={styles.floatingFooter}>
-            <Button
-              title="Add source"
-              onPress={handleAddCustomToList}
-              disabled={!customInput.trim()}
-            />
+
+          <View style={styles.footerSummaryRow}>
+            <Text style={styles.footerSummaryText}>{selectionSummaryText}</Text>
+            {totalSelected > 0 && (
+              <TouchableOpacity
+                style={styles.clearButton}
+                onPress={handleClearSelection}
+                accessibilityRole="button"
+                accessibilityLabel="Clear selection"
+              >
+                <Text style={styles.clearButtonText}>Clear</Text>
+              </TouchableOpacity>
+            )}
           </View>
-        ) : undefined
+          <Button
+            title={primaryButtonText}
+            onPress={handleAddAllSelected}
+            loading={isAdding || addContactsLoading || addCustomLoading}
+            disabled={totalSelected === 0}
+          />
+        </View>
       }
     >
-      {/* Custom Entries Section (shown at top if any) */}
+      <View style={styles.guidanceCard}>
+        <Feather
+          name="info"
+          size={14}
+          color={colors.primary}
+          style={styles.guidanceIcon}
+        />
+        <Text style={styles.guidanceText}>
+          Select {entityLabelPlural} from suggestions or add one manually below.
+        </Text>
+      </View>
+
       {customEntries.length > 0 && (
         <View style={styles.customEntriesSection}>
           <Text style={styles.sectionLabel}>Added manually</Text>
@@ -371,63 +424,25 @@ export function AddSourceModal({
         </View>
       )}
 
-      {/* Suggested Contacts Section */}
       <View style={styles.suggestedSection}>
-        <Text style={styles.sectionLabel}>Suggested Contacts</Text>
+        <Text style={styles.sectionLabel}>Suggested {entityLabelPluralTitle}</Text>
         {displayedLoading ? (
           <LoadingSpinner />
         ) : displayedContacts.length > 0 ? (
           <View style={styles.contactList}>
-            {displayedContacts.map((item: SourceTopContact, index: number) =>
-              renderContactItem(item, index, index > 0)
-            )}
+            {displayedContacts.map((item, index) => renderContactItem(item, index > 0))}
           </View>
         ) : (
           <View style={styles.emptyContacts}>
             <Text style={styles.emptyContactsText}>
-              {normalizedQuery ? 'No matching contacts' : 'No suggested contacts yet'}
+              {normalizedQuery
+                ? `No matching ${entityLabelPlural}`
+                : `No suggested ${entityLabelPlural} yet`}
             </Text>
             <Text style={styles.emptyContactsSubtext}>
-              Add a contact manually below
+              Add a {entityLabel} manually below
             </Text>
           </View>
-        )}
-      </View>
-
-      {/* Custom Input Section */}
-      <View style={styles.customSection}>
-        <Text style={styles.sectionLabel}>Search or add manually</Text>
-        <View style={styles.customInputRow}>
-          <TextInput
-            style={[styles.customInput, customInputError && styles.customInputError]}
-            value={customInput}
-            onChangeText={(text) => {
-              setCustomInput(text);
-              if (customInputError) setCustomInputError(null);
-            }}
-            placeholder={customInputPlaceholder}
-            placeholderTextColor={colors.textSecondary}
-            keyboardType={customInputKeyboardType}
-            autoCapitalize="none"
-            autoCorrect={false}
-            onFocus={() => setIsCustomInputFocused(true)}
-            onBlur={() => {
-              if (customInput.trim()) {
-                setCustomInputError(validateCustomInput(customInput));
-              }
-            }}
-          />
-          {!isCustomInputFocused && customInput.trim() && (
-            <TouchableOpacity
-              style={styles.addToListButton}
-              onPress={handleAddCustomToList}
-            >
-              <Feather name="plus" size={20} color={colors.primary} />
-            </TouchableOpacity>
-          )}
-        </View>
-        {customInputError && (
-          <Text style={styles.errorText}>{customInputError}</Text>
         )}
       </View>
     </Modal>
@@ -435,9 +450,30 @@ export function AddSourceModal({
 }
 
 const styles = StyleSheet.create({
+  guidanceCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.primary + '28',
+    backgroundColor: colors.infoBackground,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    marginBottom: 14,
+  },
+  guidanceIcon: {
+    marginTop: 1,
+    marginRight: 8,
+  },
+  guidanceText: {
+    flex: 1,
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+  },
   sectionLabel: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '600',
     color: colors.text,
     marginBottom: 8,
   },
@@ -447,9 +483,7 @@ const styles = StyleSheet.create({
   suggestedSection: {
     marginBottom: 16,
   },
-  contactList: {
-    // No maxHeight - let the Modal's ScrollView handle scrolling
-  },
+  contactList: {},
   contactItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -462,7 +496,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary + '10',
   },
   contactItemDisabled: {
-    opacity: 0.5,
+    opacity: 0.65,
   },
   contactInfo: {
     flex: 1,
@@ -477,6 +511,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginTop: 2,
+  },
+  contactAction: {
+    minWidth: 64,
+    alignItems: 'flex-end',
+  },
+  trackedBadge: {
+    backgroundColor: colors.success + '20',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  trackedBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: colors.success,
   },
   customEntryHeader: {
     flexDirection: 'row',
@@ -520,10 +569,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: 4,
   },
-  customSection: {
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 16,
+  composerSection: {
+    marginBottom: 10,
   },
   customInputRow: {
     flexDirection: 'row',
@@ -543,12 +590,6 @@ const styles = StyleSheet.create({
   customInputError: {
     borderColor: colors.danger,
   },
-  addToListButton: {
-    marginLeft: 8,
-    padding: 10,
-    backgroundColor: colors.primary + '15',
-    borderRadius: 8,
-  },
   errorText: {
     fontSize: 12,
     color: colors.danger,
@@ -556,9 +597,32 @@ const styles = StyleSheet.create({
   },
   floatingFooter: {
     backgroundColor: colors.background,
-    padding: 16,
-    paddingBottom: 24,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 12,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+  },
+  footerSummaryRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  footerSummaryText: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    fontWeight: '500',
+  },
+  clearButton: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 999,
+    backgroundColor: colors.background,
+  },
+  clearButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
   },
 });

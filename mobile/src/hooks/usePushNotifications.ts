@@ -40,7 +40,7 @@ export function usePushNotifications() {
       const data = response.notification.request.content.data;
       // Navigate based on screen specified in notification data
       if (data?.screen === 'Permissions') {
-        console.log('Navigating to Connect Your Accounts screen');
+        console.log('Navigating to Connect Your Apps screen');
         navigate('SmartCalendarStack', { screen: 'Permissions' });
       } else if (data?.screen === 'SmartCalendar') {
         console.log('Navigating to Smart Calendar');

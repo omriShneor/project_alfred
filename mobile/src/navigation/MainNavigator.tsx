@@ -157,7 +157,7 @@ export function MainNavigator() {
         component={TelegramPreferencesScreen}
         options={({ navigation }) => ({
           headerShown: true,
-          title: 'Telegram Sources',
+          title: 'Telegram Chats',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,
@@ -176,7 +176,7 @@ export function MainNavigator() {
         component={GmailPreferencesScreen}
         options={({ navigation }) => ({
           headerShown: true,
-          title: 'Gmail Sources',
+          title: 'Gmail Senders',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,

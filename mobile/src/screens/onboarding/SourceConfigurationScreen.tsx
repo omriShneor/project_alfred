@@ -24,27 +24,29 @@ type NavigationProp = NativeStackNavigationProp<OnboardingParamList, 'SourceConf
 interface ServiceCardProps {
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
+  description: string;
   configured: boolean;
   onPress: () => void;
 }
 
-function ServiceCard({ icon, title, configured, onPress }: ServiceCardProps) {
+function ServiceCard({ icon, title, description, configured, onPress }: ServiceCardProps) {
   return (
-    <Card style={styles.card}>
+    <Card style={[styles.card, configured && styles.cardConfigured]}>
       <View style={styles.serviceHeader}>
         <View style={styles.serviceInfo}>
-          <Ionicons name={icon} size={24} color={colors.text} />
+          <Ionicons name={icon} size={22} color={colors.text} />
           <View style={styles.serviceText}>
             <Text style={styles.serviceTitle}>{title}</Text>
+            <Text style={styles.serviceDescription}>{description}</Text>
           </View>
         </View>
         <View style={styles.serviceStatus}>
           <View style={[styles.statusDot, { backgroundColor: configured ? colors.success : colors.textSecondary }]} />
-          <Text style={styles.statusLabel}>{configured ? 'Configured' : 'Not configured'}</Text>
+          <Text style={styles.statusLabel}>{configured ? 'Ready' : 'Needs setup'}</Text>
         </View>
       </View>
       <Button
-        title={configured ? 'Manage' : 'Configure'}
+        title={configured ? 'Manage' : 'Choose'}
         onPress={onPress}
         variant={configured ? 'outline' : 'primary'}
         style={styles.configureButton}
@@ -65,12 +67,20 @@ export function SourceConfigurationScreen() {
   const completeOnboarding = useCompleteOnboarding();
 
   // Derive configuration status
-  const whatsappConfigured = (whatsappChannels?.length ?? 0) > 0;
-  const telegramConfigured = (telegramChannels?.length ?? 0) > 0;
-  const gmailConfigured = (emailSources?.length ?? 0) > 0;
+  const whatsappConfigured = (whatsappChannels?.some((channel) => channel.enabled) ?? false);
+  const telegramConfigured = (telegramChannels?.some((channel) => channel.enabled) ?? false);
+  const gmailConfigured = (emailSources?.some((source) => source.enabled) ?? false);
 
-  // Check if at least one source is configured
-  const hasConfiguredSource = whatsappConfigured || telegramConfigured || gmailConfigured;
+  const requiredAppsCount = [whatsappEnabled, telegramEnabled, gmailEnabled].filter(Boolean).length;
+  const configuredAppsCount = [
+    whatsappEnabled ? whatsappConfigured : false,
+    telegramEnabled ? telegramConfigured : false,
+    gmailEnabled ? gmailConfigured : false,
+  ].filter(Boolean).length;
+  const hasConfiguredSource = configuredAppsCount > 0;
+  const finishButtonTitle = hasConfiguredSource
+    ? 'Finish setup'
+    : 'Select at least one contact or sender';
 
   // Refetch sources when screen gains focus (user returns from preference screens)
   useFocusEffect(
@@ -124,16 +134,44 @@ export function SourceConfigurationScreen() {
         style={styles.container}
         contentContainerStyle={styles.content}
       >
-        <Text style={styles.step}>Step 3 of 3</Text>
-        <Text style={styles.title}>Select Contacts and Senders</Text>
-        <Text style={styles.description}>
-          Choose which contacts or email senders Alfred should use for event, reminder, and task suggestions.
-        </Text>
+        <Card style={styles.heroCard}>
+          <View style={styles.heroTopRow}>
+            <Text style={styles.step}>Step 3 of 3</Text>
+            <View
+              style={[
+                styles.heroStatusBadge,
+                hasConfiguredSource ? styles.heroStatusBadgeSuccess : styles.heroStatusBadgeWarning,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.heroStatusText,
+                  hasConfiguredSource ? styles.heroStatusTextSuccess : styles.heroStatusTextWarning,
+                ]}
+              >
+                {configuredAppsCount}/{requiredAppsCount} ready
+              </Text>
+            </View>
+          </View>
+          <Text style={styles.title}>Choose What Alfred Should Monitor</Text>
+          <Text style={styles.description}>
+            Pick contacts, chats, or senders from your connected apps. You need at least one to finish setup.
+          </Text>
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                { width: `${(configuredAppsCount / Math.max(requiredAppsCount, 1)) * 100}%` },
+              ]}
+            />
+          </View>
+        </Card>
 
         {whatsappEnabled && (
           <ServiceCard
             icon="chatbubble-outline"
             title="WhatsApp"
+            description="Choose chats Alfred should scan"
             configured={whatsappConfigured}
             onPress={handleConfigureWhatsApp}
           />
@@ -143,6 +181,7 @@ export function SourceConfigurationScreen() {
           <ServiceCard
             icon="paper-plane-outline"
             title="Telegram"
+            description="Choose chats Alfred should scan"
             configured={telegramConfigured}
             onPress={handleConfigureTelegram}
           />
@@ -152,6 +191,7 @@ export function SourceConfigurationScreen() {
           <ServiceCard
             icon="mail-outline"
             title="Gmail"
+            description="Choose senders and domains Alfred should scan"
             configured={gmailConfigured}
             onPress={handleConfigureGmail}
           />
@@ -161,13 +201,13 @@ export function SourceConfigurationScreen() {
           <View style={styles.statusSummary}>
             <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.statusSummaryText}>
-              Configure at least one source to continue
+              Configure at least one contact or sender to continue
             </Text>
           </View>
         )}
 
         <Button
-          title="Continue"
+          title={finishButtonTitle}
           onPress={handleContinue}
           disabled={!hasConfiguredSource}
           loading={completeOnboarding.isPending}
@@ -195,29 +235,81 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  heroCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: colors.primary + '22',
+    backgroundColor: colors.infoBackground,
+    marginBottom: 16,
+  },
+  heroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
   step: {
-    fontSize: 14,
+    fontSize: 12,
     color: colors.primary,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  heroStatusBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  heroStatusBadgeSuccess: {
+    borderColor: colors.success + '45',
+    backgroundColor: colors.success + '12',
+  },
+  heroStatusBadgeWarning: {
+    borderColor: colors.warning + '45',
+    backgroundColor: colors.warning + '12',
+  },
+  heroStatusText: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  heroStatusTextSuccess: {
+    color: colors.success,
+  },
+  heroStatusTextWarning: {
+    color: colors.warning,
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 27,
+    fontWeight: '700',
     color: colors.text,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   description: {
-    fontSize: 15,
+    fontSize: 14,
     color: colors.textSecondary,
-    lineHeight: 22,
-    marginBottom: 32,
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+  progressTrack: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: colors.primary,
   },
   card: {
     marginBottom: 16,
   },
+  cardConfigured: {
+    borderWidth: 1,
+    borderColor: colors.success + '28',
+  },
   serviceHeader: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   serviceInfo: {
     flexDirection: 'row',
@@ -227,7 +319,7 @@ const styles = StyleSheet.create({
   serviceText: {
     marginLeft: 12,
     flex: 1,
-    marginTop: 3
+    marginTop: 1,
   },
   serviceTitle: {
     fontSize: 17,
@@ -236,9 +328,10 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   serviceDescription: {
-    fontSize: 14,
+    fontSize: 13,
     color: colors.textSecondary,
-    lineHeight: 20,
+    lineHeight: 18,
+    marginTop: 4,
   },
   serviceStatus: {
     flexDirection: 'row',
@@ -263,7 +356,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 2,
     marginBottom: 16,
     paddingHorizontal: 16,
   },

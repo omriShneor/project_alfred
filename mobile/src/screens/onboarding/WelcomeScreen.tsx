@@ -3,6 +3,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { Button } from '../../components/common';
 import { colors } from '../../theme/colors';
 import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
@@ -15,34 +16,40 @@ export function WelcomeScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.content}>
-        <Text style={styles.appName}>Alfred</Text>
-        <Text style={styles.title}>Your Personal Assistant</Text>
+        <Text style={styles.appName}>ALFRED</Text>
+        <Text style={styles.title}>Never miss what matters</Text>
         <Text style={styles.description}>
-          Meet Alfred—your sidekick, helping you stay on top every single day
+          Alfred finds events, reminders, and tasks in your chats and email, then keeps your calendar and reminders up to date so nothing slips through.
         </Text>
+
+        <View style={styles.timeBadge}>
+          <Ionicons name="time-outline" size={14} color={colors.primary} />
+          <Text style={styles.timeBadgeText}>Setup takes about 2 minutes</Text>
+        </View>
 
         <View style={styles.features}>
           <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Get event, reminder, and task suggestions from selected sources</Text>
+            <Ionicons name="apps-outline" size={16} color={colors.primary} />
+            <Text style={styles.featureText}>Choose the apps you use every day</Text>
           </View>
           <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Review and confirm in one tap — nothing changes without your approval</Text>
+            <Ionicons name="shield-checkmark-outline" size={16} color={colors.primary} />
+            <Text style={styles.featureText}>Approve each suggestion before it is saved</Text>
           </View>
           <View style={styles.featureItem}>
-            <Text style={styles.featureIcon}>*</Text>
-            <Text style={styles.featureText}>Apply changes in-app and sync with your Google Calendar</Text>
+            <Ionicons name="calendar-outline" size={16} color={colors.primary} />
+            <Text style={styles.featureText}>Sync approved events your to Google Calendar</Text>
           </View>
         </View>
       </View>
 
       <View style={styles.footer}>
         <Button
-          title="Choose Sources"
+          title="Get Started"
           onPress={() => navigation.navigate('InputSelection')}
           style={styles.button}
         />
+        <Text style={styles.footerHint}>Step 1: Choose your apps</Text>
       </View>
     </SafeAreaView>
   );
@@ -60,40 +67,54 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
     color: colors.primary,
     textTransform: 'uppercase',
     letterSpacing: 1,
     marginBottom: 8,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 34,
+    fontWeight: '700',
     color: colors.text,
     marginBottom: 16,
+    lineHeight: 40,
   },
   description: {
     fontSize: 16,
     color: colors.textSecondary,
     lineHeight: 24,
-    marginBottom: 32,
+    marginBottom: 18,
+  },
+  timeBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: colors.primary + '14',
+    marginBottom: 24,
+  },
+  timeBadgeText: {
+    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.primary,
   },
   features: {
-    gap: 16,
+    gap: 14,
   },
   featureItem: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  featureIcon: {
-    fontSize: 16,
-    color: colors.primary,
-    fontWeight: 'bold',
+    alignItems: 'flex-start',
   },
   featureText: {
     fontSize: 15,
     color: colors.text,
+    marginLeft: 10,
+    flex: 1,
+    lineHeight: 20,
   },
   footer: {
     paddingTop: 24,
@@ -101,5 +122,11 @@ const styles = StyleSheet.create({
   },
   button: {
     width: '100%',
+  },
+  footerHint: {
+    marginTop: 10,
+    textAlign: 'center',
+    fontSize: 12,
+    color: colors.textSecondary,
   },
 });

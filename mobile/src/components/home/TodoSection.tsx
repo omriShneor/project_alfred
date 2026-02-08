@@ -89,8 +89,14 @@ export function TodoSection() {
         {manualTodos.length === 0 ? (
           <Text style={styles.emptyText}>No manual tasks yet</Text>
         ) : (
-          manualTodos.slice(0, 4).map((todo) => (
-            <View key={todo.id} style={styles.todoRow}>
+          manualTodos.slice(0, 4).map((todo, index, items) => (
+            <View
+              key={todo.id}
+              style={[
+                styles.todoRow,
+                index === items.length - 1 && styles.todoRowLast,
+              ]}
+            >
               <Text style={styles.todoTitle} numberOfLines={1}>{todo.title}</Text>
               <Text style={styles.todoMeta}>{formatDue(todo.due_date)}</Text>
             </View>
@@ -210,6 +216,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
+  },
+  todoRowLast: {
+    borderBottomWidth: 0,
   },
   todoTitle: {
     fontSize: 14,

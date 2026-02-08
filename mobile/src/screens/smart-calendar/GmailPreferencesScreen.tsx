@@ -8,13 +8,12 @@ import {
   FlatList,
   Switch,
   Alert,
-  ActivityIndicator,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import * as ExpoLinking from 'expo-linking';
 import { useQueryClient } from '@tanstack/react-query';
-import { LoadingSpinner, Card } from '../../components/common';
+import { LoadingSpinner, Card, Button } from '../../components/common';
 import { AddSourceModal } from '../../components/sources/AddSourceModal';
 import { colors } from '../../theme/colors';
 import {
@@ -117,13 +116,13 @@ export function GmailPreferencesScreen() {
         data: { enabled: !source.enabled },
       });
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update source');
+      Alert.alert('Error', error.message || 'Failed to update sender');
     }
   };
 
   const handleDeleteSource = (source: EmailSource) => {
     Alert.alert(
-      'Delete Source',
+      'Remove Sender',
       `Are you sure you want to delete "${source.name}"?`,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -134,7 +133,7 @@ export function GmailPreferencesScreen() {
             try {
               await deleteSource.mutateAsync(source.id);
             } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete source');
+              Alert.alert('Error', error.message || 'Failed to remove sender');
             }
           },
         },
@@ -240,23 +239,15 @@ export function GmailPreferencesScreen() {
               </View>
               <Text style={styles.connectTitle}>Connect Gmail</Text>
               <Text style={styles.connectDescription}>
-                Grant Gmail access to scan your emails for events and reminders.
-                We only read emails - we never send, modify, or delete anything.
+                Grant Gmail access so Alfred can detect events, reminders, and tasks from selected senders.
+                Alfred only reads email content and never sends, modifies, or deletes messages.
               </Text>
-              <TouchableOpacity
-                style={[styles.connectButton, isConnecting && styles.connectButtonDisabled]}
+              <Button
+                title="Connect Gmail"
                 onPress={handleConnectGmail}
-                disabled={isConnecting}
-              >
-                {isConnecting ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <>
-                    <Feather name="link" size={18} color="#fff" />
-                    <Text style={styles.connectButtonText}>Connect Gmail</Text>
-                  </>
-                )}
-              </TouchableOpacity>
+                loading={isConnecting}
+                style={styles.connectButton}
+              />
             </View>
           </Card>
         </ScrollView>
@@ -268,13 +259,13 @@ export function GmailPreferencesScreen() {
     <View style={styles.screen}>
       <ScrollView style={styles.container} contentContainerStyle={styles.content}>
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Email Sources</Text>
+          <Text style={styles.sectionTitle}>Gmail Senders</Text>
           <TouchableOpacity
             style={styles.addButton}
             onPress={handleOpenAddSourceModal}
           >
             <Feather name="plus" size={18} color={colors.primary} />
-            <Text style={styles.addButtonText}>Add Source</Text>
+            <Text style={styles.addButtonText}>Add Sender</Text>
           </TouchableOpacity>
         </View>
         <Card>
@@ -291,9 +282,9 @@ export function GmailPreferencesScreen() {
           ) : (
             <View style={styles.emptyState}>
               <Feather name="inbox" size={40} color={colors.textSecondary} />
-              <Text style={styles.emptyStateText}>No email sources configured</Text>
+              <Text style={styles.emptyStateText}>No Gmail senders selected</Text>
               <Text style={styles.emptyStateSubtext}>
-                Add contacts or domains to track for events
+                Add senders or domains to track for events, reminders, and tasks
               </Text>
             </View>
           )}
@@ -306,7 +297,7 @@ export function GmailPreferencesScreen() {
           setSearchQuery('');
           setAddSourceModalVisible(false);
         }}
-        title="Add Email Source"
+        title="Add Gmail Sender"
         topContacts={mappedContacts}
         contactsLoading={contactsLoading}
         searchResults={mappedSearchResults}
@@ -455,22 +446,6 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   connectButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.primary,
-    paddingVertical: 14,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    minWidth: 180,
-  },
-  connectButtonDisabled: {
-    opacity: 0.7,
-  },
-  connectButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginLeft: 8,
+    minWidth: 200,
   },
 });

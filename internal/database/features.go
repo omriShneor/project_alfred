@@ -1,8 +1,8 @@
 package database
 
 import (
+	"database/sql"
 	"fmt"
-	"log"
 	"time"
 )
 
@@ -154,28 +154,88 @@ func (d *DB) ResetOnboarding(userID int64) error {
 		return err
 	}
 
-	if err := d.DeleteGoogleToken(userID); err != nil {
-		log.Printf("Warning: failed to delete Google token during reset: %v", err)
+	tx, err := d.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin reset onboarding transaction: %w", err)
 	}
-	if err := d.DeleteWhatsAppSession(userID); err != nil {
-		log.Printf("Warning: failed to delete WhatsApp session during reset: %v", err)
-	}
-	if err := d.DeleteTelegramSession(userID); err != nil {
-		log.Printf("Warning: failed to delete Telegram session during reset: %v", err)
+	defer tx.Rollback()
+
+	// Delete user-scoped data in dependency-safe order.
+	deleteSteps := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "event attendees",
+			query: `DELETE FROM event_attendees WHERE event_id IN (SELECT id FROM calendar_events WHERE user_id = ?)`,
+		},
+		{name: "reminders", query: `DELETE FROM reminders WHERE user_id = ?`},
+		{name: "calendar events", query: `DELETE FROM calendar_events WHERE user_id = ?`},
+		{name: "message history", query: `DELETE FROM message_history WHERE user_id = ?`},
+		{name: "channels", query: `DELETE FROM channels WHERE user_id = ?`},
+		{name: "email sources", query: `DELETE FROM email_sources WHERE user_id = ?`},
+		{name: "processed emails", query: `DELETE FROM processed_emails WHERE user_id = ?`},
+		{name: "google tokens", query: `DELETE FROM google_tokens WHERE user_id = ?`},
+		{name: "whatsapp sessions", query: `DELETE FROM whatsapp_sessions WHERE user_id = ?`},
+		{name: "telegram sessions", query: `DELETE FROM telegram_sessions WHERE user_id = ?`},
+		{name: "gmail settings", query: `DELETE FROM gmail_settings WHERE user_id = ?`},
+		{name: "gcal settings", query: `DELETE FROM gcal_settings WHERE user_id = ?`},
+		{name: "notification preferences", query: `DELETE FROM user_notification_preferences WHERE user_id = ?`},
+		{name: "auth sessions", query: `DELETE FROM user_sessions WHERE user_id = ?`},
 	}
 
-	// Reset onboarding flags (critical operation)
-	_, err = d.Exec(`
+	for _, step := range deleteSteps {
+		if _, err := tx.Exec(step.query, userID); err != nil {
+			return fmt.Errorf("failed to delete %s during onboarding reset: %w", step.name, err)
+		}
+	}
+
+	// Handle both possible contact cache table names for migration compatibility.
+	if err := deleteFromUserScopedTableIfExists(tx, "google_contacts", userID); err != nil {
+		return err
+	}
+	if err := deleteFromUserScopedTableIfExists(tx, "gmail_top_contacts", userID); err != nil {
+		return err
+	}
+
+	// Reset feature flags back to defaults.
+	_, err = tx.Exec(`
 		UPDATE feature_settings SET
+			smart_calendar_enabled = 0,
+			smart_calendar_setup_complete = 0,
 			onboarding_complete = 0,
 			whatsapp_input_enabled = 0,
 			telegram_input_enabled = 0,
 			email_input_enabled = 0,
+			sms_input_enabled = 0,
+			alfred_calendar_enabled = 1,
+			google_calendar_enabled = 0,
+			outlook_calendar_enabled = 0,
 			updated_at = CURRENT_TIMESTAMP
 		WHERE user_id = ?
 	`, userID)
 	if err != nil {
 		return fmt.Errorf("failed to reset onboarding: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit onboarding reset: %w", err)
+	}
+	return nil
+}
+
+func deleteFromUserScopedTableIfExists(tx *sql.Tx, table string, userID int64) error {
+	var exists int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`, table).Scan(&exists); err != nil {
+		return fmt.Errorf("failed to check table %s during onboarding reset: %w", table, err)
+	}
+	if exists == 0 {
+		return nil
+	}
+
+	query := fmt.Sprintf("DELETE FROM %s WHERE user_id = ?", table)
+	if _, err := tx.Exec(query, userID); err != nil {
+		return fmt.Errorf("failed to delete %s during onboarding reset: %w", table, err)
 	}
 	return nil
 }

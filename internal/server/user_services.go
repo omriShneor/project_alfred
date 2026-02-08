@@ -19,6 +19,7 @@ import (
 type UserServices struct {
 	UserID      int64
 	GmailWorker *gmail.Worker
+	GCalWorker  *gcal.Worker
 	running     bool
 }
 
@@ -125,7 +126,6 @@ func (m *UserServiceManager) GlobalProcessorRunning() bool {
 	return m.globalProcessor != nil
 }
 
-
 // StartServicesForUser initializes and starts services for a specific user
 func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 	m.mu.Lock()
@@ -133,6 +133,17 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 
 	// Check if services already running for this user
 	if existing, ok := m.userServices[userID]; ok && existing.running {
+		// If Google Calendar worker isn't running yet, try to start it now.
+		if existing.GCalWorker == nil {
+			gcalWorker, err := m.createGCalWorker(userID)
+			if err != nil {
+				fmt.Printf("  - Google Calendar worker failed to start: %v\n", err)
+			} else if gcalWorker != nil {
+				existing.GCalWorker = gcalWorker
+				fmt.Printf("  - Google Calendar worker started\n")
+			}
+		}
+
 		// If Gmail worker isn't running yet, try to start it now.
 		if existing.GmailWorker == nil {
 			gmailWorker, err := m.createGmailWorker(userID)
@@ -156,6 +167,15 @@ func (m *UserServiceManager) StartServicesForUser(userID int64) error {
 	// Note: Per-user WhatsApp/Telegram clients are managed by ClientManager
 	// They are created on-demand when handlers need them
 	// No need to set userID on handlers - already done during client creation
+
+	// Start Google Calendar sync worker if user has authenticated Calendar scope
+	gcalWorker, err := m.createGCalWorker(userID)
+	if err != nil {
+		fmt.Printf("  - Google Calendar worker failed to start: %v\n", err)
+	} else if gcalWorker != nil {
+		services.GCalWorker = gcalWorker
+		fmt.Printf("  - Google Calendar worker started\n")
+	}
 
 	// Start Gmail worker if user has authenticated Google Calendar (for Gmail access)
 	gmailWorker, err := m.createGmailWorker(userID)
@@ -184,6 +204,10 @@ func (m *UserServiceManager) StopServicesForUser(userID int64) {
 	}
 
 	fmt.Printf("Stopping services for user %d\n", userID)
+
+	if services.GCalWorker != nil {
+		services.GCalWorker.Stop()
+	}
 
 	if services.GmailWorker != nil {
 		services.GmailWorker.Stop()
@@ -254,8 +278,32 @@ func (m *UserServiceManager) StopGmailWorkerForUser(userID int64) {
 		services.GmailWorker.Stop()
 	}
 
-	services.running = false
-	delete(m.userServices, userID)
+	services.GmailWorker = nil
+	if services.GCalWorker == nil {
+		services.running = false
+		delete(m.userServices, userID)
+	}
+}
+
+// StopGCalWorkerForUser stops and removes the Google Calendar worker for a specific user.
+func (m *UserServiceManager) StopGCalWorkerForUser(userID int64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	services, ok := m.userServices[userID]
+	if !ok {
+		return
+	}
+
+	if services.GCalWorker != nil {
+		services.GCalWorker.Stop()
+	}
+
+	services.GCalWorker = nil
+	if services.GmailWorker == nil {
+		services.running = false
+		delete(m.userServices, userID)
+	}
 }
 
 // StartServicesForEligibleUsers starts services for any user with valid auth/sessions.
@@ -284,6 +332,9 @@ func (m *UserServiceManager) StartServicesForEligibleUsers() {
 			info, err := m.db.GetGoogleTokenInfo(userID)
 			if err != nil || info == nil || !info.HasToken {
 				continue
+			}
+			if hasScope(info.Scopes, auth.CalendarScopes[0]) {
+				userIDs[userID] = struct{}{}
 			}
 			if hasScope(info.Scopes, auth.GmailScopes[0]) {
 				userIDs[userID] = struct{}{}
@@ -368,6 +419,47 @@ func (m *UserServiceManager) createGmailWorker(userID int64) (*gmail.Worker, err
 	if err := worker.Start(); err != nil {
 		return nil, fmt.Errorf("failed to start Gmail worker: %w", err)
 	}
+
+	return worker, nil
+}
+
+// createGCalWorker creates and starts a Google Calendar worker for a user.
+// The worker periodically syncs Google-side edits/deletes back into Alfred's DB.
+func (m *UserServiceManager) createGCalWorker(userID int64) (*gcal.Worker, error) {
+	if m.credentialsFile == "" || userID == 0 {
+		return nil, nil
+	}
+
+	// Require Calendar scope before starting a Calendar worker.
+	tokenInfo, err := m.db.GetGoogleTokenInfo(userID)
+	if err != nil || tokenInfo == nil || !tokenInfo.HasToken {
+		return nil, nil
+	}
+	if !hasScope(tokenInfo.Scopes, auth.CalendarScopes[0]) {
+		return nil, nil
+	}
+
+	userGCalClient, err := gcal.NewClientForUser(userID, m.credentialsFile, m.db)
+	if err != nil || userGCalClient == nil || !userGCalClient.IsAuthenticated() {
+		return nil, nil
+	}
+
+	pollInterval := 1 // Default 1 minute
+	if m.cfg != nil && m.cfg.GCalPollInterval > 0 {
+		pollInterval = m.cfg.GCalPollInterval
+	}
+
+	worker := gcal.NewWorker(userGCalClient, m.db, gcal.WorkerConfig{
+		UserID:              userID,
+		PollIntervalMinutes: pollInterval,
+	})
+
+	if err := worker.Start(); err != nil {
+		return nil, fmt.Errorf("failed to start Google Calendar worker: %w", err)
+	}
+
+	// Trigger an immediate reconciliation pass on startup.
+	worker.PollNow()
 
 	return worker, nil
 }

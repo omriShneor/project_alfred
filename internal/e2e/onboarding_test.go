@@ -3,9 +3,11 @@ package e2e
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"testing"
 
+	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -194,6 +196,73 @@ func TestOnboardingResetWithoutTokens(t *testing.T) {
 	})
 }
 
+func TestOnboardingResetDeletesAllUserScopedData(t *testing.T) {
+	// Set encryption key for testing Google token storage
+	t.Setenv("ALFRED_ENCRYPTION_KEY", "test-encryption-key-for-e2e-tests")
+
+	ts := testutil.NewTestServer(t)
+	user1ID := ts.TestUser.ID
+	user2 := database.CreateTestUser(t, ts.DB)
+	user2ID := user2.ID
+
+	seedUserScopedOnboardingData(t, ts.DB, user1ID, "user1")
+	seedUserScopedOnboardingData(t, ts.DB, user2ID, "user2")
+
+	clearedTables := []string{
+		"channels",
+		"message_history",
+		"calendar_events",
+		"reminders",
+		"email_sources",
+		"processed_emails",
+		"google_contacts",
+		"google_tokens",
+		"whatsapp_sessions",
+		"telegram_sessions",
+		"user_notification_preferences",
+		"gmail_settings",
+		"gcal_settings",
+		"user_sessions",
+	}
+
+	for _, table := range clearedTables {
+		assert.Greater(t, countRowsByUser(t, ts.DB, table, user1ID), 0, "user1 should have data in %s before reset", table)
+		assert.Greater(t, countRowsByUser(t, ts.DB, table, user2ID), 0, "user2 should have data in %s before reset", table)
+	}
+	assert.Greater(t, countEventAttendeesByUser(t, ts.DB, user1ID), 0, "user1 should have event attendees before reset")
+	assert.Greater(t, countEventAttendeesByUser(t, ts.DB, user2ID), 0, "user2 should have event attendees before reset")
+
+	req, err := http.NewRequest("POST", ts.BaseURL()+"/api/onboarding/reset", nil)
+	require.NoError(t, err)
+
+	resp, err := ts.Client().Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	for _, table := range clearedTables {
+		assert.Equal(t, 0, countRowsByUser(t, ts.DB, table, user1ID), "user1 data in %s should be deleted", table)
+		assert.Greater(t, countRowsByUser(t, ts.DB, table, user2ID), 0, "user2 data in %s should remain", table)
+	}
+	assert.Equal(t, 0, countEventAttendeesByUser(t, ts.DB, user1ID), "user1 event attendees should be deleted")
+	assert.Greater(t, countEventAttendeesByUser(t, ts.DB, user2ID), 0, "user2 event attendees should remain")
+
+	user1Status, err := ts.DB.GetAppStatus(user1ID)
+	require.NoError(t, err)
+	assert.False(t, user1Status.OnboardingComplete)
+	assert.False(t, user1Status.WhatsAppEnabled)
+	assert.False(t, user1Status.TelegramEnabled)
+	assert.False(t, user1Status.GmailEnabled)
+	assert.False(t, user1Status.GoogleCalEnabled)
+
+	user2Status, err := ts.DB.GetAppStatus(user2ID)
+	require.NoError(t, err)
+	assert.True(t, user2Status.OnboardingComplete)
+	assert.True(t, user2Status.WhatsAppEnabled)
+	assert.True(t, user2Status.TelegramEnabled)
+	assert.True(t, user2Status.GmailEnabled)
+}
+
 func TestOnboardingStatus(t *testing.T) {
 	ts := testutil.NewTestServer(t)
 
@@ -235,4 +304,94 @@ func TestHealthCheck(t *testing.T) {
 		assert.Equal(t, "disconnected", health["telegram"])
 		assert.Equal(t, "disconnected", health["gcal"])
 	})
+}
+
+func seedUserScopedOnboardingData(t *testing.T, db *database.DB, userID int64, prefix string) {
+	t.Helper()
+
+	require.NoError(t, db.CompleteOnboarding(userID, true, true, true))
+	require.NoError(t, db.SetGmailEnabled(userID, true))
+	require.NoError(t, db.UpdateGCalSettings(userID, true, "primary", "Primary"))
+	require.NoError(t, db.UpdateEmailPrefs(userID, true, prefix+"@example.com"))
+
+	token := &oauth2.Token{
+		AccessToken:  prefix + "-access-token",
+		RefreshToken: prefix + "-refresh-token",
+		TokenType:    "Bearer",
+	}
+	scopes := []string{"https://www.googleapis.com/auth/userinfo.email", "https://www.googleapis.com/auth/userinfo.profile"}
+	require.NoError(t, db.SaveGoogleToken(userID, token, prefix+"@example.com", scopes))
+
+	require.NoError(t, db.SaveWhatsAppSession(userID, "+1234567890", prefix+"-device-jid", true))
+	require.NoError(t, db.SaveTelegramSession(userID, "+1234567890", true))
+
+	_, err := db.Exec(`
+		INSERT INTO user_sessions (user_id, token_hash, expires_at, device_info)
+		VALUES (?, ?, DATETIME('now', '+1 day'), ?)
+	`, userID, prefix+"-session-hash", prefix+"-device")
+	require.NoError(t, err)
+
+	channel := testutil.NewChannelBuilder().
+		WithUserID(userID).
+		WhatsApp().
+		WithIdentifier(prefix + "@s.whatsapp.net").
+		WithName(prefix + " channel").
+		MustBuild(db)
+
+	testutil.NewMessageBuilder(channel.ID).
+		WhatsApp().
+		WithSenderID(prefix + "-sender@s.whatsapp.net").
+		WithSenderName(prefix + " sender").
+		WithText("message for " + prefix).
+		MustBuild(db)
+
+	event := testutil.NewEventBuilder(channel.ID).
+		WithUserID(userID).
+		WithTitle(prefix + " event").
+		Pending().
+		MustBuild(db)
+
+	_, err = db.AddEventAttendee(event.ID, prefix+"-attendee@example.com", prefix+" attendee", false)
+	require.NoError(t, err)
+
+	testutil.NewReminderBuilder(channel.ID).
+		WithUserID(userID).
+		WithTitle(prefix + " reminder").
+		Pending().
+		MustBuild(db)
+
+	_, err = db.CreateEmailSource(userID, database.EmailSourceTypeSender, prefix+"-sender@example.com", prefix+" sender")
+	require.NoError(t, err)
+
+	require.NoError(t, db.MarkEmailProcessed(userID, prefix+"-processed-email"))
+	require.NoError(t, db.ReplaceTopContacts(userID, []database.TopContact{
+		{
+			Email:      prefix + "-contact@example.com",
+			Name:       prefix + " contact",
+			EmailCount: 5,
+		},
+	}))
+}
+
+func countRowsByUser(t *testing.T, db *database.DB, table string, userID int64) int {
+	t.Helper()
+
+	var count int
+	err := db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM %s WHERE user_id = ?", table), userID).Scan(&count)
+	require.NoError(t, err)
+	return count
+}
+
+func countEventAttendeesByUser(t *testing.T, db *database.DB, userID int64) int {
+	t.Helper()
+
+	var count int
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM event_attendees ea
+		JOIN calendar_events ce ON ce.id = ea.event_id
+		WHERE ce.user_id = ?
+	`, userID).Scan(&count)
+	require.NoError(t, err)
+	return count
 }

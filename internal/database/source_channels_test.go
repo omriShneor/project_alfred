@@ -164,6 +164,25 @@ func TestEnsureManualReminderChannel(t *testing.T) {
 	assert.Equal(t, first.ID, second.ID, "channel should be reused")
 }
 
+func TestEnsureGoogleCalendarImportChannel(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+
+	first, err := db.EnsureGoogleCalendarImportChannel(user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.Equal(t, user.ID, first.UserID)
+	assert.Equal(t, source.SourceType("google_calendar"), first.SourceType)
+	assert.Equal(t, source.ChannelTypeSender, first.Type)
+	assert.Equal(t, "google_calendar:imported", first.Identifier)
+	assert.Equal(t, "Google Calendar", first.Name)
+
+	second, err := db.EnsureGoogleCalendarImportChannel(user.ID)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	assert.Equal(t, first.ID, second.ID, "channel should be reused")
+}
+
 func TestGetSourceChannelByID(t *testing.T) {
 	db := NewTestDB(t)
 	user := CreateTestUser(t, db)

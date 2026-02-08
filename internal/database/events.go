@@ -28,24 +28,24 @@ const (
 
 // CalendarEvent represents a detected calendar event
 type CalendarEvent struct {
-	ID              int64           `json:"id"`
-	UserID          int64           `json:"user_id"`
-	ChannelID       int64           `json:"channel_id"`
-	GoogleEventID   *string         `json:"google_event_id,omitempty"`
-	CalendarID      string          `json:"calendar_id"`
-	Title           string          `json:"title"`
-	Description     string          `json:"description,omitempty"`
-	StartTime       time.Time       `json:"start_time"`
-	EndTime         *time.Time      `json:"end_time,omitempty"`
-	Location        string          `json:"location,omitempty"`
-	Status          EventStatus     `json:"status"`
-	ActionType      EventActionType `json:"action_type"`
-	OriginalMsgID   *int64          `json:"original_message_id,omitempty"`
-	LLMReasoning    string          `json:"llm_reasoning,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
-	ChannelName     string          `json:"channel_name,omitempty"` // Joined from channels table
-	Attendees       []Attendee      `json:"attendees,omitempty"`    // Participants for this event
+	ID            int64           `json:"id"`
+	UserID        int64           `json:"user_id"`
+	ChannelID     int64           `json:"channel_id"`
+	GoogleEventID *string         `json:"google_event_id,omitempty"`
+	CalendarID    string          `json:"calendar_id"`
+	Title         string          `json:"title"`
+	Description   string          `json:"description,omitempty"`
+	StartTime     time.Time       `json:"start_time"`
+	EndTime       *time.Time      `json:"end_time,omitempty"`
+	Location      string          `json:"location,omitempty"`
+	Status        EventStatus     `json:"status"`
+	ActionType    EventActionType `json:"action_type"`
+	OriginalMsgID *int64          `json:"original_message_id,omitempty"`
+	LLMReasoning  string          `json:"llm_reasoning,omitempty"`
+	CreatedAt     time.Time       `json:"created_at"`
+	UpdatedAt     time.Time       `json:"updated_at"`
+	ChannelName   string          `json:"channel_name,omitempty"` // Joined from channels table
+	Attendees     []Attendee      `json:"attendees,omitempty"`    // Participants for this event
 }
 
 // CreatePendingEvent creates a new pending event in the database
@@ -132,7 +132,7 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 	var origMsgIDNull sql.NullInt64
 
 	err := d.QueryRow(`
-		SELECT e.id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
 			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
 			c.name as channel_name
@@ -140,7 +140,7 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 		JOIN channels c ON e.channel_id = c.id
 		WHERE e.google_event_id = ?
 	`, googleEventID).Scan(
-		&event.ID, &event.ChannelID, &gEventID, &event.CalendarID, &event.Title,
+		&event.ID, &event.UserID, &event.ChannelID, &gEventID, &event.CalendarID, &event.Title,
 		&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
 		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
 		&event.ChannelName,
@@ -158,6 +158,56 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 	if origMsgIDNull.Valid {
 		event.OriginalMsgID = &origMsgIDNull.Int64
 	}
+
+	return &event, nil
+}
+
+// GetEventByGoogleIDForUser retrieves an event by Google event ID scoped to a specific user.
+// Returns (nil, nil) when no event is found.
+func (d *DB) GetEventByGoogleIDForUser(userID int64, googleEventID string) (*CalendarEvent, error) {
+	var event CalendarEvent
+	var gEventID sql.NullString
+	var endTimeNull sql.NullTime
+	var origMsgIDNull sql.NullInt64
+
+	err := d.QueryRow(`
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+			e.description, e.start_time, e.end_time, e.location, e.status,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			COALESCE(c.name, 'Alfred') as channel_name
+		FROM calendar_events e
+		LEFT JOIN channels c ON e.channel_id = c.id
+		WHERE e.user_id = ? AND e.google_event_id = ?
+		ORDER BY e.updated_at DESC
+		LIMIT 1
+	`, userID, googleEventID).Scan(
+		&event.ID, &event.UserID, &event.ChannelID, &gEventID, &event.CalendarID, &event.Title,
+		&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
+		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+		&event.ChannelName,
+	)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get event by google id for user: %w", err)
+	}
+
+	if gEventID.Valid {
+		event.GoogleEventID = &gEventID.String
+	}
+	if endTimeNull.Valid {
+		event.EndTime = &endTimeNull.Time
+	}
+	if origMsgIDNull.Valid {
+		event.OriginalMsgID = &origMsgIDNull.Int64
+	}
+
+	attendees, err := d.GetEventAttendees(event.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get event attendees: %w", err)
+	}
+	event.Attendees = attendees
 
 	return &event, nil
 }
@@ -258,6 +308,19 @@ func (d *DB) UpdatePendingEvent(id int64, title, description string, startTime t
 	`, title, description, startTime, endTime, location, id, EventStatusPending)
 	if err != nil {
 		return fmt.Errorf("failed to update pending event: %w", err)
+	}
+	return nil
+}
+
+// UpdateSyncedEventFromGoogle updates an existing synced/confirmed event from Google Calendar.
+func (d *DB) UpdateSyncedEventFromGoogle(id int64, title, description string, startTime time.Time, endTime *time.Time, location string) error {
+	_, err := d.Exec(`
+		UPDATE calendar_events
+		SET title = ?, description = ?, start_time = ?, end_time = ?, location = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ? AND status IN (?, ?)
+	`, title, description, startTime, endTime, location, id, EventStatusSynced, EventStatusConfirmed)
+	if err != nil {
+		return fmt.Errorf("failed to update synced event from google: %w", err)
 	}
 	return nil
 }
@@ -436,6 +499,73 @@ func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating events: %w", err)
+	}
+
+	return events, nil
+}
+
+// ListSyncedEventsWithGoogleID returns events that are linked to Google Calendar for a user.
+func (d *DB) ListSyncedEventsWithGoogleID(userID int64) ([]CalendarEvent, error) {
+	query := `
+		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
+			e.description, e.start_time, e.end_time, e.location, e.status,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			COALESCE(c.name, 'Alfred') as channel_name
+		FROM calendar_events e
+		LEFT JOIN channels c ON e.channel_id = c.id
+		WHERE e.user_id = ?
+		  AND e.google_event_id IS NOT NULL
+		  AND e.google_event_id != ''
+		  AND e.status IN (?, ?)
+		ORDER BY e.updated_at DESC
+	`
+
+	rows, err := d.Query(query, userID, EventStatusSynced, EventStatusConfirmed)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list synced events with google id: %w", err)
+	}
+	defer rows.Close()
+
+	var events []CalendarEvent
+	for rows.Next() {
+		var event CalendarEvent
+		var googleEventID sql.NullString
+		var endTimeNull sql.NullTime
+		var origMsgIDNull sql.NullInt64
+
+		if err := rows.Scan(
+			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
+			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ChannelName,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan synced event: %w", err)
+		}
+
+		if googleEventID.Valid {
+			event.GoogleEventID = &googleEventID.String
+		}
+		if endTimeNull.Valid {
+			event.EndTime = &endTimeNull.Time
+		}
+		if origMsgIDNull.Valid {
+			event.OriginalMsgID = &origMsgIDNull.Int64
+		}
+
+		events = append(events, event)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating synced events: %w", err)
+	}
+
+	// Fetch attendees for each event
+	for i := range events {
+		attendees, err := d.GetEventAttendees(events[i].ID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get attendees for event %d: %w", events[i].ID, err)
+		}
+		events[i].Attendees = attendees
 	}
 
 	return events, nil

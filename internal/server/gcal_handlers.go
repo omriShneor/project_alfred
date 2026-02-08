@@ -276,6 +276,7 @@ func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if s.userServiceManager != nil {
+			s.userServiceManager.StopGCalWorkerForUser(userID)
 			s.userServiceManager.StopGmailWorkerForUser(userID)
 		}
 		_ = s.db.SetGmailEnabled(userID, false)
@@ -300,6 +301,9 @@ func (s *Server) handleGCalDisconnect(w http.ResponseWriter, r *http.Request) {
 
 	// Clear client cache to force reinitialization with new scopes
 	if req.Scope == "calendar" {
+		if s.userServiceManager != nil {
+			s.userServiceManager.StopGCalWorkerForUser(userID)
+		}
 		if s.onboardingState != nil {
 			s.onboardingState.SetGCalStatus("disconnected")
 		}

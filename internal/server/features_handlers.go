@@ -187,7 +187,7 @@ func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
 		s.userServiceManager.StopServicesForUser(userID)
 	}
 
-	// Reset database state (deletes Google tokens, WhatsApp/Telegram session records)
+	// Reset database state (purges all user-scoped data and resets feature flags)
 	if err := s.db.ResetOnboarding(userID); err != nil {
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return

@@ -35,6 +35,9 @@ type Config struct {
 	GmailPollInterval int // minutes between polls
 	GmailMaxEmails    int // max emails to process per poll
 
+	// Google Calendar sync worker config
+	GCalPollInterval int // minutes between sync polls
+
 	// Telegram integration config
 	TelegramAPIID   int    // API ID from my.telegram.org
 	TelegramAPIHash string // API Hash from my.telegram.org
@@ -65,6 +68,9 @@ func LoadFromEnv() *Config {
 		// Gmail integration config (enable/disable is in database settings)
 		GmailPollInterval: getEnvAsIntOrDefault("ALFRED_GMAIL_POLL_INTERVAL", 1),
 		GmailMaxEmails:    getEnvAsIntOrDefault("ALFRED_GMAIL_MAX_EMAILS", 10),
+
+		// Google Calendar sync worker
+		GCalPollInterval: getEnvAsIntOrDefault("ALFRED_GCAL_POLL_INTERVAL", 1),
 
 		// Telegram integration config
 		TelegramAPIID:   getEnvAsIntOrDefault("ALFRED_TELEGRAM_API_ID", 0),

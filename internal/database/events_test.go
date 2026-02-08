@@ -672,3 +672,173 @@ func TestGetEventByGoogleID(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestGetEventByGoogleIDForUser(t *testing.T) {
+	db := NewTestDB(t)
+	user1 := CreateTestUser(t, db)
+	user2 := CreateTestUser(t, db)
+	channel1 := createTestChannel(t, db, user1.ID)
+	channel2 := createTestChannel(t, db, user2.ID)
+
+	googleEventID := "shared-google-event-id"
+
+	event1 := &CalendarEvent{
+		UserID:        user1.ID,
+		ChannelID:     channel1.ID,
+		GoogleEventID: &googleEventID,
+		CalendarID:    "primary",
+		Title:         "User 1 Event",
+		StartTime:     time.Now(),
+		ActionType:    EventActionCreate,
+	}
+	created1, err := db.CreatePendingEvent(event1)
+	require.NoError(t, err)
+
+	event2 := &CalendarEvent{
+		UserID:        user2.ID,
+		ChannelID:     channel2.ID,
+		GoogleEventID: &googleEventID,
+		CalendarID:    "primary",
+		Title:         "User 2 Event",
+		StartTime:     time.Now(),
+		ActionType:    EventActionCreate,
+	}
+	created2, err := db.CreatePendingEvent(event2)
+	require.NoError(t, err)
+
+	found1, err := db.GetEventByGoogleIDForUser(user1.ID, googleEventID)
+	require.NoError(t, err)
+	require.NotNil(t, found1)
+	assert.Equal(t, created1.ID, found1.ID)
+	assert.Equal(t, user1.ID, found1.UserID)
+
+	found2, err := db.GetEventByGoogleIDForUser(user2.ID, googleEventID)
+	require.NoError(t, err)
+	require.NotNil(t, found2)
+	assert.Equal(t, created2.ID, found2.ID)
+	assert.Equal(t, user2.ID, found2.UserID)
+
+	notFound, err := db.GetEventByGoogleIDForUser(user1.ID, "does-not-exist")
+	require.NoError(t, err)
+	assert.Nil(t, notFound)
+}
+
+func TestUpdateSyncedEventFromGoogle(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+	channel := createTestChannel(t, db, user.ID)
+
+	start := time.Now().Add(2 * time.Hour).Truncate(time.Second)
+	end := start.Add(time.Hour)
+
+	event := &CalendarEvent{
+		UserID:      user.ID,
+		ChannelID:   channel.ID,
+		CalendarID:  "primary",
+		Title:       "Original",
+		Description: "Original Description",
+		StartTime:   start,
+		EndTime:     &end,
+		Location:    "Original Location",
+		ActionType:  EventActionCreate,
+	}
+
+	created, err := db.CreatePendingEvent(event)
+	require.NoError(t, err)
+
+	// Pending events should not be updated by Google sync helper.
+	err = db.UpdateSyncedEventFromGoogle(
+		created.ID,
+		"Should Not Apply",
+		"Should Not Apply",
+		start.Add(24*time.Hour),
+		nil,
+		"Should Not Apply",
+	)
+	require.NoError(t, err)
+
+	pending, err := db.GetEventByID(created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Original", pending.Title)
+	assert.Equal(t, "Original Description", pending.Description)
+	assert.Equal(t, "Original Location", pending.Location)
+
+	err = db.UpdateEventStatus(created.ID, EventStatusSynced)
+	require.NoError(t, err)
+
+	updatedStart := start.Add(24 * time.Hour)
+	updatedEnd := updatedStart.Add(90 * time.Minute)
+	err = db.UpdateSyncedEventFromGoogle(
+		created.ID,
+		"Synced Title",
+		"Synced Description",
+		updatedStart,
+		&updatedEnd,
+		"Synced Location",
+	)
+	require.NoError(t, err)
+
+	synced, err := db.GetEventByID(created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Synced Title", synced.Title)
+	assert.Equal(t, "Synced Description", synced.Description)
+	assert.Equal(t, "Synced Location", synced.Location)
+	assert.True(t, synced.StartTime.Equal(updatedStart))
+	require.NotNil(t, synced.EndTime)
+	assert.True(t, synced.EndTime.Equal(updatedEnd))
+}
+
+func TestListSyncedEventsWithGoogleID(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+	otherUser := CreateTestUser(t, db)
+	channel := createTestChannel(t, db, user.ID)
+	otherChannel := createTestChannel(t, db, otherUser.ID)
+
+	makeEvent := func(userID, channelID int64, title string, status EventStatus, googleEventID *string) *CalendarEvent {
+		event := &CalendarEvent{
+			UserID:        userID,
+			ChannelID:     channelID,
+			GoogleEventID: googleEventID,
+			CalendarID:    "primary",
+			Title:         title,
+			StartTime:     time.Now().Add(time.Minute).Truncate(time.Second),
+			ActionType:    EventActionCreate,
+		}
+		created, err := db.CreatePendingEvent(event)
+		require.NoError(t, err)
+		if status != EventStatusPending {
+			err = db.UpdateEventStatus(created.ID, status)
+			require.NoError(t, err)
+		}
+		return created
+	}
+
+	idA := "google-a"
+	idB := "google-b"
+	idC := "google-c"
+	idD := "google-d"
+
+	synced := makeEvent(user.ID, channel.ID, "Synced", EventStatusSynced, &idA)
+	confirmed := makeEvent(user.ID, channel.ID, "Confirmed", EventStatusConfirmed, &idB)
+	_ = makeEvent(user.ID, channel.ID, "Pending", EventStatusPending, &idC)
+	_ = makeEvent(user.ID, channel.ID, "No Google", EventStatusSynced, nil)
+	_ = makeEvent(user.ID, channel.ID, "Deleted", EventStatusDeleted, &idD)
+	_ = makeEvent(otherUser.ID, otherChannel.ID, "Other User", EventStatusSynced, &idA)
+
+	results, err := db.ListSyncedEventsWithGoogleID(user.ID)
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	foundIDs := map[int64]bool{
+		results[0].ID: true,
+		results[1].ID: true,
+	}
+	assert.True(t, foundIDs[synced.ID])
+	assert.True(t, foundIDs[confirmed.ID])
+	for _, event := range results {
+		require.NotNil(t, event.GoogleEventID)
+		assert.NotEmpty(t, *event.GoogleEventID)
+		assert.Contains(t, []EventStatus{EventStatusSynced, EventStatusConfirmed}, event.Status)
+	}
+}

@@ -26,6 +26,10 @@ const (
 	manualReminderSourceType  source.SourceType = "manual"
 	manualReminderChannelID                     = "manual:todo"
 	manualReminderChannelName                   = "My Tasks"
+
+	googleCalendarImportSourceType  source.SourceType = "google_calendar"
+	googleCalendarImportChannelID                     = "google_calendar:imported"
+	googleCalendarImportChannelName                   = "Google Calendar"
 )
 
 // ToSourceChannel converts a SourceChannel to source.Channel
@@ -88,6 +92,36 @@ func (d *DB) EnsureManualReminderChannel(userID int64) (*SourceChannel, error) {
 	}
 
 	return nil, fmt.Errorf("failed to ensure manual reminder channel: %w", err)
+}
+
+// EnsureGoogleCalendarImportChannel returns a stable per-user channel for imported Google Calendar events.
+func (d *DB) EnsureGoogleCalendarImportChannel(userID int64) (*SourceChannel, error) {
+	channel, err := d.GetSourceChannelByIdentifier(userID, googleCalendarImportSourceType, googleCalendarImportChannelID)
+	if err != nil {
+		return nil, err
+	}
+	if channel != nil {
+		return channel, nil
+	}
+
+	created, err := d.CreateSourceChannel(
+		userID,
+		googleCalendarImportSourceType,
+		source.ChannelTypeSender,
+		googleCalendarImportChannelID,
+		googleCalendarImportChannelName,
+	)
+	if err == nil {
+		return created, nil
+	}
+
+	// Handle races where another request created the channel first.
+	channel, lookupErr := d.GetSourceChannelByIdentifier(userID, googleCalendarImportSourceType, googleCalendarImportChannelID)
+	if lookupErr == nil && channel != nil {
+		return channel, nil
+	}
+
+	return nil, fmt.Errorf("failed to ensure google calendar import channel: %w", err)
 }
 
 // GetSourceChannelByID retrieves a channel by ID for a specific user

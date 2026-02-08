@@ -17,6 +17,7 @@ import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import * as WebBrowser from 'expo-web-browser';
 import * as Clipboard from 'expo-clipboard';
+import * as Notifications from 'expo-notifications';
 import { Feather } from '@expo/vector-icons';
 import { Button, Card } from '../../components/common';
 import { colors } from '../../theme/colors';
@@ -24,6 +25,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import {
   useWhatsAppStatus,
   useGCalStatus,
+  useGmailStatus,
   useGeneratePairingCode,
   useTelegramStatus,
   useSendTelegramCode,
@@ -35,13 +37,15 @@ import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
 
 type RouteProps = RouteProp<OnboardingParamList, 'Connection'>;
 type NavigationProp = NativeStackNavigationProp<OnboardingParamList, 'Connection'>;
-type IntegrationStatusType = 'pending' | 'connecting' | 'available' | 'error';
+type IntegrationStatusType = 'pending' | 'connecting' | 'needs_access' | 'available' | 'error';
 
 function getStatusColor(status: IntegrationStatusType) {
   switch (status) {
     case 'available':
       return colors.success;
     case 'connecting':
+      return colors.warning;
+    case 'needs_access':
       return colors.warning;
     case 'error':
       return colors.danger;
@@ -56,6 +60,8 @@ function getStatusLabel(status: IntegrationStatusType) {
       return 'Connected';
     case 'connecting':
       return 'Connecting...';
+    case 'needs_access':
+      return 'Needs access';
     case 'error':
       return 'Error';
     default:
@@ -63,12 +69,42 @@ function getStatusLabel(status: IntegrationStatusType) {
   }
 }
 
-function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading?: boolean }) {
+function getGoogleScopeLabel(scope: ScopeType) {
+  if (scope === 'gmail') {
+    return 'Gmail';
+  }
+  if (scope === 'calendar') {
+    return 'Google Calendar';
+  }
+  return 'Google';
+}
+
+function joinScopeLabels(labels: string[]) {
+  if (labels.length <= 1) {
+    return labels[0] || '';
+  }
+  if (labels.length === 2) {
+    return `${labels[0]} and ${labels[1]}`;
+  }
+  return `${labels.slice(0, -1).join(', ')}, and ${labels[labels.length - 1]}`;
+}
+
+function GoogleSignInButton({
+  onPress,
+  loading,
+  title,
+  disabled,
+}: {
+  onPress: () => void;
+  loading?: boolean;
+  title: string;
+  disabled?: boolean;
+}) {
   return (
     <TouchableOpacity
       style={styles.googleButton}
       onPress={onPress}
-      disabled={loading}
+      disabled={disabled || loading}
       activeOpacity={0.7}
     >
       <Image
@@ -76,7 +112,7 @@ function GoogleSignInButton({ onPress, loading }: { onPress: () => void; loading
         style={styles.googleLogo}
       />
       <Text style={styles.googleButtonText}>
-        {loading ? 'Connecting...' : 'Connect Google'}
+        {loading ? 'Connecting...' : title}
       </Text>
     </TouchableOpacity>
   );
@@ -87,7 +123,7 @@ export function ConnectionScreen() {
   const navigation = useNavigation<NavigationProp>();
   const queryClient = useQueryClient();
 
-  const { whatsappEnabled, telegramEnabled, gmailEnabled } = route.params;
+  const { whatsappEnabled, telegramEnabled, gmailEnabled, gcalEnabled } = route.params;
 
   // WhatsApp state
   const [phoneNumber, setPhoneNumber] = useState('');
@@ -98,10 +134,13 @@ export function ConnectionScreen() {
   const [telegramPhoneNumber, setTelegramPhoneNumber] = useState('');
   const [telegramCode, setTelegramCode] = useState('');
   const [telegramCodeSent, setTelegramCodeSent] = useState(false);
+  const [googleScopeLoading, setGoogleScopeLoading] = useState(false);
+  const previousWhatsAppConnected = React.useRef<boolean | null>(null);
 
   // Hooks
   const { data: waStatus } = useWhatsAppStatus();
   const { data: gcalStatus } = useGCalStatus();
+  const { data: gmailStatus } = useGmailStatus();
   const { data: telegramStatus } = useTelegramStatus();
   const generatePairingCode = useGeneratePairingCode();
   const sendTelegramCode = useSendTelegramCode();
@@ -110,16 +149,69 @@ export function ConnectionScreen() {
   const exchangeAddScopesCode = useExchangeAddScopesCode();
 
   // Determine statuses
-  const googleStatus: IntegrationStatusType = gcalStatus?.connected ? 'available' : 'pending';
+  const gmailConnectionStatus: IntegrationStatusType = !gmailStatus?.connected
+    ? 'pending'
+    : gmailStatus.has_scopes
+      ? 'available'
+      : 'needs_access';
+  const gcalConnectionStatus: IntegrationStatusType = !gcalStatus?.connected
+    ? 'pending'
+    : gcalStatus.has_scopes
+      ? 'available'
+      : 'needs_access';
   const whatsappStatus: IntegrationStatusType = waStatus?.connected ? 'available' : (pairingCode ? 'connecting' : 'pending');
   const telegramStatusType: IntegrationStatusType = telegramStatus?.connected ? 'available' : (telegramCodeSent ? 'connecting' : 'pending');
+  const googleScopesSelected = React.useMemo(() => {
+    const scopes: ScopeType[] = [];
+    if (gmailEnabled) {
+      scopes.push('gmail');
+    }
+    if (gcalEnabled) {
+      scopes.push('calendar');
+    }
+    return scopes;
+  }, [gmailEnabled, gcalEnabled]);
+  const hasGoogleIntegrationSelected = googleScopesSelected.length > 0;
+  const googleScopesMissing = React.useMemo(() => {
+    const scopes: ScopeType[] = [];
+    if (gmailEnabled && !gmailStatus?.has_scopes) {
+      scopes.push('gmail');
+    }
+    if (gcalEnabled && !gcalStatus?.has_scopes) {
+      scopes.push('calendar');
+    }
+    return scopes;
+  }, [gmailEnabled, gmailStatus?.has_scopes, gcalEnabled, gcalStatus?.has_scopes]);
+  const googleConnected = Boolean(gmailStatus?.connected || gcalStatus?.connected);
+  const googleStatus: IntegrationStatusType = googleScopeLoading
+    ? 'connecting'
+    : googleScopesMissing.length === 0
+      ? 'available'
+      : googleConnected
+        ? 'needs_access'
+        : 'pending';
+  const googleSelectedScopeLabels = googleScopesSelected.map(getGoogleScopeLabel);
+  const googleMissingScopeLabels = googleScopesMissing.map(getGoogleScopeLabel);
+  const googleButtonTitle = googleScopesMissing.length > 1
+    ? 'Authorize Gmail + Calendar'
+    : `Authorize ${googleMissingScopeLabels[0] || 'Google'}`;
+  const googleDescription = googleScopesSelected.length > 1
+    ? 'Grant Gmail and Google Calendar access so Alfred can detect events from email and sync confirmed events.'
+    : gmailEnabled
+      ? 'Grant Gmail read access so Alfred can detect reminders and events from selected senders.'
+      : 'Grant Google Calendar access so Alfred can sync confirmed events to your calendar.';
+  const googleScopeHint = googleScopesMissing.length === 0
+    ? 'All required Google scopes are already granted.'
+    : googleScopesMissing.length === googleScopesSelected.length
+      ? `We will request ${joinScopeLabels(googleSelectedScopeLabels)} scope${googleSelectedScopeLabels.length > 1 ? 's' : ''} in one authorization.`
+      : `Some scopes are already granted. We will request only ${joinScopeLabels(googleMissingScopeLabels)} now.`;
 
   // Check if all required integrations are available
   const allAvailable = React.useMemo(() => {
     const checks: boolean[] = [];
 
-    if (gmailEnabled) {
-      checks.push(googleStatus === 'available');
+    if (hasGoogleIntegrationSelected) {
+      checks.push(googleScopesMissing.length === 0);
     }
     if (whatsappEnabled) {
       checks.push(whatsappStatus === 'available');
@@ -127,27 +219,36 @@ export function ConnectionScreen() {
     if (telegramEnabled) {
       checks.push(telegramStatusType === 'available');
     }
-
     return checks.length > 0 && checks.every(Boolean);
-  }, [gmailEnabled, whatsappEnabled, telegramEnabled, googleStatus, whatsappStatus, telegramStatusType]);
+  }, [
+    hasGoogleIntegrationSelected,
+    googleScopesMissing.length,
+    whatsappEnabled,
+    telegramEnabled,
+    whatsappStatus,
+    telegramStatusType,
+  ]);
 
   const requiredAppsCount = React.useMemo(
-    () => [gmailEnabled, whatsappEnabled, telegramEnabled].filter(Boolean).length,
-    [gmailEnabled, whatsappEnabled, telegramEnabled]
+    () => [gmailEnabled, gcalEnabled, whatsappEnabled, telegramEnabled].filter(Boolean).length,
+    [gmailEnabled, gcalEnabled, whatsappEnabled, telegramEnabled]
   );
 
   const connectedAppsCount = React.useMemo(
     () =>
       [
-        gmailEnabled ? googleStatus === 'available' : false,
+        gmailEnabled ? gmailConnectionStatus === 'available' : false,
+        gcalEnabled ? gcalConnectionStatus === 'available' : false,
         whatsappEnabled ? whatsappStatus === 'available' : false,
         telegramEnabled ? telegramStatusType === 'available' : false,
       ].filter(Boolean).length,
     [
       gmailEnabled,
+      gcalEnabled,
       whatsappEnabled,
       telegramEnabled,
-      googleStatus,
+      gmailConnectionStatus,
+      gcalConnectionStatus,
       whatsappStatus,
       telegramStatusType,
     ]
@@ -155,13 +256,16 @@ export function ConnectionScreen() {
 
   const remainingApps = React.useMemo(() => {
     const pending: string[] = [];
-    if (gmailEnabled && googleStatus !== 'available') pending.push('Google');
+    if (gmailEnabled && gmailConnectionStatus !== 'available') pending.push('Gmail');
+    if (gcalEnabled && gcalConnectionStatus !== 'available') pending.push('Google Calendar');
     if (whatsappEnabled && whatsappStatus !== 'available') pending.push('WhatsApp');
     if (telegramEnabled && telegramStatusType !== 'available') pending.push('Telegram');
     return pending;
   }, [
     gmailEnabled,
-    googleStatus,
+    gmailConnectionStatus,
+    gcalEnabled,
+    gcalConnectionStatus,
     whatsappEnabled,
     whatsappStatus,
     telegramEnabled,
@@ -169,20 +273,53 @@ export function ConnectionScreen() {
   ]);
 
   const continueTitle = allAvailable
-    ? 'Continue to choose contacts'
-    : `Connect ${remainingApps.length} more app${remainingApps.length === 1 ? '' : 's'}`;
+    ? 'Continue to configuration'
+    : `Connect ${remainingApps.length} more integration${remainingApps.length === 1 ? '' : 's'}`;
 
   const heroHint = allAvailable
-    ? 'All selected apps are connected. Continue to choose contacts and senders.'
+    ? 'All selected integrations are connected. Continue to configure what Alfred monitors.'
     : `Remaining: ${remainingApps.join(', ')}`;
 
-  // Reset pairing code when WhatsApp connects
+  const notifyWhatsAppConnected = useCallback(async () => {
+    try {
+      const { status } = await Notifications.getPermissionsAsync();
+      if (status !== 'granted') {
+        return;
+      }
+
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: 'WhatsApp Connected',
+          body: 'Connection successful. Go back to Alfred to continue setup.',
+          data: { screen: 'Connection' },
+        },
+        trigger: null,
+      });
+    } catch (error) {
+      console.error('Failed to send WhatsApp success notification:', error);
+    }
+  }, []);
+
+  // Reset pairing code when WhatsApp connects and notify only on connection transition
   useEffect(() => {
-    if (waStatus?.connected) {
+    if (!whatsappEnabled) {
+      return;
+    }
+
+    const isConnected = Boolean(waStatus?.connected);
+    const wasConnected = previousWhatsAppConnected.current;
+
+    if (isConnected) {
       setPairingCode(null);
       setPhoneNumber('');
     }
-  }, [waStatus?.connected]);
+
+    if (wasConnected === false && isConnected) {
+      void notifyWhatsAppConnected();
+    }
+
+    previousWhatsAppConnected.current = isConnected;
+  }, [waStatus?.connected, whatsappEnabled, notifyWhatsAppConnected]);
 
   // Reset Telegram state when connected
   useEffect(() => {
@@ -210,40 +347,35 @@ export function ConnectionScreen() {
   );
 
   const handleConnectGoogle = async () => {
+    const scopesToRequest = [...googleScopesMissing];
+    if (scopesToRequest.length === 0) {
+      return;
+    }
+
+    setGoogleScopeLoading(true);
     try {
-      // Request both Gmail and Calendar scopes together
       const response = await requestAdditionalScopes.mutateAsync({
-        scopes: ['gmail' as ScopeType, 'calendar' as ScopeType],
-        redirectUri: undefined // Use default HTTPS callback (will be /api/auth/callback)
+        scopes: scopesToRequest,
+        redirectUri: undefined,
       });
 
-      // Don't specify redirect URL - let the OAuth flow complete naturally through the backend
       const result = await WebBrowser.openAuthSessionAsync(response.auth_url);
-
-      // Handle the OAuth callback directly since WebBrowser captures the deep link
       if (result.type === 'success' && result.url) {
-        const url = result.url;
-
-        // Extract code from URL
-        const codeMatch = url.match(/[?&]code=([^&]+)/);
-        if (codeMatch && codeMatch[1]) {
-          const code = decodeURIComponent(codeMatch[1]);
-
-          try {
-            await exchangeAddScopesCode.mutateAsync({
-              code,
-              scopes: ['gmail' as ScopeType, 'calendar' as ScopeType],
-              redirectUri: undefined
-            });
-          } catch (error: any) {
-            console.error('Failed to exchange OAuth code:', error);
-            Alert.alert('Error', 'Failed to connect Google account. Please try again.');
-          }
+        const codeMatch = result.url.match(/[?&]code=([^&]+)/);
+        if (!codeMatch?.[1]) {
+          throw new Error('No authorization code received');
         }
+        await exchangeAddScopesCode.mutateAsync({
+          code: decodeURIComponent(codeMatch[1]),
+          scopes: scopesToRequest,
+          redirectUri: undefined,
+        });
       }
     } catch (error: any) {
-      console.error('OAuth authorization error:', error);
-      Alert.alert('Error', error.response?.data?.error || 'Failed to start Google authorization');
+      console.error('OAuth authorization error for Google scopes:', error);
+      Alert.alert('Error', error.response?.data?.error || 'Failed to connect Google permissions');
+    } finally {
+      setGoogleScopeLoading(false);
     }
   };
 
@@ -301,6 +433,7 @@ export function ConnectionScreen() {
       whatsappEnabled,
       telegramEnabled,
       gmailEnabled,
+      gcalEnabled,
     });
   };
 
@@ -336,7 +469,7 @@ export function ConnectionScreen() {
             </View>
             <Text style={styles.title}>Connect Your Apps</Text>
             <Text style={styles.description}>
-              Connect each selected app so Alfred can start detecting events, reminders, and tasks.
+              Connect each selected app. Google scopes are requested together based on your selections.
             </Text>
             <View style={styles.progressTrack}>
               <View
@@ -349,22 +482,30 @@ export function ConnectionScreen() {
             <Text style={styles.heroHint}>{heroHint}</Text>
           </Card>
 
-        {gmailEnabled && (
+        {hasGoogleIntegrationSelected && (
           <Card style={styles.card}>
             <View style={styles.integrationRow}>
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
-                  <Text style={styles.integrationName}>Google (Gmail & Calendar)</Text>
+                  <Text style={styles.integrationName}>Google</Text>
+                  <Text style={styles.integrationDescription}>
+                    {googleDescription}
+                  </Text>
+                  <Text style={styles.googleScopesHint}>
+                    {googleScopeHint}
+                  </Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(googleStatus) }]} />
                   <Text style={styles.statusLabel}>{getStatusLabel(googleStatus)}</Text>
                 </View>
               </View>
-              {googleStatus !== 'available' && (
+              {googleScopesMissing.length > 0 && (
                 <GoogleSignInButton
                   onPress={handleConnectGoogle}
-                  loading={requestAdditionalScopes.isPending || exchangeAddScopesCode.isPending}
+                  loading={googleScopeLoading}
+                  title={googleButtonTitle}
+                  disabled={googleScopeLoading}
                 />
               )}
             </View>
@@ -635,6 +776,18 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     marginBottom: 2,
+  },
+  integrationDescription: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    lineHeight: 18,
+    marginTop: 4,
+  },
+  googleScopesHint: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    lineHeight: 17,
+    marginTop: 6,
   },
   integrationStatus: {
     flexDirection: 'row',

@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -14,6 +15,8 @@ const (
 	EmailSourceTypeSender   EmailSourceType = "sender"
 	EmailSourceTypeDomain   EmailSourceType = "domain"
 )
+
+var ErrEmailSourceNotFound = errors.New("email source not found")
 
 // EmailSource represents a tracked email source
 type EmailSource struct {
@@ -59,6 +62,25 @@ func (d *DB) GetEmailSourceByID(id int64) (*EmailSource, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to get email source: %w", err)
+	}
+
+	return &source, nil
+}
+
+// GetEmailSourceByIDForUser retrieves an email source by ID for a specific user.
+func (d *DB) GetEmailSourceByIDForUser(userID, id int64) (*EmailSource, error) {
+	var source EmailSource
+	err := d.QueryRow(`
+		SELECT id, user_id, type, identifier, name, enabled, created_at, updated_at
+		FROM email_sources WHERE user_id = ? AND id = ?
+	`, userID, id).Scan(&source.ID, &source.UserID, &source.Type, &source.Identifier, &source.Name,
+		&source.Enabled, &source.CreatedAt, &source.UpdatedAt)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to get email source for user: %w", err)
 	}
 
 	return &source, nil
@@ -157,7 +179,7 @@ func (d *DB) ListEnabledEmailSources(userID int64) ([]*EmailSource, error) {
 
 // UpdateEmailSource updates an email source
 func (d *DB) UpdateEmailSource(id int64, name string, enabled bool) error {
-	_, err := d.Exec(`
+	result, err := d.Exec(`
 		UPDATE email_sources
 		SET name = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
 		WHERE id = ?
@@ -165,14 +187,64 @@ func (d *DB) UpdateEmailSource(id int64, name string, enabled bool) error {
 	if err != nil {
 		return fmt.Errorf("failed to update email source: %w", err)
 	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to update email source: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrEmailSourceNotFound
+	}
+	return nil
+}
+
+// UpdateEmailSourceForUser updates an email source by ID scoped to a specific user.
+func (d *DB) UpdateEmailSourceForUser(userID, id int64, name string, enabled bool) error {
+	result, err := d.Exec(`
+		UPDATE email_sources
+		SET name = ?, enabled = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE user_id = ? AND id = ?
+	`, name, enabled, userID, id)
+	if err != nil {
+		return fmt.Errorf("failed to update email source: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to update email source: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrEmailSourceNotFound
+	}
 	return nil
 }
 
 // DeleteEmailSource deletes an email source
 func (d *DB) DeleteEmailSource(id int64) error {
-	_, err := d.Exec(`DELETE FROM email_sources WHERE id = ?`, id)
+	result, err := d.Exec(`DELETE FROM email_sources WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete email source: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to delete email source: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrEmailSourceNotFound
+	}
+	return nil
+}
+
+// DeleteEmailSourceForUser deletes an email source by ID scoped to a specific user.
+func (d *DB) DeleteEmailSourceForUser(userID, id int64) error {
+	result, err := d.Exec(`DELETE FROM email_sources WHERE user_id = ? AND id = ?`, userID, id)
+	if err != nil {
+		return fmt.Errorf("failed to delete email source: %w", err)
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to delete email source: %w", err)
+	}
+	if rowsAffected == 0 {
+		return ErrEmailSourceNotFound
 	}
 	return nil
 }

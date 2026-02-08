@@ -2,6 +2,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -171,6 +172,12 @@ func (s *Server) handleCreateEmailSource(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleUpdateEmailSource(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -187,23 +194,46 @@ func (s *Server) handleUpdateEmailSource(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := s.db.UpdateEmailSource(id, req.Name, req.Enabled); err != nil {
+	if err := s.db.UpdateEmailSourceForUser(userID, id, req.Name, req.Enabled); err != nil {
+		if errors.Is(err, database.ErrEmailSourceNotFound) {
+			respondError(w, http.StatusNotFound, "source not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	source, _ := s.db.GetEmailSourceByID(id)
+	source, err := s.db.GetEmailSourceByIDForUser(userID, id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if source == nil {
+		respondError(w, http.StatusNotFound, "source not found")
+		return
+	}
+
 	respondJSON(w, http.StatusOK, source)
 }
 
 func (s *Server) handleDeleteEmailSource(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
 		return
 	}
 
-	if err := s.db.DeleteEmailSource(id); err != nil {
+	if err := s.db.DeleteEmailSourceForUser(userID, id); err != nil {
+		if errors.Is(err, database.ErrEmailSourceNotFound) {
+			respondError(w, http.StatusNotFound, "source not found")
+			return
+		}
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

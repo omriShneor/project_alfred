@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  Switch,
   Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -15,7 +14,6 @@ import { AddSourceModal } from '../../components/sources';
 import { colors } from '../../theme/colors';
 import {
   useChannels,
-  useUpdateChannel,
   useDeleteChannel,
   useCreateChannel,
   useWhatsAppTopContacts,
@@ -41,21 +39,9 @@ export function WhatsAppPreferencesScreen() {
   const debouncedQuery = useDebounce(searchQuery, 300);
   const { data: searchResults, isLoading: searchLoading } = useSearchWhatsAppContacts(debouncedQuery);
 
-  const updateChannel = useUpdateChannel();
   const deleteChannel = useDeleteChannel();
   const createChannel = useCreateChannel();
   const addCustomSource = useAddWhatsAppCustomSource();
-
-  const handleToggleChannel = async (channel: Channel) => {
-    try {
-      await updateChannel.mutateAsync({
-        id: channel.id,
-        data: { enabled: !channel.enabled },
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update chat');
-    }
-  };
 
   const handleDeleteWhatsAppChannel = (channel: Channel) => {
     Alert.alert(
@@ -143,12 +129,6 @@ export function WhatsAppPreferencesScreen() {
           )}
         </View>
         <View style={styles.channelActions}>
-          <Switch
-            value={item.enabled}
-            onValueChange={() => handleToggleChannel(item)}
-            trackColor={{ false: colors.border, true: colors.primary }}
-            thumbColor="#ffffff"
-          />
           <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteWhatsAppChannel(item)}>
             <Feather name="trash-2" size={18} color={colors.danger} />
           </TouchableOpacity>
@@ -299,7 +279,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteButton: {
-    marginLeft: 16,
+    marginLeft: 0,
     padding: 4,
   },
   separator: {

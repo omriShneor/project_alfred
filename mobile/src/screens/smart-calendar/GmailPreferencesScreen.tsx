@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  Switch,
   Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -20,7 +19,6 @@ import {
   useGmailStatus,
   useEmailSources,
   useCreateEmailSource,
-  useUpdateEmailSource,
   useDeleteEmailSource,
   useTopContacts,
   useAddCustomSource,
@@ -46,7 +44,6 @@ export function GmailPreferencesScreen() {
   const { data: gmailSearchResults, isLoading: searchLoading } = useSearchGmailContacts(debouncedQuery);
 
   const createSource = useCreateEmailSource();
-  const updateSource = useUpdateEmailSource();
   const deleteSource = useDeleteEmailSource();
   const addCustomSource = useAddCustomSource();
 
@@ -108,17 +105,6 @@ export function GmailPreferencesScreen() {
     channel_id: contact.source_id,
     type: 'sender' as const,
   }));
-
-  const handleToggleSource = async (source: EmailSource) => {
-    try {
-      await updateSource.mutateAsync({
-        id: source.id,
-        data: { enabled: !source.enabled },
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update sender');
-    }
-  };
 
   const handleDeleteSource = (source: EmailSource) => {
     Alert.alert(
@@ -204,22 +190,28 @@ export function GmailPreferencesScreen() {
     <View style={styles.sourceItem}>
       <View style={styles.sourceInfo}>
         <View style={styles.sourceHeader}>
-          <Text style={styles.sourceName}>{item.name}</Text>
+          <Text
+            style={styles.sourceName}
+            numberOfLines={1}
+            ellipsizeMode="tail"
+          >
+            {item.name}
+          </Text>
           <View style={[styles.sourceTypeBadge, { backgroundColor: getSourceTypeColor(item.type) + '20' }]}>
             <Text style={[styles.sourceTypeText, { color: getSourceTypeColor(item.type) }]}>
               {getSourceTypeLabel(item.type)}
             </Text>
           </View>
         </View>
-        <Text style={styles.sourceIdentifier}>{item.identifier}</Text>
+        <Text
+          style={styles.sourceIdentifier}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
+          {item.identifier}
+        </Text>
       </View>
       <View style={styles.sourceActions}>
-        <Switch
-          value={item.enabled}
-          onValueChange={() => handleToggleSource(item)}
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor="#ffffff"
-        />
         <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteSource(item)}>
           <Feather name="trash-2" size={18} color={colors.danger} />
         </TouchableOpacity>
@@ -362,20 +354,25 @@ const styles = StyleSheet.create({
   },
   sourceInfo: {
     flex: 1,
+    minWidth: 0,
     marginRight: 12,
   },
   sourceHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
+    minWidth: 0,
   },
   sourceName: {
+    flexShrink: 1,
+    minWidth: 0,
     fontSize: 15,
     fontWeight: '500',
     color: colors.text,
     marginRight: 8,
   },
   sourceTypeBadge: {
+    flexShrink: 0,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
@@ -392,9 +389,10 @@ const styles = StyleSheet.create({
   sourceActions: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexShrink: 0,
   },
   deleteButton: {
-    marginLeft: 16,
+    marginLeft: 0,
     padding: 4,
   },
   separator: {

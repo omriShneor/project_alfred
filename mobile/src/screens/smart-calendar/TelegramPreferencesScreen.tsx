@@ -6,7 +6,6 @@ import {
   ScrollView,
   TouchableOpacity,
   FlatList,
-  Switch,
   Alert,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
@@ -15,7 +14,6 @@ import { AddSourceModal } from '../../components/sources';
 import { colors } from '../../theme/colors';
 import {
   useTelegramChannels,
-  useUpdateTelegramChannel,
   useDeleteTelegramChannel,
   useCreateTelegramChannel,
   useTelegramTopContacts,
@@ -41,24 +39,9 @@ export function TelegramPreferencesScreen() {
   const debouncedQuery = useDebounce(searchQuery, 300);
   const { data: searchResults, isLoading: searchLoading } = useSearchTelegramContacts(debouncedQuery);
 
-  const updateChannel = useUpdateTelegramChannel();
   const deleteChannel = useDeleteTelegramChannel();
   const createChannel = useCreateTelegramChannel();
   const addCustomSource = useAddTelegramCustomSource();
-
-  const handleToggleChannel = async (channel: Channel) => {
-    try {
-      await updateChannel.mutateAsync({
-        id: channel.id,
-        data: {
-          name: channel.name,
-          enabled: !channel.enabled,
-        },
-      });
-    } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to update chat');
-    }
-  };
 
   const handleDeleteTelegramChannel = (channel: Channel) => {
     Alert.alert(
@@ -137,12 +120,6 @@ export function TelegramPreferencesScreen() {
         <Text style={styles.channelIdentifier}>{item.identifier}</Text>
       </View>
       <View style={styles.channelActions}>
-        <Switch
-          value={item.enabled}
-          onValueChange={() => handleToggleChannel(item)}
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor="#ffffff"
-        />
         <TouchableOpacity style={styles.deleteButton} onPress={() => handleDeleteTelegramChannel(item)}>
           <Feather name="trash-2" size={18} color={colors.danger} />
         </TouchableOpacity>
@@ -286,7 +263,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   deleteButton: {
-    marginLeft: 16,
+    marginLeft: 0,
     padding: 4,
   },
   separator: {

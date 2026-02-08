@@ -19,7 +19,7 @@ export function WelcomeScreen() {
         <Text style={styles.appName}>ALFRED</Text>
         <Text style={styles.title}>Never miss what matters</Text>
         <Text style={styles.description}>
-          Alfred finds events, reminders, and tasks in your chats and email, then keeps your calendar and reminders up to date so nothing slips through.
+          Alfred finds events, reminders, and tasks in your chats and email service, then keeps your calendar and reminders up to date so nothing slips through.
         </Text>
 
         <View style={styles.timeBadge}>
@@ -38,7 +38,7 @@ export function WelcomeScreen() {
           </View>
           <View style={styles.featureItem}>
             <Ionicons name="calendar-outline" size={16} color={colors.primary} />
-            <Text style={styles.featureText}>Sync approved events your to Google Calendar</Text>
+            <Text style={styles.featureText}>Sync approved events to your Google Calendar</Text>
           </View>
         </View>
       </View>

@@ -13,7 +13,12 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Card, LoadingSpinner } from '../../components/common';
 import { colors } from '../../theme/colors';
-import { useChannels, useCompleteOnboarding } from '../../hooks';
+import {
+  useChannels,
+  useCompleteOnboarding,
+  useGCalStatus,
+  useGCalSettings,
+} from '../../hooks';
 import { useTelegramChannels } from '../../hooks/useTelegram';
 import { useEmailSources } from '../../hooks/useGmail';
 import type { OnboardingParamList } from '../../navigation/OnboardingNavigator';
@@ -58,29 +63,37 @@ function ServiceCard({ icon, title, description, configured, onPress }: ServiceC
 export function SourceConfigurationScreen() {
   const route = useRoute<RouteProps>();
   const navigation = useNavigation<NavigationProp>();
-  const { whatsappEnabled, telegramEnabled, gmailEnabled } = route.params;
+  const { whatsappEnabled, telegramEnabled, gmailEnabled, gcalEnabled } = route.params;
 
   // Fetch channels and sources
   const { data: whatsappChannels, refetch: refetchWhatsAppChannels, isLoading: whatsappLoading } = useChannels();
   const { data: telegramChannels, refetch: refetchTelegramChannels, isLoading: telegramLoading } = useTelegramChannels();
   const { data: emailSources, refetch: refetchEmailSources, isLoading: emailLoading } = useEmailSources();
+  const { data: gcalStatus, isLoading: gcalStatusLoading } = useGCalStatus();
+  const { data: gcalSettings, isLoading: gcalSettingsLoading } = useGCalSettings();
   const completeOnboarding = useCompleteOnboarding();
 
   // Derive configuration status
   const whatsappConfigured = (whatsappChannels?.some((channel) => channel.enabled) ?? false);
   const telegramConfigured = (telegramChannels?.some((channel) => channel.enabled) ?? false);
   const gmailConfigured = (emailSources?.some((source) => source.enabled) ?? false);
+  // Keep Google Calendar styling consistent with other source cards:
+  // once Calendar scope is granted, treat it as "configured" on this screen.
+  const gcalConfigured = Boolean(
+    gcalStatus?.connected &&
+    gcalStatus?.has_scopes
+  );
 
-  const requiredAppsCount = [whatsappEnabled, telegramEnabled, gmailEnabled].filter(Boolean).length;
-  const configuredAppsCount = [
+  const requiredDataSourcesCount = [whatsappEnabled, telegramEnabled, gmailEnabled].filter(Boolean).length;
+  const configuredDataSourcesCount = [
     whatsappEnabled ? whatsappConfigured : false,
     telegramEnabled ? telegramConfigured : false,
     gmailEnabled ? gmailConfigured : false,
   ].filter(Boolean).length;
-  const hasConfiguredSource = configuredAppsCount > 0;
+  const hasConfiguredSource = configuredDataSourcesCount > 0;
   const finishButtonTitle = hasConfiguredSource
     ? 'Finish setup'
-    : 'Select at least one contact or sender';
+    : 'Configure at least 1 data source';
 
   // Refetch sources when screen gains focus (user returns from preference screens)
   useFocusEffect(
@@ -103,6 +116,10 @@ export function SourceConfigurationScreen() {
     navigation.navigate('GmailPreferences');
   };
 
+  const handleConfigureGoogleCalendar = () => {
+    navigation.navigate('GoogleCalendarPreferences');
+  };
+
   const handleContinue = async () => {
     try {
       await completeOnboarding.mutateAsync({
@@ -118,7 +135,12 @@ export function SourceConfigurationScreen() {
   };
 
   // Show loading state during initial data fetch
-  if ((whatsappLoading && !whatsappChannels) || (telegramLoading && !telegramChannels) || (emailLoading && !emailSources)) {
+  if (
+    (whatsappLoading && !whatsappChannels) ||
+    (telegramLoading && !telegramChannels) ||
+    (emailLoading && !emailSources) ||
+    (gcalEnabled && ((gcalStatusLoading && !gcalStatus) || (gcalSettingsLoading && !gcalSettings)))
+  ) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.loadingContainer}>
@@ -149,19 +171,19 @@ export function SourceConfigurationScreen() {
                   hasConfiguredSource ? styles.heroStatusTextSuccess : styles.heroStatusTextWarning,
                 ]}
               >
-                {configuredAppsCount}/{requiredAppsCount} ready
+                {configuredDataSourcesCount}/{requiredDataSourcesCount} sources ready
               </Text>
             </View>
           </View>
           <Text style={styles.title}>Choose What Alfred Should Monitor</Text>
           <Text style={styles.description}>
-            Pick contacts, chats, or senders from your connected apps. You need at least one to finish setup.
+            Configure at least one data source (Gmail, Telegram, or WhatsApp) to finish setup.
           </Text>
           <View style={styles.progressTrack}>
             <View
               style={[
                 styles.progressFill,
-                { width: `${(configuredAppsCount / Math.max(requiredAppsCount, 1)) * 100}%` },
+                { width: `${(configuredDataSourcesCount / Math.max(requiredDataSourcesCount, 1)) * 100}%` },
               ]}
             />
           </View>
@@ -197,11 +219,30 @@ export function SourceConfigurationScreen() {
           />
         )}
 
+        {gcalEnabled && (
+          <ServiceCard
+            icon="calendar-outline"
+            title="Google Calendar"
+            description="Choose calendar sync settings separately"
+            configured={gcalConfigured}
+            onPress={handleConfigureGoogleCalendar}
+          />
+        )}
+
+        {gcalEnabled && !gcalConfigured && (
+          <View style={styles.calendarHint}>
+            <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+            <Text style={styles.calendarHintText}>
+              Google Calendar sync is separate and can be finalized now or later.
+            </Text>
+          </View>
+        )}
+
         {!hasConfiguredSource && (
           <View style={styles.statusSummary}>
             <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
             <Text style={styles.statusSummaryText}>
-              Configure at least one contact or sender to continue
+              Configure at least one source from Gmail, Telegram, or WhatsApp to continue
             </Text>
           </View>
         )}
@@ -364,6 +405,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textSecondary,
     marginLeft: 8,
+  },
+  calendarHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+    marginBottom: 10,
+    paddingHorizontal: 16,
+  },
+  calendarHintText: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginLeft: 8,
+    textAlign: 'center',
   },
   continueButton: {
     marginTop: 8,

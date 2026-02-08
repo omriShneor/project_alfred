@@ -6,19 +6,34 @@ import { WelcomeScreen } from '../screens/onboarding/WelcomeScreen';
 import { InputSelectionScreen } from '../screens/onboarding/InputSelectionScreen';
 import { ConnectionScreen } from '../screens/onboarding/ConnectionScreen';
 import { SourceConfigurationScreen } from '../screens/onboarding/SourceConfigurationScreen';
-import { WhatsAppPreferencesScreen, TelegramPreferencesScreen, GmailPreferencesScreen } from '../screens/smart-calendar';
-import type { PreferenceStackParamList } from './PreferenceStackNavigator';
+import {
+  WhatsAppPreferencesScreen,
+  TelegramPreferencesScreen,
+  GmailPreferencesScreen,
+  GoogleCalendarPreferencesScreen,
+} from '../screens/smart-calendar';
 import { colors } from '../theme/colors';
 
 export type OnboardingParamList = {
   Welcome: undefined;
   InputSelection: undefined;
-  Connection: { whatsappEnabled: boolean; telegramEnabled: boolean; gmailEnabled: boolean };
-  SourceConfiguration: { whatsappEnabled: boolean; telegramEnabled: boolean; gmailEnabled: boolean };
+  Connection: {
+    whatsappEnabled: boolean;
+    telegramEnabled: boolean;
+    gmailEnabled: boolean;
+    gcalEnabled: boolean;
+  };
+  SourceConfiguration: {
+    whatsappEnabled: boolean;
+    telegramEnabled: boolean;
+    gmailEnabled: boolean;
+    gcalEnabled: boolean;
+  };
   // Add preference screens from shared stack
   WhatsAppPreferences: undefined;
   TelegramPreferences: undefined;
   GmailPreferences: undefined;
+  GoogleCalendarPreferences: undefined;
 };
 
 const Stack = createNativeStackNavigator<OnboardingParamList>();
@@ -79,6 +94,25 @@ export function OnboardingNavigator() {
         options={({ navigation }) => ({
           headerShown: true,
           title: 'Gmail Senders',
+          headerStyle: { backgroundColor: colors.background },
+          headerTintColor: colors.text,
+          headerShadowVisible: false,
+          headerBackVisible: false,
+          headerLeft: () => (
+            <View>
+              <Pressable onPress={() => navigation.goBack()}>
+                <Ionicons name="chevron-back" size={28} color={colors.text} />
+              </Pressable>
+            </View>
+          ),
+        })}
+      />
+      <Stack.Screen
+        name="GoogleCalendarPreferences"
+        component={GoogleCalendarPreferencesScreen}
+        options={({ navigation }) => ({
+          headerShown: true,
+          title: 'Google Calendar',
           headerStyle: { backgroundColor: colors.background },
           headerTintColor: colors.text,
           headerShadowVisible: false,

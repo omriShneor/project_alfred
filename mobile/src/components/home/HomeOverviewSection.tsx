@@ -273,23 +273,6 @@ export function HomeOverviewSection() {
   const warningItems = React.useMemo<OverviewWarning[]>(() => {
     const warnings: OverviewWarning[] = [];
 
-    if (pendingTotal > 0) {
-      const pendingLabel =
-        pendingEventsCount > 0 && pendingRemindersCount > 0
-          ? `${pendingEventsCount} event${pendingEventsCount === 1 ? '' : 's'} and ${pendingRemindersCount} reminder${pendingRemindersCount === 1 ? '' : 's'}`
-          : pendingEventsCount > 0
-            ? `${pendingEventsCount} pending event${pendingEventsCount === 1 ? '' : 's'}`
-            : `${pendingRemindersCount} pending reminder${pendingRemindersCount === 1 ? '' : 's'}`;
-
-      warnings.push({
-        id: 'pending-review',
-        text: `You still need to review ${pendingLabel}.`,
-        icon: 'alert-circle-outline',
-        color: colors.warning,
-        onPress: () => navigation.navigate('NeedsReview'),
-      });
-    }
-
     if (sourceAuthIssues.length > 0) {
       const sourceList = sourceAuthIssues.map((issue) => issue.label).join(', ');
       warnings.push({
@@ -333,9 +316,6 @@ export function HomeOverviewSection() {
 
     return warnings;
   }, [
-    pendingTotal,
-    pendingEventsCount,
-    pendingRemindersCount,
     navigation,
     sourceAuthIssues,
     unconfiguredConnectedSources,
@@ -346,7 +326,13 @@ export function HomeOverviewSection() {
   let infoIcon: keyof typeof Ionicons.glyphMap = 'checkmark-circle-outline';
   let infoColor = colors.success;
 
-  if (nextEvent) {
+  if (pendingTotal > 0) {
+    infoText = `You have ${pendingTotal} pending item${
+      pendingTotal === 1 ? '' : 's'
+    } to review.`;
+    infoIcon = 'warning-outline';
+    infoColor = colors.warning;
+  } else if (nextEvent) {
     infoText = `Next event: ${nextEvent.summary} at ${formatTime(nextEvent.start_time)}.`;
     infoIcon = 'time-outline';
     infoColor = colors.primary;
@@ -383,20 +369,19 @@ export function HomeOverviewSection() {
         <View style={styles.statsRow}>
           <TouchableOpacity
             activeOpacity={0.75}
-            style={[
-              styles.statItem,
-              styles.reviewStatItem,
-              pendingTotal > 0 && styles.reviewStatItemActive,
-            ]}
+            style={[styles.statItem, styles.reviewStatItem]}
             onPress={() => navigation.navigate('NeedsReview')}
           >
             <View style={styles.reviewStatHeader}>
               <Text style={styles.statValue}>{pendingTotal}</Text>
-              <Ionicons
-                name="chevron-forward"
-                size={14}
-                color={pendingTotal > 0 ? colors.warning : colors.textSecondary}
-              />
+              <View style={styles.reviewHeaderRight}>
+                {pendingTotal > 0 ? <View style={styles.reviewDot} /> : null}
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={colors.textSecondary}
+                />
+              </View>
             </View>
             <Text style={styles.statLabel}>Needs review</Text>
             <Text style={styles.reviewStatHint}>Tap to review</Text>
@@ -525,16 +510,23 @@ const styles = StyleSheet.create({
   reviewStatItem: {
     alignItems: 'flex-start',
   },
-  reviewStatItemActive: {
-    borderColor: colors.warning + '60',
-    backgroundColor: colors.warning + '10',
-  },
   reviewStatHeader: {
     width: '100%',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 2,
+  },
+  reviewHeaderRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  reviewDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 5,
+    backgroundColor: '#FD1D1D'//colors.danger,
   },
   statValue: {
     fontSize: 20,

@@ -18,6 +18,8 @@ export function EventCard({ event }: EventCardProps) {
   const [showReasoning, setShowReasoning] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showContextModal, setShowContextModal] = useState(false);
+  const eventTitle = event.title?.trim() || 'Untitled event';
+  const eventDescription = event.description?.trim() || '';
 
   const confirmEvent = useConfirmEvent();
   const rejectEvent = useRejectEvent();
@@ -92,7 +94,16 @@ export function EventCard({ event }: EventCardProps) {
           )}
         </View>
 
-        <Text style={styles.title}>{event.title}</Text>
+        <Text style={styles.title}>{eventTitle}</Text>
+
+        {eventDescription ? (
+          <View style={styles.details}>
+            <View style={styles.detailRow}>
+              <Text style={styles.detailLabel}>Details:</Text>
+              <Text style={styles.detailValue}>{eventDescription}</Text>
+            </View>
+          </View>
+        ) : null}
 
         <View style={styles.details}>
           <View style={styles.detailRow}>

@@ -41,12 +41,6 @@ export function NeedsReviewScreen() {
   const hasPendingReminders = pendingRemindersCount > 0;
   const hasPendingEvents = pendingEventsCount > 0;
 
-  const primaryReviewTitle = hasPendingReminders
-    ? `Review ${pendingRemindersCount} reminder${pendingRemindersCount === 1 ? '' : 's'} now`
-    : hasPendingEvents
-      ? `Review ${pendingEventsCount} event${pendingEventsCount === 1 ? '' : 's'} now`
-      : '';
-
   const isInitialLoading =
     loadingReminders &&
     loadingEvents &&
@@ -99,7 +93,7 @@ export function NeedsReviewScreen() {
 
   if (isInitialLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['top']}>
+      <SafeAreaView style={styles.container} edges={['left', 'right']}>
         <View style={styles.loadingContainer}>
           <LoadingSpinner />
           <Text style={styles.loadingText}>Loading pending items...</Text>
@@ -109,7 +103,7 @@ export function NeedsReviewScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView
         ref={scrollViewRef}
         style={styles.scrollView}
@@ -141,15 +135,6 @@ export function NeedsReviewScreen() {
               </Text>
               <Text style={styles.heroDescription}>
                 Review each suggestion below and accept, edit, or decline so Alfred can keep your plans accurate.
-              </Text>
-
-              <Button
-                title={primaryReviewTitle}
-                onPress={handlePrimaryReviewAction}
-                style={styles.primaryReviewButton}
-              />
-              <Text style={styles.primaryActionHint}>
-                Start with the oldest item, then clear the rest in order.
               </Text>
 
               <View style={styles.summaryRow}>
@@ -261,32 +246,11 @@ export function NeedsReviewScreen() {
 
         {totalPending > 0 && (
           <>
-            <Card style={styles.guideCard}>
-              <Text style={styles.guideTitle}>How to review each item</Text>
-              <View style={styles.guideRow}>
-                <View style={styles.guideItem}>
-                  <Ionicons name="create-outline" size={16} color={colors.primary} />
-                  <Text style={styles.guideItemLabel}>Edit</Text>
-                  <Text style={styles.guideItemText}>Fix time or details first.</Text>
-                </View>
-                <View style={styles.guideItem}>
-                  <Ionicons name="close-outline" size={16} color={colors.danger} />
-                  <Text style={styles.guideItemLabel}>Decline</Text>
-                  <Text style={styles.guideItemText}>Skip items that are not relevant.</Text>
-                </View>
-                <View style={styles.guideItem}>
-                  <Ionicons name="checkmark-outline" size={16} color={colors.success} />
-                  <Text style={styles.guideItemLabel}>Accept</Text>
-                  <Text style={styles.guideItemText}>Save reminders and sync events.</Text>
-                </View>
-              </View>
-            </Card>
-
             <View onLayout={handleRemindersLayout}>
               <PendingRemindersSection />
             </View>
             <View onLayout={handleEventsLayout}>
-              <PendingEventsSection />
+              <PendingEventsSection compact={false} />
             </View>
           </>
         )}
@@ -304,7 +268,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingTop: 0,
     paddingBottom: 28,
   },
   loadingContainer: {

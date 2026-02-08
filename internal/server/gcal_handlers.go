@@ -149,13 +149,6 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 	}
 	var events []TodayEventResponse
 
-	// Get feature settings to check which calendars are enabled
-	settings, err := s.db.GetFeatureSettings(userID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-
 	// Track Google Event IDs to avoid duplicates
 	seenGoogleIDs := make(map[string]bool)
 
@@ -191,10 +184,26 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	// 2. Get Google Calendar events if enabled and connected
+	// 2. Get Google Calendar events when the account is connected.
+	// Prefer query param, otherwise user-selected calendar, then primary.
+	selectedCalendarID := r.URL.Query().Get("calendar_id")
+	if selectedCalendarID == "" {
+		gcalSettings, err := s.db.GetGCalSettings(userID)
+		if err == nil && gcalSettings.SelectedCalendarID != "" {
+			selectedCalendarID = gcalSettings.SelectedCalendarID
+		}
+	}
+	if selectedCalendarID == "" {
+		selectedCalendarID = "primary"
+	}
+
 	userGCalClient := s.getGCalClientForUser(userID)
-	if settings.GoogleCalendarEnabled && userGCalClient != nil && userGCalClient.IsAuthenticated() {
-		gcalEvents, err := userGCalClient.ListTodayEvents("primary")
+	if userGCalClient != nil && userGCalClient.IsAuthenticated() {
+		gcalEvents, err := userGCalClient.ListTodayEvents(selectedCalendarID)
+		if err != nil && selectedCalendarID != "primary" {
+			// Fall back to primary if selected calendar is no longer accessible.
+			gcalEvents, err = userGCalClient.ListTodayEvents("primary")
+		}
 		if err == nil {
 			for _, ge := range gcalEvents {
 				// Skip if already seen (synced from Alfred)

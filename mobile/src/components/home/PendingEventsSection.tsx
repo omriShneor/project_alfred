@@ -1,11 +1,16 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { CompactEventCard } from '../events/CompactEventCard';
+import { EventCard } from '../events/EventCard';
 import { LoadingSpinner } from '../common';
 import { useEvents } from '../../hooks/useEvents';
 import { colors } from '../../theme/colors';
 
-export function PendingEventsSection() {
+interface PendingEventsSectionProps {
+  compact?: boolean;
+}
+
+export function PendingEventsSection({ compact = true }: PendingEventsSectionProps) {
   const { data: events, isLoading } = useEvents({ status: 'pending' });
   const sortedEvents = React.useMemo(() => {
     if (!events) {
@@ -45,7 +50,11 @@ export function PendingEventsSection() {
     <View style={styles.container}>
       <Text style={styles.sectionTitle}>PENDING EVENTS ({sortedEvents.length})</Text>
       {sortedEvents.map((event) => (
-        <CompactEventCard key={event.id} event={event} />
+        compact ? (
+          <CompactEventCard key={event.id} event={event} />
+        ) : (
+          <EventCard key={event.id} event={event} />
+        )
       ))}
     </View>
   );

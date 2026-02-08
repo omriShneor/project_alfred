@@ -13,6 +13,8 @@ interface CompactEventCardProps {
 
 export function CompactEventCard({ event }: CompactEventCardProps) {
   const [showEditModal, setShowEditModal] = useState(false);
+  const eventTitle = event.title?.trim() || 'Untitled event';
+  const eventDescription = event.description?.trim() || '';
 
   const confirmEvent = useConfirmEvent();
   const rejectEvent = useRejectEvent();
@@ -78,12 +80,17 @@ export function CompactEventCard({ event }: CompactEventCardProps) {
           <View style={styles.info}>
             <View style={styles.titleRow}>
               <Text style={styles.title} numberOfLines={1}>
-                {event.title}
+                {eventTitle}
               </Text>
               {event.channel_name && (
                 <Text style={styles.channel}>#{event.channel_name}</Text>
               )}
             </View>
+            {eventDescription ? (
+              <Text style={styles.description} numberOfLines={2}>
+                {eventDescription}
+              </Text>
+            ) : null}
             <Text style={styles.dateTime}>{formatDateTime(event.start_time)}</Text>
           </View>
 
@@ -160,6 +167,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: colors.textSecondary,
     marginLeft: 8,
+  },
+  description: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginBottom: 4,
   },
   dateTime: {
     fontSize: 13,

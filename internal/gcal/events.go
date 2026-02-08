@@ -117,17 +117,17 @@ func (c *Client) DeleteEvent(calendarID, eventID string) error {
 
 // TodayEvent represents a calendar event for today's schedule display
 type TodayEvent struct {
-	ID          string     `json:"id"`
-	Summary     string     `json:"summary"`
-	Description string     `json:"description,omitempty"`
-	Location    string     `json:"location,omitempty"`
-	StartTime   time.Time  `json:"start_time"`
-	EndTime     time.Time  `json:"end_time"`
-	AllDay      bool       `json:"all_day"`
-	CalendarID  string     `json:"calendar_id"`
+	ID          string    `json:"id"`
+	Summary     string    `json:"summary"`
+	Description string    `json:"description,omitempty"`
+	Location    string    `json:"location,omitempty"`
+	StartTime   time.Time `json:"start_time"`
+	EndTime     time.Time `json:"end_time"`
+	AllDay      bool      `json:"all_day"`
+	CalendarID  string    `json:"calendar_id"`
 }
 
-// ListTodayEvents returns events from now until end of day for the specified calendar
+// ListTodayEvents returns events for the current local day for the specified calendar
 func (c *Client) ListTodayEvents(calendarID string) ([]TodayEvent, error) {
 	if c.service == nil {
 		return nil, fmt.Errorf("calendar service not initialized")
@@ -137,12 +137,13 @@ func (c *Client) ListTodayEvents(calendarID string) ([]TodayEvent, error) {
 		calendarID = "primary"
 	}
 
-	// Get current time and end of day
+	// Get start/end of current day in local time.
 	now := time.Now()
-	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, now.Location())
+	startOfDay := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	endOfDay := startOfDay.Add(24 * time.Hour)
 
 	events, err := c.service.Events.List(calendarID).
-		TimeMin(now.Format(time.RFC3339)).
+		TimeMin(startOfDay.Format(time.RFC3339)).
 		TimeMax(endOfDay.Format(time.RFC3339)).
 		SingleEvents(true).
 		OrderBy("startTime").
@@ -164,8 +165,8 @@ func (c *Client) ListTodayEvents(calendarID string) ([]TodayEvent, error) {
 		// Handle all-day events (date only, no time)
 		if item.Start.Date != "" {
 			event.AllDay = true
-			startDate, _ := time.Parse("2006-01-02", item.Start.Date)
-			endDate, _ := time.Parse("2006-01-02", item.End.Date)
+			startDate, _ := time.ParseInLocation("2006-01-02", item.Start.Date, now.Location())
+			endDate, _ := time.ParseInLocation("2006-01-02", item.End.Date, now.Location())
 			event.StartTime = startDate
 			event.EndTime = endDate
 		} else {

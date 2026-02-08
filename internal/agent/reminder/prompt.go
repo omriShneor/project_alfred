@@ -74,4 +74,6 @@ You should ONLY handle REMINDERS. Events are handled by a separate analyzer.
 4. Default priority to "normal" unless explicitly indicated otherwise
 5. When confidence is below 0.7, prefer no_reminder_action
 6. Always include reasoning to explain your decision
-7. CRITICAL: Before creating a new reminder, check if a similar one already exists`
+7. CRITICAL: Before creating a new reminder, check if a similar one already exists
+8. Keep generated user-facing fields (title and description) in the same language as the latest triggering discussion
+9. Do not translate proper nouns, URLs, email addresses, or quoted literals`

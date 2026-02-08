@@ -5,9 +5,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/agent/langpolicy"
 	"github.com/omriShneor/project_alfred/internal/agent/tools"
 	"github.com/omriShneor/project_alfred/internal/database"
 )
@@ -54,51 +56,61 @@ func (a *Agent) AnalyzeMessages(
 	newMessage database.MessageRecord,
 	existingReminders []database.Reminder,
 ) (*agent.ReminderAnalysis, error) {
-	userPrompt := buildUserPrompt(history, newMessage, existingReminders)
-
-	input := agent.AgentInput{
-		Messages: []agent.Message{
-			{
-				Role: "user",
-				Content: []agent.ContentBlock{
-					agent.TextBlock{Type: "text", Text: userPrompt},
-				},
-			},
-		},
-		MaxTurns: 6, // Allow extraction + action + final response
+	targetLanguage := langpolicy.DetectTargetLanguage(newMessage.MessageText)
+	languageInstruction := langpolicy.BuildLanguageInstruction(targetLanguage)
+	if targetLanguage.Reliable {
+		fmt.Printf(
+			"LanguagePolicy[reminder]: target=%s script=%s confidence=%.2f source=message\n",
+			targetLanguage.Code,
+			targetLanguage.Script,
+			targetLanguage.Confidence,
+		)
 	}
 
-	output, err := a.Execute(ctx, input)
+	analysis, err := a.executePromptAndParse(ctx, buildUserPrompt(
+		history,
+		newMessage,
+		existingReminders,
+		languageInstruction,
+		"",
+	))
 	if err != nil {
 		return nil, fmt.Errorf("agent execution failed: %w", err)
 	}
 
-	return parseAgentOutput(output)
+	return a.enforceLanguagePolicy(ctx, targetLanguage, analysis, func(correction string) string {
+		return buildUserPrompt(
+			history,
+			newMessage,
+			existingReminders,
+			languageInstruction,
+			correction,
+		)
+	})
 }
 
 // AnalyzeEmail analyzes an email for reminders
 // Implements agent.ReminderAnalyzer interface
 func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*agent.ReminderAnalysis, error) {
-	userPrompt := buildEmailPrompt(email)
-
-	input := agent.AgentInput{
-		Messages: []agent.Message{
-			{
-				Role: "user",
-				Content: []agent.ContentBlock{
-					agent.TextBlock{Type: "text", Text: userPrompt},
-				},
-			},
-		},
-		MaxTurns: 6,
+	targetLanguage := langpolicy.DetectTargetLanguage(email.Body)
+	languageInstruction := langpolicy.BuildLanguageInstruction(targetLanguage)
+	if targetLanguage.Reliable {
+		fmt.Printf(
+			"LanguagePolicy[reminder]: target=%s script=%s confidence=%.2f source=email\n",
+			targetLanguage.Code,
+			targetLanguage.Script,
+			targetLanguage.Confidence,
+		)
 	}
 
-	output, err := a.Execute(ctx, input)
+	analysis, err := a.executePromptAndParse(ctx, buildEmailPrompt(email, languageInstruction, ""))
 	if err != nil {
 		return nil, fmt.Errorf("email analysis failed: %w", err)
 	}
 
-	return parseAgentOutput(output)
+	return a.enforceLanguagePolicy(ctx, targetLanguage, analysis, func(correction string) string {
+		return buildEmailPrompt(email, languageInstruction, correction)
+	})
 }
 
 // IsConfigured returns true if the agent is properly configured
@@ -111,6 +123,8 @@ func buildUserPrompt(
 	history []database.MessageRecord,
 	newMessage database.MessageRecord,
 	existingReminders []database.Reminder,
+	languageInstruction string,
+	retryInstruction string,
 ) string {
 	var prompt bytes.Buffer
 
@@ -157,13 +171,22 @@ func buildUserPrompt(
 	prompt.WriteString("\n## Current Date/Time Reference\n\n")
 	prompt.WriteString(fmt.Sprintf("Current time: %s\n", time.Now().Format("2006-01-02 15:04 (Monday)")))
 
+	if languageInstruction != "" {
+		prompt.WriteString("\n## Output Language Requirement\n\n")
+		prompt.WriteString(languageInstruction + "\n")
+	}
+	if retryInstruction != "" {
+		prompt.WriteString("\n## Correction Required\n\n")
+		prompt.WriteString(retryInstruction + "\n")
+	}
+
 	prompt.WriteString("\nAnalyze these messages using the available tools. First extract relevant date/time information if needed, then take the appropriate reminder action.")
 
 	return prompt.String()
 }
 
 // buildEmailPrompt constructs the prompt for email analysis
-func buildEmailPrompt(email agent.EmailContent) string {
+func buildEmailPrompt(email agent.EmailContent, languageInstruction, retryInstruction string) string {
 	var prompt bytes.Buffer
 
 	// Add thread history if present
@@ -187,6 +210,15 @@ func buildEmailPrompt(email agent.EmailContent) string {
 	prompt.WriteString("\n\n## Current Date/Time Reference\n\n")
 	prompt.WriteString(fmt.Sprintf("Current time: %s\n", time.Now().Format("2006-01-02 15:04 (Monday)")))
 
+	if languageInstruction != "" {
+		prompt.WriteString("\n## Output Language Requirement\n\n")
+		prompt.WriteString(languageInstruction + "\n")
+	}
+	if retryInstruction != "" {
+		prompt.WriteString("\n## Correction Required\n\n")
+		prompt.WriteString(retryInstruction + "\n")
+	}
+
 	prompt.WriteString("\nAnalyze this email using the available tools. First extract date/time information if needed, then take the appropriate reminder action.")
 
 	return prompt.String()
@@ -197,6 +229,113 @@ func truncateBody(body string, maxLen int) string {
 		return body
 	}
 	return body[:maxLen] + "\n\n[... content truncated ...]"
+}
+
+func (a *Agent) executePromptAndParse(ctx context.Context, userPrompt string) (*agent.ReminderAnalysis, error) {
+	input := agent.AgentInput{
+		Messages: []agent.Message{
+			{
+				Role: "user",
+				Content: []agent.ContentBlock{
+					agent.TextBlock{Type: "text", Text: userPrompt},
+				},
+			},
+		},
+		MaxTurns: 6, // Allow extraction + action + final response
+	}
+
+	output, err := a.Execute(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseAgentOutput(output)
+}
+
+func (a *Agent) enforceLanguagePolicy(
+	ctx context.Context,
+	target langpolicy.TargetLanguage,
+	initial *agent.ReminderAnalysis,
+	retryPromptBuilder func(correction string) string,
+) (*agent.ReminderAnalysis, error) {
+	shouldRetry, validation := shouldRetryReminderForLanguage(target, initial)
+	if !shouldRetry {
+		if target.Reliable {
+			fmt.Printf(
+				"LanguagePolicy[reminder]: validation=pass action=%s checked=%d skipped=%d\n",
+				initial.Action,
+				validation.CheckedFields,
+				validation.SkippedFields,
+			)
+		}
+		return initial, nil
+	}
+
+	fmt.Printf(
+		"LanguagePolicy[reminder]: validation=fail action=%s mismatches=%s retry=true\n",
+		initial.Action,
+		formatMismatches(validation),
+	)
+
+	retryPrompt := retryPromptBuilder(langpolicy.BuildCorrectiveRetryInstruction(target, validation))
+	retryAnalysis, err := a.executePromptAndParse(ctx, retryPrompt)
+	if err != nil {
+		fmt.Printf("LanguagePolicy[reminder]: retry_error=%v fallback=initial\n", err)
+		return initial, nil
+	}
+
+	retryNeeded, retryValidation := shouldRetryReminderForLanguage(target, retryAnalysis)
+	if !retryNeeded {
+		fmt.Printf(
+			"LanguagePolicy[reminder]: retry_result=pass action=%s checked=%d skipped=%d\n",
+			retryAnalysis.Action,
+			retryValidation.CheckedFields,
+			retryValidation.SkippedFields,
+		)
+		return retryAnalysis, nil
+	}
+
+	fmt.Printf(
+		"LanguagePolicy[reminder]: retry_result=fail action=%s mismatches=%s fallback=retry\n",
+		retryAnalysis.Action,
+		formatMismatches(retryValidation),
+	)
+	return retryAnalysis, nil
+}
+
+func shouldRetryReminderForLanguage(
+	target langpolicy.TargetLanguage,
+	analysis *agent.ReminderAnalysis,
+) (bool, langpolicy.ValidationResult) {
+	empty := langpolicy.ValidationResult{}
+
+	if analysis == nil || analysis.Reminder == nil {
+		return false, empty
+	}
+	if !target.Reliable || target.Code == "" {
+		return false, empty
+	}
+	if analysis.Action != "create" && analysis.Action != "update" {
+		return false, empty
+	}
+
+	validation := langpolicy.ValidateFieldsLanguage(target, map[string]string{
+		"title":       analysis.Reminder.Title,
+		"description": analysis.Reminder.Description,
+	})
+	return !validation.IsMatch(), validation
+}
+
+func formatMismatches(validation langpolicy.ValidationResult) string {
+	if len(validation.Mismatches) == 0 {
+		return "none"
+	}
+
+	parts := make([]string, 0, len(validation.Mismatches))
+	for _, mismatch := range validation.Mismatches {
+		parts = append(parts, fmt.Sprintf("%s(%s)", mismatch.Field, mismatch.DetectedCode))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // parseAgentOutput converts agent output to ReminderAnalysis

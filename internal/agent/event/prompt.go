@@ -51,6 +51,8 @@ Before calling action tools, consider:
 - If confidence is below 0.6, use no_calendar_action
 - Always provide reasoning in your tool calls
 - Do NOT create duplicate events - check existing_events first
+- Keep generated user-facing fields (title, description, and location) in the same language as the latest triggering discussion
+- Do not translate proper nouns, URLs, email addresses, or quoted literals
 
 ## Event Defaults
 

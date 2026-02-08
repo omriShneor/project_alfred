@@ -103,7 +103,7 @@ export function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {/* Notifications Section */}
         <Text style={styles.sectionTitle}>Notifications</Text>
@@ -207,7 +207,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.textSecondary,
-    marginTop: 16,
+    marginTop: 0,
     marginBottom: 8,
     marginLeft: 4,
     textTransform: 'uppercase',

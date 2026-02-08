@@ -160,7 +160,7 @@ export function TodayCalendarSection() {
     }).length;
 
     if (allDayCount > 0 && upcomingCount > 0) {
-      return `${upcomingCount} upcoming • ${allDayCount} all day`;
+      return `${upcomingCount} upcoming | ${allDayCount} all day`;
     }
     if (upcomingCount > 0) {
       return `${upcomingCount} upcoming`;
@@ -178,7 +178,7 @@ export function TodayCalendarSection() {
         <Text style={styles.sectionTitle}>TODAY'S SCHEDULE</Text>
         <View style={styles.stateCard}>
           <LoadingSpinner size="small" />
-          <Text style={styles.stateSubtext}>Loading today&apos;s events...</Text>
+          <Text style={styles.stateSubtext}>Loading today's events...</Text>
         </View>
       </View>
     );

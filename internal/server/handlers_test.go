@@ -704,6 +704,7 @@ func TestHandleListEvents(t *testing.T) {
 func TestHandleGetEvent(t *testing.T) {
 	s := createTestServer(t)
 	user := database.CreateTestUser(t, s.db)
+	otherUser := database.CreateTestUser(t, s.db)
 
 	// Create a channel and event
 	channel, err := s.db.CreateSourceChannel(
@@ -766,11 +767,23 @@ func TestHandleGetEvent(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, w.Code)
 	})
+
+	t.Run("cannot get another user's event", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events/"+strconv.FormatInt(created.ID, 10), nil)
+		req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+		req = withAuthContext(req, otherUser)
+		w := httptest.NewRecorder()
+
+		s.handleGetEvent(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
 }
 
 func TestHandleRejectEvent(t *testing.T) {
 	s := createTestServer(t)
 	user := database.CreateTestUser(t, s.db)
+	otherUser := database.CreateTestUser(t, s.db)
 
 	// Create a channel and pending event
 	channel, err := s.db.CreateSourceChannel(
@@ -783,7 +796,7 @@ func TestHandleRejectEvent(t *testing.T) {
 	require.NoError(t, err)
 
 	event := &database.CalendarEvent{
-		UserID:    user.ID,
+		UserID:     user.ID,
 		ChannelID:  channel.ID,
 		CalendarID: "primary",
 		Title:      "Event to Reject",
@@ -812,11 +825,175 @@ func TestHandleRejectEvent(t *testing.T) {
 	t.Run("reject non-existent event", func(t *testing.T) {
 		req := httptest.NewRequest("POST", "/api/events/999999/reject", nil)
 		req.SetPathValue("id", "999999")
+		req = withAuthContext(req, user)
 		w := httptest.NewRecorder()
 
 		s.handleRejectEvent(w, req)
 
 		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("cannot reject another user's event", func(t *testing.T) {
+		// Reset event to pending for this subtest.
+		err := s.db.UpdateEventStatus(created.ID, database.EventStatusPending)
+		require.NoError(t, err)
+
+		req := httptest.NewRequest("POST", "/api/events/"+strconv.FormatInt(created.ID, 10)+"/reject", nil)
+		req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+		req = withAuthContext(req, otherUser)
+		w := httptest.NewRecorder()
+
+		s.handleRejectEvent(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+
+		unchanged, err := s.db.GetEventByID(created.ID)
+		require.NoError(t, err)
+		assert.Equal(t, database.EventStatusPending, unchanged.Status)
+	})
+}
+
+func TestHandleConfirmEvent_UserScoped(t *testing.T) {
+	s := createTestServer(t)
+	owner := database.CreateTestUser(t, s.db)
+	otherUser := database.CreateTestUser(t, s.db)
+
+	channel, err := s.db.CreateSourceChannel(
+		owner.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"confirm-owner@s.whatsapp.net",
+		"Confirm Owner",
+	)
+	require.NoError(t, err)
+
+	event := &database.CalendarEvent{
+		UserID:     owner.ID,
+		ChannelID:  channel.ID,
+		CalendarID: "primary",
+		Title:      "Owner Pending Event",
+		StartTime:  time.Now(),
+		ActionType: database.EventActionCreate,
+	}
+	created, err := s.db.CreatePendingEvent(event)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/events/"+strconv.FormatInt(created.ID, 10)+"/confirm", nil)
+	req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+	req = withAuthContext(req, otherUser)
+	w := httptest.NewRecorder()
+
+	s.handleConfirmEvent(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	unchanged, err := s.db.GetEventByID(created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, database.EventStatusPending, unchanged.Status)
+}
+
+func TestHandleUpdateEvent_UserScoped(t *testing.T) {
+	s := createTestServer(t)
+	owner := database.CreateTestUser(t, s.db)
+	otherUser := database.CreateTestUser(t, s.db)
+
+	channel, err := s.db.CreateSourceChannel(
+		owner.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"update-owner@s.whatsapp.net",
+		"Update Owner",
+	)
+	require.NoError(t, err)
+
+	event := &database.CalendarEvent{
+		UserID:      owner.ID,
+		ChannelID:   channel.ID,
+		CalendarID:  "primary",
+		Title:       "Original Title",
+		Description: "Original Description",
+		StartTime:   time.Now(),
+		ActionType:  database.EventActionCreate,
+	}
+	created, err := s.db.CreatePendingEvent(event)
+	require.NoError(t, err)
+
+	updateBody := map[string]interface{}{
+		"title":       "Hacked Title",
+		"description": "Hacked Description",
+		"start_time":  time.Now().Add(2 * time.Hour).Format(time.RFC3339),
+		"location":    "Hacked Location",
+		"attendees":   []map[string]string{},
+	}
+	jsonBody, err := json.Marshal(updateBody)
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("PUT", "/api/events/"+strconv.FormatInt(created.ID, 10), bytes.NewReader(jsonBody))
+	req.SetPathValue("id", strconv.FormatInt(created.ID, 10))
+	req.Header.Set("Content-Type", "application/json")
+	req = withAuthContext(req, otherUser)
+	w := httptest.NewRecorder()
+
+	s.handleUpdateEvent(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+
+	unchanged, err := s.db.GetEventByID(created.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Original Title", unchanged.Title)
+}
+
+func TestHandleGetChannelHistory_UserScoped(t *testing.T) {
+	s := createTestServer(t)
+	owner := database.CreateTestUser(t, s.db)
+	otherUser := database.CreateTestUser(t, s.db)
+
+	channel, err := s.db.CreateSourceChannel(
+		owner.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"history-owner@s.whatsapp.net",
+		"History Owner",
+	)
+	require.NoError(t, err)
+
+	_, err = s.db.StoreSourceMessage(
+		source.SourceTypeWhatsApp,
+		channel.ID,
+		"history-owner@s.whatsapp.net",
+		"History Owner",
+		"Owner message",
+		"",
+		time.Now(),
+	)
+	require.NoError(t, err)
+
+	t.Run("cannot get another user's channel history", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events/channel/"+strconv.FormatInt(channel.ID, 10)+"/history", nil)
+		req.SetPathValue("channelId", strconv.FormatInt(channel.ID, 10))
+		req = withAuthContext(req, otherUser)
+		w := httptest.NewRecorder()
+
+		s.handleGetChannelHistory(w, req)
+
+		assert.Equal(t, http.StatusNotFound, w.Code)
+	})
+
+	t.Run("owner can get own channel history", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/events/channel/"+strconv.FormatInt(channel.ID, 10)+"/history", nil)
+		req.SetPathValue("channelId", strconv.FormatInt(channel.ID, 10))
+		req = withAuthContext(req, owner)
+		w := httptest.NewRecorder()
+
+		s.handleGetChannelHistory(w, req)
+
+		assert.Equal(t, http.StatusOK, w.Code)
+
+		var messages []database.MessageRecord
+		err := json.Unmarshal(w.Body.Bytes(), &messages)
+		require.NoError(t, err)
+		require.Len(t, messages, 1)
+		assert.Equal(t, "Owner message", messages[0].MessageText)
 	})
 }
 

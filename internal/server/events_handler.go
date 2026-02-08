@@ -44,6 +44,12 @@ func (s *Server) handleListEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -51,7 +57,7 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event, err := s.db.GetEventByID(id)
-	if err != nil {
+	if err != nil || event.UserID != userID {
 		respondError(w, http.StatusNotFound, "event not found")
 		return
 	}
@@ -72,6 +78,12 @@ func (s *Server) handleGetEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -79,7 +91,7 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event, err := s.db.GetEventByID(id)
-	if err != nil {
+	if err != nil || event.UserID != userID {
 		respondError(w, http.StatusNotFound, "event not found")
 		return
 	}
@@ -90,11 +102,6 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if sync is enabled and Google Calendar is connected
-	userID, err := getUserID(r)
-	if err != nil {
-		respondError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
 	gcalSettings, _ := s.db.GetGCalSettings(userID)
 	userGCalClient := s.getGCalClientForUser(userID)
 	shouldSync := gcalSettings != nil && gcalSettings.SyncEnabled && userGCalClient != nil && userGCalClient.IsAuthenticated()
@@ -220,6 +227,12 @@ func (s *Server) handleConfirmEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -227,7 +240,7 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event, err := s.db.GetEventByID(id)
-	if err != nil {
+	if err != nil || event.UserID != userID {
 		respondError(w, http.StatusNotFound, "event not found")
 		return
 	}
@@ -305,6 +318,12 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRejectEvent(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid id")
@@ -312,7 +331,7 @@ func (s *Server) handleRejectEvent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	event, err := s.db.GetEventByID(id)
-	if err != nil {
+	if err != nil || event.UserID != userID {
 		respondError(w, http.StatusNotFound, "event not found")
 		return
 	}
@@ -331,9 +350,25 @@ func (s *Server) handleRejectEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetChannelHistory(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
 	channelID, err := strconv.ParseInt(r.PathValue("channelId"), 10, 64)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	channel, err := s.db.GetSourceChannelByID(userID, channelID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if channel == nil {
+		respondError(w, http.StatusNotFound, "channel not found")
 		return
 	}
 

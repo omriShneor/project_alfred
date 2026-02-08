@@ -172,6 +172,10 @@ func (d *DB) ResetOnboarding(userID int64) error {
 		{name: "reminders", query: `DELETE FROM reminders WHERE user_id = ?`},
 		{name: "calendar events", query: `DELETE FROM calendar_events WHERE user_id = ?`},
 		{name: "message history", query: `DELETE FROM message_history WHERE user_id = ?`},
+		{
+			name:  "message history by channel ownership",
+			query: `DELETE FROM message_history WHERE channel_id IN (SELECT id FROM channels WHERE user_id = ?)`,
+		},
 		{name: "channels", query: `DELETE FROM channels WHERE user_id = ?`},
 		{name: "email sources", query: `DELETE FROM email_sources WHERE user_id = ?`},
 		{name: "processed emails", query: `DELETE FROM processed_emails WHERE user_id = ?`},

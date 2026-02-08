@@ -54,6 +54,19 @@ func TestWhatsAppSessionStorage(t *testing.T) {
 		assert.Equal(t, "67890@s.whatsapp.net", session.DeviceJID)
 	})
 
+	t.Run("save with empty fields preserves existing metadata", func(t *testing.T) {
+		err := db.SaveWhatsAppSession(user.ID, "", "", true)
+		require.NoError(t, err)
+
+		session, err := db.GetWhatsAppSession(user.ID)
+		require.NoError(t, err)
+		require.NotNil(t, session)
+
+		assert.Equal(t, "+1234567890", session.PhoneNumber)
+		assert.Equal(t, "67890@s.whatsapp.net", session.DeviceJID)
+		assert.True(t, session.Connected)
+	})
+
 	t.Run("list users with sessions", func(t *testing.T) {
 		// First reconnect
 		err := db.UpdateWhatsAppConnected(user.ID, true)

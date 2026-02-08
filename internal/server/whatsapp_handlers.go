@@ -677,6 +677,9 @@ func (s *Server) handleWhatsAppPair(w http.ResponseWriter, r *http.Request) {
 		phone = phone[1:]
 	}
 
+	// Persist the latest pairing phone immediately; connection/device details are updated on WA events.
+	_ = s.db.SaveWhatsAppSession(userID, phone, "", false)
+
 	// Update onboarding state
 	if s.onboardingState != nil {
 		s.onboardingState.SetWhatsAppStatus("pairing")

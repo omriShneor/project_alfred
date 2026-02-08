@@ -11,6 +11,7 @@ import (
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	waLog "go.mau.fi/whatsmeow/util/log"
 )
 
@@ -22,7 +23,7 @@ type Client struct {
 	notifyService *notify.Service
 }
 
-func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (*Client, error) {
+func NewClient(handler *Handler, dbPath string, preferredDeviceJID string, notifyService *notify.Service) (*Client, error) {
 	dbLog := waLog.Stdout("Database", "DEBUG", true)
 	clientLog := waLog.Stdout("Client", "DEBUG", true)
 
@@ -31,12 +32,13 @@ func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (
 	store.DeviceProps.PlatformType = store.DeviceProps.PlatformType.Enum()
 	store.DeviceProps.RequireFullSync = boolPtr(false)
 
-	container, err := sqlstore.New(context.Background(), "sqlite3", "file:"+dbPath+"?_foreign_keys=on", dbLog)
+	ctx := context.Background()
+	container, err := sqlstore.New(ctx, "sqlite3", "file:"+dbPath+"?_foreign_keys=on", dbLog)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create database: %w", err)
 	}
 
-	deviceStore, err := container.GetFirstDevice(context.Background())
+	deviceStore, err := getDeviceStore(ctx, container, preferredDeviceJID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get device store: %w", err)
 	}
@@ -56,6 +58,23 @@ func NewClient(handler *Handler, dbPath string, notifyService *notify.Service) (
 	}
 
 	return c, nil
+}
+
+func getDeviceStore(ctx context.Context, container *sqlstore.Container, preferredDeviceJID string) (*store.Device, error) {
+	if preferredDeviceJID != "" {
+		jid, err := types.ParseJID(preferredDeviceJID)
+		if err == nil {
+			deviceStore, err := container.GetDevice(ctx, jid)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get preferred device %s: %w", preferredDeviceJID, err)
+			}
+			if deviceStore != nil {
+				return deviceStore, nil
+			}
+		}
+	}
+
+	return container.GetFirstDevice(ctx)
 }
 
 // Disconnect closes the WhatsApp connection without logging out.

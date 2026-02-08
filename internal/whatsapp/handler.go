@@ -68,12 +68,53 @@ func (h *Handler) MessageChan() <-chan source.Message {
 
 func (h *Handler) HandleEvent(evt interface{}) {
 	switch v := evt.(type) {
+	case *events.Connected:
+		h.handleConnected(v)
+	case *events.Disconnected:
+		h.handleDisconnected(v)
+	case *events.LoggedOut:
+		h.handleLoggedOut(v)
 	case *events.Message:
 		h.handleMessage(v)
 	case *events.HistorySync:
 		go h.handleHistorySync(v) // Run async to not block event handler
 	case *events.AppStateSyncComplete:
 		h.handleAppStateSyncComplete(v) // Fallback for contact name sync
+	}
+}
+
+func (h *Handler) handleConnected(_ *events.Connected) {
+	if h.db == nil || h.UserID == 0 {
+		return
+	}
+
+	deviceJID := ""
+	if h.wClient != nil && h.wClient.Store != nil && h.wClient.Store.ID != nil {
+		deviceJID = h.wClient.Store.ID.String()
+	}
+
+	if err := h.db.SaveWhatsAppSession(h.UserID, "", deviceJID, true); err != nil {
+		fmt.Printf("WhatsApp: failed to save connected session for user %d: %v\n", h.UserID, err)
+	}
+}
+
+func (h *Handler) handleDisconnected(_ *events.Disconnected) {
+	if h.db == nil || h.UserID == 0 {
+		return
+	}
+
+	if err := h.db.UpdateWhatsAppConnected(h.UserID, false); err != nil {
+		fmt.Printf("WhatsApp: failed to mark disconnected session for user %d: %v\n", h.UserID, err)
+	}
+}
+
+func (h *Handler) handleLoggedOut(_ *events.LoggedOut) {
+	if h.db == nil || h.UserID == 0 {
+		return
+	}
+
+	if err := h.db.UpdateWhatsAppConnected(h.UserID, false); err != nil {
+		fmt.Printf("WhatsApp: failed to mark logged-out session for user %d: %v\n", h.UserID, err)
 	}
 }
 

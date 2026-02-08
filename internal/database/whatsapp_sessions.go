@@ -59,7 +59,7 @@ func (d *DB) SaveWhatsAppSession(userID int64, phoneNumber, deviceJID string, co
 
 	_, err := d.Exec(`
 		INSERT INTO whatsapp_sessions (user_id, phone_number, device_jid, connected, connected_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		VALUES (?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(user_id) DO UPDATE SET
 			phone_number = COALESCE(excluded.phone_number, whatsapp_sessions.phone_number),
 			device_jid = COALESCE(excluded.device_jid, whatsapp_sessions.device_jid),

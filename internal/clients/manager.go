@@ -90,6 +90,16 @@ func (m *ClientManager) CreateWhatsAppClient(userID int64) (*whatsapp.Client, er
 	dbPath := m.getUserWhatsAppDBPath(userID)
 	fmt.Printf("ClientManager: Creating WhatsApp client for user %d with session path: %s\n", userID, dbPath)
 
+	preferredDeviceJID := ""
+	if m.db != nil {
+		session, err := m.db.GetWhatsAppSession(userID)
+		if err != nil {
+			fmt.Printf("Warning: Failed to load WhatsApp session metadata for user %d: %v\n", userID, err)
+		} else if session != nil && session.DeviceJID != "" {
+			preferredDeviceJID = session.DeviceJID
+		}
+	}
+
 	// Create handler for this user first
 	handler := whatsapp.NewHandlerForUser(userID, m.db, m.cfg.DebugAllMessages, m.onboardingState)
 
@@ -98,13 +108,17 @@ func (m *ClientManager) CreateWhatsAppClient(userID int64) (*whatsapp.Client, er
 	handler.SetMessageChannel(m.msgChan)
 
 	// Create client with handler
-	client, err := whatsapp.NewClient(handler, dbPath, m.notifyService)
+	client, err := whatsapp.NewClient(handler, dbPath, preferredDeviceJID, m.notifyService)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WhatsApp client for user %d: %w", userID, err)
 	}
 
 	// Set UserID on client
 	client.SetUserID(userID)
+
+	if m.db != nil && client.WAClient.Store.ID != nil {
+		_ = m.db.SaveWhatsAppSession(userID, "", client.WAClient.Store.ID.String(), true)
+	}
 
 	m.whatsappClients[userID] = client
 	fmt.Printf("ClientManager: WhatsApp client created for user %d\n", userID)

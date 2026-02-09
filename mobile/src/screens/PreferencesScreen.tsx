@@ -25,6 +25,7 @@ import {
 import { useAppStatus } from '../hooks/useAppStatus';
 import { disconnectGScope, requestAdditionalScopes, exchangeAddScopesCode } from '../api';
 import type { MainStackParamList, TabParamList } from '../navigation/MainNavigator';
+import { useEdgeSwipeBack } from '../navigation/sharedHeader';
 
 type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 type PreferencesRouteProp = RouteProp<TabParamList, 'Preferences'>;
@@ -99,6 +100,10 @@ export function PreferencesScreen() {
   const [telegramCodeSent, setTelegramCodeSent] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
   const [accountsSectionY, setAccountsSectionY] = useState(0);
+
+  const { panHandlers: swipeBackHandlers } = useEdgeSwipeBack(navigation, {
+    fallbackRouteName: 'Home',
+  });
 
 
   // Check if any query is doing its initial load (no cached data yet)
@@ -548,7 +553,11 @@ export function PreferencesScreen() {
   // Show loading state during initial data fetch to prevent flash
   if (isInitialLoading) {
     return (
-      <SafeAreaView style={styles.container} edges={['left', 'right']}>
+      <SafeAreaView
+        style={styles.container}
+        edges={['left', 'right']}
+        {...swipeBackHandlers}
+      >
         <View style={styles.loadingContainer}>
           <LoadingSpinner />
         </View>
@@ -557,7 +566,11 @@ export function PreferencesScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView
+      style={styles.container}
+      edges={['left', 'right']}
+      {...swipeBackHandlers}
+    >
       <KeyboardAvoidingView
         style={styles.keyboardAvoid}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

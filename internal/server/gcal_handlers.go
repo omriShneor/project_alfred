@@ -165,6 +165,14 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 			endTime = *e.EndTime
 		}
 
+		eventSource := "alfred"
+		switch e.ChannelSourceType {
+		case "google_calendar":
+			eventSource = "google"
+		case "outlook_calendar":
+			eventSource = "outlook"
+		}
+
 		event := TodayEventResponse{
 			ID:          fmt.Sprintf("alfred-%d", e.ID),
 			Summary:     e.Title,
@@ -174,7 +182,7 @@ func (s *Server) handleListMergedTodayEvents(w http.ResponseWriter, r *http.Requ
 			EndTime:     endTime.Format(time.RFC3339),
 			AllDay:      false,
 			CalendarID:  "alfred",
-			Source:      "alfred",
+			Source:      eventSource,
 		}
 		events = append(events, event)
 

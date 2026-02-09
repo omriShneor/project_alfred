@@ -701,6 +701,78 @@ func TestHandleListEvents(t *testing.T) {
 	})
 }
 
+func TestHandleListMergedTodayEvents_SourceMapping(t *testing.T) {
+	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
+
+	now := time.Now()
+	start := time.Date(now.Year(), now.Month(), now.Day(), 9, 0, 0, 0, now.Location())
+	end := start.Add(time.Hour)
+
+	// Alfred-created event (WhatsApp channel) should remain "alfred".
+	waChannel, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"today-source@s.whatsapp.net",
+		"Today Source",
+	)
+	require.NoError(t, err)
+
+	alfredEvent, err := s.db.CreatePendingEvent(&database.CalendarEvent{
+		UserID:     user.ID,
+		ChannelID:  waChannel.ID,
+		CalendarID: "primary",
+		Title:      "Local Alfred Event",
+		StartTime:  start,
+		EndTime:    &end,
+		ActionType: database.EventActionCreate,
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.db.UpdateEventStatus(alfredEvent.ID, database.EventStatusConfirmed))
+
+	// Imported Google event is stored in DB via the dedicated google_calendar channel.
+	importChannel, err := s.db.EnsureGoogleCalendarImportChannel(user.ID)
+	require.NoError(t, err)
+
+	googleID := "google-imported-evt-1"
+	importedStart := start.Add(2 * time.Hour)
+	importedEnd := importedStart.Add(time.Hour)
+	importedEvent, err := s.db.CreatePendingEvent(&database.CalendarEvent{
+		UserID:        user.ID,
+		ChannelID:     importChannel.ID,
+		GoogleEventID: &googleID,
+		CalendarID:    "primary",
+		Title:         "Imported Google Event",
+		StartTime:     importedStart,
+		EndTime:       &importedEnd,
+		ActionType:    database.EventActionCreate,
+	})
+	require.NoError(t, err)
+	require.NoError(t, s.db.UpdateEventStatus(importedEvent.ID, database.EventStatusSynced))
+
+	req := httptest.NewRequest("GET", "/api/events/today", nil)
+	req = withAuthContext(req, user)
+	w := httptest.NewRecorder()
+
+	s.handleListMergedTodayEvents(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var events []TodayEventResponse
+	err = json.Unmarshal(w.Body.Bytes(), &events)
+	require.NoError(t, err)
+	require.Len(t, events, 2)
+
+	bySummary := make(map[string]TodayEventResponse, len(events))
+	for _, event := range events {
+		bySummary[event.Summary] = event
+	}
+
+	assert.Equal(t, "alfred", bySummary["Local Alfred Event"].Source)
+	assert.Equal(t, "google", bySummary["Imported Google Event"].Source)
+}
+
 func TestHandleGetEvent(t *testing.T) {
 	s := createTestServer(t)
 	user := database.CreateTestUser(t, s.db)

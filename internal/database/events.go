@@ -45,7 +45,9 @@ type CalendarEvent struct {
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 	ChannelName   string          `json:"channel_name,omitempty"` // Joined from channels table
-	Attendees     []Attendee      `json:"attendees,omitempty"`    // Participants for this event
+	// ChannelSourceType helps callers distinguish imported calendar events from Alfred-created ones.
+	ChannelSourceType string     `json:"channel_source_type,omitempty"` // Joined from channels.source_type
+	Attendees         []Attendee `json:"attendees,omitempty"`           // Participants for this event
 }
 
 // CreatePendingEvent creates a new pending event in the database
@@ -453,7 +455,8 @@ func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
 			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
-			COALESCE(c.name, 'Alfred') as channel_name
+			COALESCE(c.name, 'Alfred') as channel_name,
+			COALESCE(c.source_type, 'whatsapp') as channel_source_type
 		FROM calendar_events e
 		LEFT JOIN channels c ON e.channel_id = c.id
 		WHERE e.user_id = ? AND e.status IN (?, ?)
@@ -479,7 +482,7 @@ func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
 			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
-			&event.ChannelName,
+			&event.ChannelName, &event.ChannelSourceType,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan event: %w", err)
 		}

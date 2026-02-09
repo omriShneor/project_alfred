@@ -1,5 +1,4 @@
 import React from 'react';
-import { Pressable, View } from 'react-native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +9,10 @@ import { NeedsReviewScreen } from '../screens/NeedsReviewScreen';
 import { WhatsAppPreferencesScreen, TelegramPreferencesScreen, GmailPreferencesScreen, GoogleCalendarPreferencesScreen } from '../screens/smart-calendar';
 import type { PreferenceStackParamList } from './PreferenceStackNavigator';
 import { colors } from '../theme/colors';
+import {
+  createBackHeaderOptions,
+  stackGestureBackOptions,
+} from './sharedHeader';
 
 export type TabParamList = {
   Home: undefined;
@@ -36,6 +39,7 @@ function TabNavigator() {
   return (
     <Tab.Navigator
       initialRouteName="Home"
+      backBehavior="history"
       screenOptions={{
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -63,19 +67,11 @@ function TabNavigator() {
         name="Preferences"
         component={PreferencesScreen}
         options={({ navigation }) => ({
-          headerShown: true,
-          title: 'Connections',
-          headerStyle: { backgroundColor: colors.background},
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.navigate('Home')}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
+          ...createBackHeaderOptions({
+            title: 'Connections',
+            navigation,
+            fallbackRouteName: 'Home',
+          }),
           tabBarLabel: 'Connections',
           tabBarIcon: ({ color, size }) => (
             <Ionicons name="options-outline" size={size} color={color} />
@@ -92,122 +88,63 @@ export function MainNavigator() {
       initialRouteName="MainTabs"
       screenOptions={{
         headerShown: false,
+        ...stackGestureBackOptions,
       }}
     >
       <Stack.Screen name="MainTabs" component={TabNavigator} />
       <Stack.Screen
         name="Settings"
         component={SettingsScreen}
-        options={({ navigation }) => ({
-          headerShown: true,
-          title: 'Notifications',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
-        })}
+        options={({ navigation }) =>
+          createBackHeaderOptions({
+            title: 'Notifications',
+            navigation,
+          })}
       />
       <Stack.Screen
         name="NeedsReview"
         component={NeedsReviewScreen}
-        options={({ navigation }) => ({
-          headerShown: true,
-          title: 'Needs Review',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
-        })}
+        options={({ navigation }) =>
+          createBackHeaderOptions({
+            title: 'Needs Review',
+            navigation,
+          })}
       />
       <Stack.Screen
         name="WhatsAppPreferences"
         component={WhatsAppPreferencesScreen}
-        options={({ navigation }) => ({
-          headerShown: true,
-          title: 'WhatsApp Contacts',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
-        })}
+        options={({ navigation }) =>
+          createBackHeaderOptions({
+            title: 'WhatsApp Contacts',
+            navigation,
+          })}
       />
       <Stack.Screen
         name="TelegramPreferences"
         component={TelegramPreferencesScreen}
-        options={({ navigation }) => ({
-          headerShown: true,
-          title: 'Telegram Chats',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
-        })}
+        options={({ navigation }) =>
+          createBackHeaderOptions({
+            title: 'Telegram Chats',
+            navigation,
+          })}
       />
       <Stack.Screen
         name="GmailPreferences"
         component={GmailPreferencesScreen}
-        options={({ navigation }) => ({
-          headerShown: true,
-          title: 'Gmail Senders',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
-        })}
+        options={({ navigation }) =>
+          createBackHeaderOptions({
+            title: 'Gmail Senders',
+            navigation,
+          })}
       />
       <Stack.Screen
         name="GoogleCalendarPreferences"
         component={GoogleCalendarPreferencesScreen}
-        options={({ navigation }) => ({
-          headerShown: true,
-          title: 'Google Calendar',
-          headerStyle: { backgroundColor: colors.background },
-          headerTintColor: colors.text,
-          headerShadowVisible: false,
-          headerBackVisible: false,
-          headerLeft: () => (
-            <View>
-              <Pressable onPress={() => navigation.goBack()}>
-                <Ionicons name="chevron-back" size={28} color={colors.text} />
-              </Pressable>
-            </View>
-          ),
-        })}
+        options={({ navigation }) =>
+          createBackHeaderOptions({
+            title: 'Google Calendar',
+            navigation,
+          })}
       />
     </Stack.Navigator>
   );

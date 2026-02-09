@@ -99,6 +99,7 @@ export function MainNavigator() {
           createBackHeaderOptions({
             title: 'Notifications',
             navigation,
+            fallbackRouteName: 'MainTabs',
           })}
       />
       <Stack.Screen

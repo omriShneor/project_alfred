@@ -24,10 +24,17 @@ export const backHeaderBaseOptions = {
 
 export const stackGestureBackOptions: Pick<
   NativeStackNavigationOptions,
-  'gestureEnabled' | 'fullScreenGestureEnabled'
+  | 'gestureEnabled'
+  | 'fullScreenGestureEnabled'
+  | 'gestureDirection'
+  | 'animation'
+  | 'animationMatchesGesture'
 > = {
   gestureEnabled: true,
   fullScreenGestureEnabled: true,
+  gestureDirection: 'horizontal',
+  animation: 'slide_from_right',
+  animationMatchesGesture: true,
 };
 
 export function renderHeaderBackButton(onPress: () => void) {
@@ -99,12 +106,14 @@ export function useEdgeSwipeBack(
     activationDx = 12,
     completionDx = 72,
     maxVerticalDy = 120,
+    enabled = true,
   }: {
     fallbackRouteName?: string;
     edgeWidth?: number;
     activationDx?: number;
     completionDx?: number;
     maxVerticalDy?: number;
+    enabled?: boolean;
   } = {}
 ) {
   const onBackPress = useCallback(
@@ -116,6 +125,10 @@ export function useEdgeSwipeBack(
     () =>
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gestureState) => {
+          if (!enabled) {
+            return false;
+          }
+
           const startedFromLeftEdge = gestureState.x0 <= edgeWidth;
           const swipingRight = gestureState.dx > activationDx;
           const horizontalDominant =
@@ -133,7 +146,7 @@ export function useEdgeSwipeBack(
           }
         },
       }),
-    [activationDx, completionDx, edgeWidth, maxVerticalDy, onBackPress]
+    [activationDx, completionDx, edgeWidth, enabled, maxVerticalDy, onBackPress]
   );
 
   return {

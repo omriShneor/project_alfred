@@ -10,12 +10,19 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { Button, Card, LoadingSpinner } from '../components/common';
 import { colors } from '../theme/colors';
 import { usePushNotifications } from '../hooks';
 import { getNotificationPrefs, updateEmailPrefs, updatePushPrefs } from '../api';
+import type { MainStackParamList } from '../navigation/MainNavigator';
+import { useEdgeSwipeBack } from '../navigation/sharedHeader';
+
+type NavigationProp = NativeStackNavigationProp<MainStackParamList>;
 
 export function SettingsScreen() {
+  const navigation = useNavigation<NavigationProp>();
   const [emailEnabled, setEmailEnabled] = useState(false);
   const [emailAddress, setEmailAddress] = useState('');
   const [emailAvailable, setEmailAvailable] = useState(false);
@@ -34,6 +41,11 @@ export function SettingsScreen() {
     isRegistering,
     requestPermissions,
   } = usePushNotifications();
+
+  const { panHandlers: swipeBackHandlers } = useEdgeSwipeBack(navigation, {
+    fallbackRouteName: 'MainTabs',
+    enabled: Platform.OS === 'android',
+  });
 
   useEffect(() => {
     loadNotificationPrefs();
@@ -103,7 +115,11 @@ export function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['left', 'right']}>
+    <SafeAreaView
+      style={styles.container}
+      edges={['left', 'right']}
+      {...swipeBackHandlers}
+    >
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.content}>
         {/* Notifications Section */}
         <Text style={styles.sectionTitle}>Notifications</Text>

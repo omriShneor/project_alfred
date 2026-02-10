@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/database"
@@ -19,6 +20,9 @@ import (
 // Deprecated: Use source.Message instead
 type FilteredMessage = source.Message
 
+// HistorySyncBackfillHook is invoked after HistorySync has stored messages for enabled channels.
+type HistorySyncBackfillHook func(userID int64, channel *database.SourceChannel)
+
 type Handler struct {
 	UserID           int64 // User who owns this handler (for multi-user support)
 	db               *database.DB
@@ -26,28 +30,22 @@ type Handler struct {
 	messageChan      chan source.Message
 	state            *sse.State
 	wClient          *whatsmeow.Client // For ParseWebMessage in history sync
+
+	historySyncMu               sync.Mutex
+	historySyncBackfillHook     HistorySyncBackfillHook
+	historySyncPendingBackfill  map[int64]*database.SourceChannel
+	historySyncBackfillDebounce *time.Timer
 }
 
-func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
+func NewHandler(userID int64, db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
 	return &Handler{
-		UserID:           0, // Will be set by ClientManager in multi-user mode
-		db:               db,
-		debugAllMessages: debugAllMessages,
-		messageChan:      make(chan source.Message, 100),
-		state:            state,
-		wClient:          nil,
-	}
-}
-
-// NewHandlerForUser creates a handler for a specific user (multi-user mode)
-func NewHandlerForUser(userID int64, db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
-	return &Handler{
-		UserID:           userID,
-		db:               db,
-		debugAllMessages: debugAllMessages,
-		messageChan:      make(chan source.Message, 100),
-		state:            state,
-		wClient:          nil,
+		UserID:                     userID,
+		db:                         db,
+		debugAllMessages:           debugAllMessages,
+		messageChan:                make(chan source.Message, 100),
+		state:                      state,
+		wClient:                    nil,
+		historySyncPendingBackfill: make(map[int64]*database.SourceChannel),
 	}
 }
 
@@ -60,6 +58,14 @@ func (h *Handler) SetClient(client *whatsmeow.Client) {
 // with a shared channel for multi-user support
 func (h *Handler) SetMessageChannel(ch chan source.Message) {
 	h.messageChan = ch
+}
+
+// SetHistorySyncBackfillHook configures an optional callback that runs backfill
+// after HistorySync has persisted messages for enabled channels.
+func (h *Handler) SetHistorySyncBackfillHook(hook HistorySyncBackfillHook) {
+	h.historySyncMu.Lock()
+	defer h.historySyncMu.Unlock()
+	h.historySyncBackfillHook = hook
 }
 
 func (h *Handler) MessageChan() <-chan source.Message {
@@ -197,9 +203,8 @@ func (h *Handler) handleMessage(msg *events.Message) {
 	// Log to stdout
 	fmt.Printf("[WhatsApp DM: %s] %s\n", sender.User, text)
 
-	// Send to channel for assistant processing
-	select {
-	case h.messageChan <- source.Message{
+	// Send to channel for assistant processing (blocking for reliability).
+	h.messageChan <- source.Message{
 		UserID:     h.UserID,
 		SourceType: source.SourceTypeWhatsApp,
 		SourceID:   sourceID,
@@ -208,9 +213,6 @@ func (h *Handler) handleMessage(msg *events.Message) {
 		SenderName: sender.User,
 		Text:       text,
 		Timestamp:  msg.Info.Timestamp,
-	}:
-	default:
-		fmt.Println("Warning: message channel full, dropping message")
 	}
 }
 
@@ -244,12 +246,20 @@ func extractText(msg *events.Message) string {
 
 const maxHistoryMessagesPerContact = 25
 
+var historySyncBackfillDebounce = 2 * time.Second
+
 // senderInfo tracks accurate message stats for a sender during HistorySync
 type senderInfo struct {
 	identifier    string
 	jid           types.JID
 	messageCount  int
 	lastMessageAt *time.Time
+}
+
+type historyConversationWork struct {
+	identifier string
+	chatJID    types.JID
+	messages   []*waProto.HistorySyncMsg
 }
 
 // handleHistorySync processes the HistorySync event from WhatsApp
@@ -265,8 +275,11 @@ func (h *Handler) handleHistorySync(evt *events.HistorySync) {
 
 	// Track ACCURATE message counts per sender (not limited to 25)
 	senderStats := make(map[string]*senderInfo)
+	workItems := make([]historyConversationWork, 0, len(conversations))
 
-	processedContacts := 0
+	// Phase 1: fast metadata pass.
+	// Build sender stats across all conversations so top contacts can be shown
+	// while message history is still being processed.
 	for _, conv := range conversations {
 		chatJID, err := types.ParseJID(conv.GetID())
 		if err != nil {
@@ -306,44 +319,158 @@ func (h *Handler) handleHistorySync(evt *events.HistorySync) {
 			}
 		}
 
-		if h.processConversationHistory(chatJID, messages) {
-			processedContacts++
-		}
+		workItems = append(workItems, historyConversationWork{
+			identifier: identifier,
+			chatJID:    chatJID,
+			messages:   messages,
+		})
 	}
 
 	fmt.Printf("HistorySync: Found %d unique senders\n", len(senderStats))
 
+	// Prime channels + top-contact stats from metadata before message processing.
+	// This is intentionally best-effort/inaccurate while sync is still running.
+	channelsByIdentifier := make(map[string]*database.SourceChannel, len(senderStats))
 	statsUpdated := 0
 	for identifier, info := range senderStats {
-		channel, err := h.db.GetSourceChannelByIdentifier(h.UserID, source.SourceTypeWhatsApp, identifier)
-		if err != nil || channel == nil {
+		channel, err := h.getOrCreateHistoryChannel(identifier, info.jid)
+		if err != nil {
+			fmt.Printf("HistorySync: Failed to get/create channel for %s: %v\n", identifier, err)
 			continue
 		}
+		channelsByIdentifier[identifier] = channel
 
 		if err := h.db.UpdateChannelStats(channel.ID, info.messageCount, info.lastMessageAt); err != nil {
-			fmt.Printf("HistorySync: Failed to update stats for %s: %v\n", identifier, err)
+			fmt.Printf("HistorySync: Failed to update in-progress stats for %s: %v\n", identifier, err)
 			continue
 		}
 		statsUpdated++
 	}
 
-	fmt.Printf("HistorySync: Completed - processed %d contacts, updated stats for %d\n", processedContacts, statsUpdated)
+	fmt.Printf("HistorySync: Primed top-contact stats for %d senders\n", statsUpdated)
+
+	// Phase 2: store message history.
+	processedContacts := 0
+	processedChannels := make(map[int64]*database.SourceChannel)
+	for _, item := range workItems {
+		channel := channelsByIdentifier[item.identifier]
+		if channel == nil {
+			fallbackChannel, err := h.getOrCreateHistoryChannel(item.identifier, item.chatJID)
+			if err != nil {
+				fmt.Printf("HistorySync: Failed to resolve channel during message processing for %s: %v\n", item.identifier, err)
+				continue
+			}
+			channel = fallbackChannel
+			channelsByIdentifier[item.identifier] = channel
+		}
+
+		if h.processConversationHistory(channel, item.chatJID, item.messages) {
+			processedContacts++
+			processedChannels[channel.ID] = channel
+		}
+	}
+
+	// Finalize top-contact stats after phase 2 so ranking reflects the full HistorySync snapshot.
+	// This guarantees we end in a consistent "most accurate available" state.
+	finalizedStats := 0
+	for identifier, info := range senderStats {
+		channel := channelsByIdentifier[identifier]
+		if channel == nil {
+			resolved, err := h.db.GetSourceChannelByIdentifier(h.UserID, source.SourceTypeWhatsApp, identifier)
+			if err != nil || resolved == nil {
+				continue
+			}
+			channel = resolved
+			channelsByIdentifier[identifier] = channel
+		}
+
+		if err := h.db.UpdateChannelStats(channel.ID, info.messageCount, info.lastMessageAt); err != nil {
+			fmt.Printf("HistorySync: Failed to finalize stats for %s: %v\n", identifier, err)
+			continue
+		}
+		finalizedStats++
+	}
+
+	fmt.Printf(
+		"HistorySync: Completed - processed %d contacts, top stats primed for %d, finalized for %d\n",
+		processedContacts,
+		statsUpdated,
+		finalizedStats,
+	)
+
+	h.queueHistorySyncBackfill(processedChannels)
 
 	// Force sync contacts and refresh names immediately
 	// This uses FetchAppState to get contacts ASAP, with AppStateSyncComplete as fallback
 	go h.forceSyncContactsAndRefresh()
 }
 
-// processConversationHistory stores messages from a single conversation
-func (h *Handler) processConversationHistory(chatJID types.JID, messages []*waProto.HistorySyncMsg) bool {
-	identifier := chatJID.User
+func (h *Handler) queueHistorySyncBackfill(processedChannels map[int64]*database.SourceChannel) {
+	h.historySyncMu.Lock()
+	defer h.historySyncMu.Unlock()
 
-	// Get or create channel (disabled by default for history sync contacts)
-	channel, err := h.getOrCreateHistoryChannel(identifier, chatJID)
-	if err != nil {
-		fmt.Printf("HistorySync: Failed to get/create channel for %s: %v\n", identifier, err)
-		return false
+	if h.historySyncBackfillHook == nil {
+		return
 	}
+
+	for channelID, channel := range processedChannels {
+		if channel == nil || !channel.Enabled {
+			continue
+		}
+		h.historySyncPendingBackfill[channelID] = channel
+	}
+
+	if len(h.historySyncPendingBackfill) == 0 {
+		return
+	}
+
+	if h.historySyncBackfillDebounce != nil {
+		h.historySyncBackfillDebounce.Stop()
+	}
+
+	h.historySyncBackfillDebounce = time.AfterFunc(historySyncBackfillDebounce, h.flushHistorySyncBackfill)
+}
+
+func (h *Handler) flushHistorySyncBackfill() {
+	historySyncHook, channels := func() (HistorySyncBackfillHook, []*database.SourceChannel) {
+		h.historySyncMu.Lock()
+		defer h.historySyncMu.Unlock()
+
+		hook := h.historySyncBackfillHook
+		if hook == nil || len(h.historySyncPendingBackfill) == 0 {
+			return nil, nil
+		}
+
+		channels := make([]*database.SourceChannel, 0, len(h.historySyncPendingBackfill))
+		for _, channel := range h.historySyncPendingBackfill {
+			channels = append(channels, channel)
+		}
+		h.historySyncPendingBackfill = make(map[int64]*database.SourceChannel)
+		h.historySyncBackfillDebounce = nil
+		return hook, channels
+	}()
+
+	if historySyncHook == nil || len(channels) == 0 {
+		return
+	}
+
+	triggered := 0
+	for _, channel := range channels {
+		if channel == nil || !channel.Enabled {
+			continue
+		}
+		historySyncHook(h.UserID, channel)
+		triggered++
+	}
+
+	if triggered > 0 {
+		fmt.Printf("HistorySync: Triggered post-sync backfill for %d enabled channels\n", triggered)
+	}
+}
+
+// processConversationHistory stores messages from a single conversation
+func (h *Handler) processConversationHistory(channel *database.SourceChannel, chatJID types.JID, messages []*waProto.HistorySyncMsg) bool {
+	identifier := chatJID.User
 
 	// Process messages (limit to maxHistoryMessagesPerContact)
 	processed := 0

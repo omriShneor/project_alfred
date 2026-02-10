@@ -28,35 +28,66 @@ type TopContactResponse struct {
 	Type           string `json:"type"`
 }
 
+func formatWhatsAppTopContactsFromHistory(stats []database.TopContactStats) []TopContactResponse {
+	contacts := make([]TopContactResponse, len(stats))
+	for i, c := range stats {
+		phone := strings.TrimSuffix(c.Identifier, "@s.whatsapp.net")
+		contacts[i] = TopContactResponse{
+			Identifier:     c.Identifier,
+			Name:           c.Name,
+			SecondaryLabel: "+" + phone,
+			MessageCount:   c.MessageCount,
+			IsTracked:      c.IsTracked,
+			Type:           c.Type,
+		}
+		if c.IsTracked {
+			contacts[i].ChannelID = &c.ChannelID
+		}
+	}
+	return contacts
+}
+
+func formatWhatsAppTopContactsFromChannelStats(channels []*database.SourceChannel) []TopContactResponse {
+	contacts := make([]TopContactResponse, len(channels))
+	for i, channel := range channels {
+		phone := strings.TrimSuffix(channel.Identifier, "@s.whatsapp.net")
+		contacts[i] = TopContactResponse{
+			Identifier:     channel.Identifier,
+			Name:           channel.Name,
+			SecondaryLabel: "+" + phone,
+			MessageCount:   channel.TotalMessageCount,
+			IsTracked:      channel.Enabled,
+			Type:           string(channel.Type),
+		}
+		if channel.Enabled {
+			contacts[i].ChannelID = &channel.ID
+		}
+	}
+	return contacts
+}
+
 func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Request) {
 	userID, err := getUserID(r)
 	if err != nil {
 		respondError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
-	formatTopContactsFromHistory := func(stats []database.TopContactStats) []TopContactResponse {
-		contacts := make([]TopContactResponse, len(stats))
-		for i, c := range stats {
-			phone := strings.TrimSuffix(c.Identifier, "@s.whatsapp.net")
-			contacts[i] = TopContactResponse{
-				Identifier:     c.Identifier,
-				Name:           c.Name,
-				SecondaryLabel: "+" + phone,
-				MessageCount:   c.MessageCount,
-				IsTracked:      c.IsTracked,
-				Type:           c.Type,
-			}
-			if c.IsTracked {
-				contacts[i].ChannelID = &c.ChannelID
-			}
-		}
-		return contacts
+	const topContactsLimit = 8
+
+	// Prefer channel-level stats first: these are updated as HistorySync progresses and
+	// can return a partial "best effort" list before message_history catch-up completes.
+	topChannels, err := s.db.GetTopChannelsByMessageCount(userID, source.SourceTypeWhatsApp, topContactsLimit)
+	if err == nil && len(topChannels) > 0 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"contacts": formatWhatsAppTopContactsFromChannelStats(topChannels),
+		})
+		return
 	}
 
-	historyStats, err := s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeWhatsApp, 8)
+	historyStats, err := s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeWhatsApp, topContactsLimit)
 	if err == nil && len(historyStats) > 0 {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
-			"contacts": formatTopContactsFromHistory(historyStats),
+			"contacts": formatWhatsAppTopContactsFromHistory(historyStats),
 		})
 		return
 	}
@@ -65,7 +96,7 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 	if s.clientManager != nil {
 		waClient, err := s.clientManager.GetWhatsAppClient(userID)
 		if err == nil && waClient.WAClient != nil && waClient.IsLoggedIn() {
-			timeout := time.After(25 * time.Second)
+			timeout := time.After(6 * time.Second)
 			ticker := time.NewTicker(500 * time.Millisecond)
 			defer ticker.Stop()
 
@@ -75,17 +106,25 @@ func (s *Server) handleWhatsAppTopContacts(w http.ResponseWriter, r *http.Reques
 				case <-timeout:
 					timedOut = true
 				case <-ticker.C:
-					historyStats, err = s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeWhatsApp, 8)
+					topChannels, err = s.db.GetTopChannelsByMessageCount(userID, source.SourceTypeWhatsApp, topContactsLimit)
+					if err == nil && len(topChannels) > 0 {
+						respondJSON(w, http.StatusOK, map[string]interface{}{
+							"contacts": formatWhatsAppTopContactsFromChannelStats(topChannels),
+						})
+						return
+					}
+
+					historyStats, err = s.db.GetTopContactsBySourceTypeForUser(userID, source.SourceTypeWhatsApp, topContactsLimit)
 					if err == nil && len(historyStats) > 0 {
 						respondJSON(w, http.StatusOK, map[string]interface{}{
-							"contacts": formatTopContactsFromHistory(historyStats),
+							"contacts": formatWhatsAppTopContactsFromHistory(historyStats),
 						})
 						return
 					}
 				}
 			}
 
-			// HistorySync didn't complete in time; return empty if no history is available.
+			// HistorySync didn't complete in time; return empty for now.
 		}
 	}
 
@@ -311,6 +350,8 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 			return
 		}
 
+		s.startChannelBackfill(userID, channel)
+
 		respondJSON(w, http.StatusCreated, channel)
 		return
 	}
@@ -375,6 +416,8 @@ func (s *Server) handleWhatsAppCustomSource(w http.ResponseWriter, r *http.Reque
 		respondError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
+
+	s.startChannelBackfill(userID, channel)
 
 	respondJSON(w, http.StatusCreated, channel)
 }
@@ -627,15 +670,16 @@ func (s *Server) handleWhatsAppStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get per-user WhatsApp client
-	waClient, err := s.clientManager.GetWhatsAppClient(userID)
-	if err != nil {
-		status["message"] = fmt.Sprintf("Failed to get client: %v", err)
+	// Read-only status path: do not create clients.
+	if waClient, ok := s.clientManager.PeekWhatsAppClient(userID); ok && waClient.IsLoggedIn() {
+		status["connected"] = true
+		status["message"] = "Connected"
 		respondJSON(w, http.StatusOK, status)
 		return
 	}
 
-	if waClient.IsLoggedIn() {
+	// Fall back to stored session metadata when client is not in memory.
+	if waSession, err := s.db.GetWhatsAppSession(userID); err == nil && waSession != nil && waSession.Connected {
 		status["connected"] = true
 		status["message"] = "Connected"
 	} else {

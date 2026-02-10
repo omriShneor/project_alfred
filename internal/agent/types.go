@@ -108,6 +108,15 @@ type EventData struct {
 	Location       string `json:"location,omitempty"`
 	UpdateRef      string `json:"update_ref,omitempty"`       // Google event ID for updates/deletes
 	AlfredEventRef int64  `json:"alfred_event_ref,omitempty"` // Internal DB ID for pending events
+	Attendees      []EventAttendeeData `json:"attendees,omitempty"`
+}
+
+// EventAttendeeData contains attendee details extracted by the agent.
+type EventAttendeeData struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+	Phone string `json:"phone,omitempty"`
+	Role  string `json:"role,omitempty"`
 }
 
 // DateTimeResult represents extracted date/time information

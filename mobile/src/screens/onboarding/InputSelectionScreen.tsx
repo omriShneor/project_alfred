@@ -64,12 +64,6 @@ export function InputSelectionScreen() {
     ? `Continue (${selectedDataSourceCount} data source${selectedDataSourceCount === 1 ? '' : 's'})`
     : 'Choose at least 1 data source';
 
-  const heroHint = canContinue
-    ? selected.has('gcal')
-      ? 'Google Calendar sync will be connected separately in the next step.'
-      : 'Google Calendar is optional. You can add it now or later.'
-    : 'Pick at least one: Gmail, WhatsApp, or Telegram.';
-
   const toggleSelection = (id: InputOptionId) => {
     const nextSelected = new Set(selected);
     if (nextSelected.has(id)) {
@@ -160,7 +154,6 @@ export function InputSelectionScreen() {
           <View style={styles.progressTrack}>
             <View style={[styles.progressFill, { width: `${progress}%` }]} />
           </View>
-          <Text style={styles.heroHint}>{heroHint}</Text>
           {selectedCount > 0 && (
             <TouchableOpacity
               onPress={() => setSelected(new Set<InputOptionId>())}
@@ -290,11 +283,6 @@ const styles = StyleSheet.create({
   progressFill: {
     height: '100%',
     backgroundColor: colors.primary,
-  },
-  heroHint: {
-    marginTop: 8,
-    fontSize: 12,
-    color: colors.textSecondary,
   },
   clearButton: {
     alignSelf: 'flex-start',

@@ -20,6 +20,7 @@ type User struct {
 	Email     string `json:"email"`
 	Name      string `json:"name"`
 	AvatarURL string `json:"avatar_url,omitempty"`
+	Timezone  string `json:"timezone,omitempty"`
 }
 
 // GetUserFromContext extracts the authenticated user from the request context

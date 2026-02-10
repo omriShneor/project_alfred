@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/agent/intents"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gmail"
 	"github.com/omriShneor/project_alfred/internal/notify"
@@ -19,10 +20,20 @@ type EmailProcessor struct {
 	notifyService    *notify.Service
 	eventCreator     *EventCreator
 	reminderCreator  *ReminderCreator
+	intentRegistry   *intents.Registry
+	intentRouter     intents.Router
 }
 
 // NewEmailProcessor creates a new email processor
 func NewEmailProcessor(db *database.DB, eventAnalyzer agent.EventAnalyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service) *EmailProcessor {
+	registry := intents.NewRegistry()
+	if eventAnalyzer != nil && eventAnalyzer.IsConfigured() {
+		_ = registry.Register(&intents.EventModule{Analyzer: eventAnalyzer})
+	}
+	if reminderAnalyzer != nil && reminderAnalyzer.IsConfigured() {
+		_ = registry.Register(&intents.ReminderModule{Analyzer: reminderAnalyzer})
+	}
+
 	return &EmailProcessor{
 		db:               db,
 		eventAnalyzer:    eventAnalyzer,
@@ -30,6 +41,8 @@ func NewEmailProcessor(db *database.DB, eventAnalyzer agent.EventAnalyzer, remin
 		notifyService:    notifyService,
 		eventCreator:     NewEventCreator(db, notifyService),
 		reminderCreator:  NewReminderCreator(db, notifyService),
+		intentRegistry:   registry,
+		intentRouter:     intents.NewKeywordRouter(),
 	}
 }
 
@@ -65,47 +78,136 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, e
 		}
 	}
 
-	// Run event analyzer (independent goroutine - fire and forget)
-	if p.eventAnalyzer != nil && p.eventAnalyzer.IsConfigured() {
-		go func() {
-			analysis, err := p.eventAnalyzer.AnalyzeEmail(ctx, emailContent)
-			if err != nil {
-				fmt.Printf("Email event analysis error: %v\n", err)
-				return
-			}
-
-			fmt.Printf("Email event analysis: action=%s, has_event=%v, confidence=%.2f\n",
-				analysis.Action, analysis.HasEvent, analysis.Confidence)
-
-			if analysis.HasEvent && analysis.Action != "none" {
-				if err := p.createPendingEventFromEmail(emailSource, analysis); err != nil {
-					fmt.Printf("Failed to create pending event from email: %v\n", err)
-				}
-			}
-		}()
-	}
-
-	// Run reminder analyzer (independent goroutine - fire and forget)
-	if p.reminderAnalyzer != nil && p.reminderAnalyzer.IsConfigured() {
-		go func() {
-			analysis, err := p.reminderAnalyzer.AnalyzeEmail(ctx, emailContent)
-			if err != nil {
-				fmt.Printf("Email reminder analysis error: %v\n", err)
-				return
-			}
-
-			fmt.Printf("Email reminder analysis: action=%s, has_reminder=%v, confidence=%.2f\n",
-				analysis.Action, analysis.HasReminder, analysis.Confidence)
-
-			if analysis.HasReminder && analysis.Action != "none" {
-				if err := p.createPendingReminderFromEmail(emailSource, analysis); err != nil {
-					fmt.Printf("Failed to create pending reminder from email: %v\n", err)
-				}
-			}
-		}()
+	if err := p.routeAnalyzeAndPersistEmail(ctx, emailSource, intents.EmailInput{Email: emailContent}); err != nil {
+		fmt.Printf("Email intent orchestration error: %v\n", err)
 	}
 
 	return nil
+}
+
+type emailIntentPersister struct {
+	p           *EmailProcessor
+	emailSource *gmail.EmailSource
+}
+
+func (ep *emailIntentPersister) PersistEvent(ctx context.Context, analysis *agent.EventAnalysis) error {
+	return ep.p.createPendingEventFromEmail(ep.emailSource, analysis)
+}
+
+func (ep *emailIntentPersister) PersistReminder(ctx context.Context, analysis *agent.ReminderAnalysis) error {
+	return ep.p.createPendingReminderFromEmail(ep.emailSource, analysis)
+}
+
+func (p *EmailProcessor) routeAnalyzeAndPersistEmail(ctx context.Context, emailSource *gmail.EmailSource, input intents.EmailInput) error {
+	if p.intentRegistry == nil || p.intentRouter == nil {
+		return nil
+	}
+
+	route := p.intentRouter.RouteEmail(ctx, input)
+	fmt.Printf("Email intent route: intent=%s confidence=%.2f reason=%s\n", route.Intent, route.Confidence, truncate(route.Reasoning, 80))
+
+	intentOrder, unknownRoutedIntent := resolveIntentExecutionOrder(p.intentRegistry, route)
+	if len(intentOrder) == 0 {
+		return nil
+	}
+
+	var firstErr error
+	for _, intentName := range intentOrder {
+		if err := p.runEmailIntentModule(ctx, intentName, emailSource, input); err != nil {
+			fmt.Printf("Email intent module %s error: %v\n", intentName, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		if unknownRoutedIntent {
+			break
+		}
+	}
+	return firstErr
+}
+
+func (p *EmailProcessor) runEmailIntentModule(ctx context.Context, intentName string, emailSource *gmail.EmailSource, input intents.EmailInput) error {
+	emailChannel, userID, channelErr := p.getOrCreateEmailChannel(emailSource)
+	channelID := int64(0)
+	if emailChannel != nil {
+		channelID = emailChannel.ID
+	}
+
+	module, ok := p.intentRegistry.Get(intentName)
+	if !ok {
+		fmt.Printf("Unknown email intent '%s' -> no_action\n", intentName)
+		if channelErr == nil && channelID != 0 {
+			_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+				UserID:     userID,
+				ChannelID:  channelID,
+				SourceType: string(source.SourceTypeGmail),
+				Intent:     intentName,
+				Status:     "unknown_intent",
+				Reasoning:  "intent module not registered",
+			})
+		}
+		return nil
+	}
+
+	output, err := module.AnalyzeEmail(ctx, input)
+	if err != nil {
+		return err
+	}
+	if output == nil {
+		return nil
+	}
+
+	if err := module.Validate(ctx, output); err != nil {
+		fmt.Printf("Email intent validation failed intent=%s: %v\n", intentName, err)
+		if channelErr == nil && channelID != 0 {
+			_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+				UserID:     userID,
+				ChannelID:  channelID,
+				SourceType: string(source.SourceTypeGmail),
+				Intent:     intentName,
+				Action:     output.Action,
+				Confidence: output.Confidence,
+				Reasoning:  output.Reasoning,
+				Status:     "validation_failed",
+			})
+		}
+		return nil
+	}
+	if output.Confidence < minPersistConfidence {
+		fmt.Printf("Skipping low-confidence email intent=%s confidence=%.2f\n", intentName, output.Confidence)
+		if channelErr == nil && channelID != 0 {
+			_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+				UserID:     userID,
+				ChannelID:  channelID,
+				SourceType: string(source.SourceTypeGmail),
+				Intent:     intentName,
+				Action:     output.Action,
+				Confidence: output.Confidence,
+				Reasoning:  output.Reasoning,
+				Status:     "skipped_low_confidence",
+			})
+		}
+		return nil
+	}
+
+	err = module.Persist(ctx, output, &emailIntentPersister{p: p, emailSource: emailSource})
+	status := "persisted"
+	if err != nil {
+		status = "persist_error"
+	}
+	if channelErr == nil && channelID != 0 {
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:     userID,
+			ChannelID:  channelID,
+			SourceType: string(source.SourceTypeGmail),
+			Intent:     intentName,
+			Action:     output.Action,
+			Confidence: output.Confidence,
+			Reasoning:  output.Reasoning,
+			Status:     status,
+		})
+	}
+	return err
 }
 
 // createPendingEventFromEmail creates a pending event from email analysis

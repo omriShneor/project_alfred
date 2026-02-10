@@ -31,27 +31,35 @@ interface ServiceCardProps {
   title: string;
   description: string;
   configured: boolean;
+  badgeText?: string;
   onPress: () => void;
 }
 
-function ServiceCard({ icon, title, description, configured, onPress }: ServiceCardProps) {
+function ServiceCard({ icon, title, description, configured, badgeText, onPress }: ServiceCardProps) {
   return (
     <Card style={[styles.card, configured && styles.cardConfigured]}>
       <View style={styles.serviceHeader}>
         <View style={styles.serviceInfo}>
           <Ionicons name={icon} size={22} color={colors.text} />
           <View style={styles.serviceText}>
-            <Text style={styles.serviceTitle}>{title}</Text>
+            <View style={styles.serviceTitleRow}>
+              <Text style={styles.serviceTitle}>{title}</Text>
+              {badgeText && (
+                <View style={styles.serviceBadge}>
+                  <Text style={styles.serviceBadgeText}>{badgeText}</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.serviceDescription}>{description}</Text>
           </View>
         </View>
         <View style={styles.serviceStatus}>
           <View style={[styles.statusDot, { backgroundColor: configured ? colors.success : colors.textSecondary }]} />
-          <Text style={styles.statusLabel}>{configured ? 'Ready' : 'Needs setup'}</Text>
+          <Text style={styles.statusLabel}>{configured ? 'Selected' : 'Not selected'}</Text>
         </View>
       </View>
       <Button
-        title={configured ? 'Manage' : 'Choose'}
+        title={configured ? 'Edit' : 'Set Up'}
         onPress={onPress}
         variant={configured ? 'outline' : 'primary'}
         style={styles.configureButton}
@@ -77,11 +85,12 @@ export function SourceConfigurationScreen() {
   const whatsappConfigured = (whatsappChannels?.some((channel) => channel.enabled) ?? false);
   const telegramConfigured = (telegramChannels?.some((channel) => channel.enabled) ?? false);
   const gmailConfigured = (emailSources?.some((source) => source.enabled) ?? false);
-  // Keep Google Calendar styling consistent with other source cards:
-  // once Calendar scope is granted, treat it as "configured" on this screen.
+  // Google Calendar is configured only when sync is enabled for a selected calendar.
   const gcalConfigured = Boolean(
     gcalStatus?.connected &&
-    gcalStatus?.has_scopes
+    gcalStatus?.has_scopes &&
+    gcalSettings?.sync_enabled &&
+    gcalSettings?.selected_calendar_id
   );
 
   const requiredDataSourcesCount = [whatsappEnabled, telegramEnabled, gmailEnabled].filter(Boolean).length;
@@ -91,9 +100,10 @@ export function SourceConfigurationScreen() {
     gmailEnabled ? gmailConfigured : false,
   ].filter(Boolean).length;
   const hasConfiguredSource = configuredDataSourcesCount > 0;
+  const progressLabel = requiredDataSourcesCount === 1 ? 'source' : 'sources';
   const finishButtonTitle = hasConfiguredSource
-    ? 'Finish setup'
-    : 'Configure at least 1 data source';
+    ? 'Continue'
+    : 'Choose at least one source';
 
   // Refetch sources when screen gains focus (user returns from preference screens)
   useFocusEffect(
@@ -130,7 +140,7 @@ export function SourceConfigurationScreen() {
       // RootNavigator will automatically switch to MainNavigator
       // when onboarding_complete becomes true (query is invalidated in the hook)
     } catch (error: any) {
-      Alert.alert('Error', error.message || 'Failed to complete onboarding');
+      Alert.alert('Error', error.message || 'We could not finish setup. Please try again.');
     }
   };
 
@@ -171,14 +181,11 @@ export function SourceConfigurationScreen() {
                   hasConfiguredSource ? styles.heroStatusTextSuccess : styles.heroStatusTextWarning,
                 ]}
               >
-                {configuredDataSourcesCount}/{requiredDataSourcesCount} sources ready
+                {configuredDataSourcesCount}/{requiredDataSourcesCount} {progressLabel} selected
               </Text>
             </View>
           </View>
-          <Text style={styles.title}>Choose What Alfred Should Monitor</Text>
-          <Text style={styles.description}>
-            Configure at least one data source (Gmail, Telegram, or WhatsApp) to finish setup.
-          </Text>
+          <Text style={styles.title}>Choose Your Sources</Text>
           <View style={styles.progressTrack}>
             <View
               style={[
@@ -187,13 +194,29 @@ export function SourceConfigurationScreen() {
               ]}
             />
           </View>
+          {!hasConfiguredSource && (
+            <View style={styles.statusSummary}>
+              <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.statusSummaryText}>
+                Set up at least one source to continue.
+              </Text>
+            </View>
+          )}
+          {gcalEnabled && !gcalConfigured && (
+            <View style={styles.calendarHint}>
+              <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
+              <Text style={styles.calendarHintText}>
+                Google Calendar is optional right now. You can set it up later.
+              </Text>
+            </View>
+          )}
         </Card>
 
         {whatsappEnabled && (
           <ServiceCard
             icon="chatbubble-outline"
             title="WhatsApp"
-            description="Choose chats Alfred should scan"
+            description="Pick chats Alfred can use for reminders and events"
             configured={whatsappConfigured}
             onPress={handleConfigureWhatsApp}
           />
@@ -203,7 +226,7 @@ export function SourceConfigurationScreen() {
           <ServiceCard
             icon="paper-plane-outline"
             title="Telegram"
-            description="Choose chats Alfred should scan"
+            description="Pick chats Alfred can use for reminders and events"
             configured={telegramConfigured}
             onPress={handleConfigureTelegram}
           />
@@ -213,7 +236,7 @@ export function SourceConfigurationScreen() {
           <ServiceCard
             icon="mail-outline"
             title="Gmail"
-            description="Choose senders and domains Alfred should scan"
+            description="Pick senders Alfred can use for reminders and events"
             configured={gmailConfigured}
             onPress={handleConfigureGmail}
           />
@@ -223,28 +246,11 @@ export function SourceConfigurationScreen() {
           <ServiceCard
             icon="calendar-outline"
             title="Google Calendar"
-            description="Choose calendar sync settings separately"
+            description="Choose which calendar Alfred should sync with"
             configured={gcalConfigured}
+            badgeText="Optional"
             onPress={handleConfigureGoogleCalendar}
           />
-        )}
-
-        {gcalEnabled && !gcalConfigured && (
-          <View style={styles.calendarHint}>
-            <Ionicons name="calendar-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.calendarHintText}>
-              Google Calendar sync is separate and can be finalized now or later.
-            </Text>
-          </View>
-        )}
-
-        {!hasConfiguredSource && (
-          <View style={styles.statusSummary}>
-            <Ionicons name="information-circle-outline" size={16} color={colors.textSecondary} />
-            <Text style={styles.statusSummaryText}>
-              Configure at least one source from Gmail, Telegram, or WhatsApp to continue
-            </Text>
-          </View>
         )}
 
         <Button
@@ -362,11 +368,32 @@ const styles = StyleSheet.create({
     flex: 1,
     marginTop: 1,
   },
+  serviceTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
   serviceTitle: {
     fontSize: 17,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 2,
+    marginBottom: 0,
+  },
+  serviceBadge: {
+    marginLeft: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary + '45',
+    backgroundColor: colors.primary + '12',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  serviceBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.primary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   serviceDescription: {
     fontSize: 13,
@@ -395,30 +422,35 @@ const styles = StyleSheet.create({
   },
   statusSummary: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-    marginBottom: 16,
-    paddingHorizontal: 16,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    alignSelf: 'stretch',
+    width: '100%',
+    marginTop: 6,
+    paddingHorizontal: 0,
   },
   statusSummaryText: {
+    flex: 1,
     fontSize: 13,
     color: colors.textSecondary,
     marginLeft: 8,
+    textAlign: 'left',
   },
   calendarHint: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
-    marginBottom: 10,
-    paddingHorizontal: 16,
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    alignSelf: 'stretch',
+    width: '100%',
+    marginTop: 6,
+    paddingHorizontal: 0,
   },
   calendarHintText: {
+    flex: 1,
     fontSize: 12,
     color: colors.textSecondary,
     marginLeft: 8,
-    textAlign: 'center',
+    textAlign: 'left',
   },
   continueButton: {
     marginTop: 8,

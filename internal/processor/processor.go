@@ -4,31 +4,40 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/agent/intents"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/source"
 )
 
 const (
-	defaultHistorySize = 25
+	defaultHistorySize   = 25
+	defaultWorkerCount   = 2
+	minPersistConfidence = 0.30
 )
 
 // Processor handles incoming messages from any source and detects calendar events and reminders
 type Processor struct {
 	db               *database.DB
-	eventAnalyzer    agent.EventAnalyzer    // Event analyzer
-	reminderAnalyzer agent.ReminderAnalyzer // Reminder analyzer
+	eventAnalyzer    agent.EventAnalyzer
+	reminderAnalyzer agent.ReminderAnalyzer
+	intentRegistry   *intents.Registry
+	intentRouter     intents.Router
 	msgChan          <-chan source.Message
 	historySize      int
 	notifyService    *notify.Service
 	eventCreator     *EventCreator
 	reminderCreator  *ReminderCreator
+	workerCount      int
 
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	unknownIntentCount atomic.Uint64
 }
 
 // New creates a new event processor
@@ -45,16 +54,26 @@ func New(
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	registry := intents.NewRegistry()
+	if eventAnalyzer != nil && eventAnalyzer.IsConfigured() {
+		_ = registry.Register(&intents.EventModule{Analyzer: eventAnalyzer})
+	}
+	if reminderAnalyzer != nil && reminderAnalyzer.IsConfigured() {
+		_ = registry.Register(&intents.ReminderModule{Analyzer: reminderAnalyzer})
+	}
 
 	return &Processor{
 		db:               db,
 		eventAnalyzer:    eventAnalyzer,
 		reminderAnalyzer: reminderAnalyzer,
+		intentRegistry:   registry,
+		intentRouter:     intents.NewKeywordRouter(),
 		msgChan:          msgChan,
 		historySize:      historySize,
 		notifyService:    notifyService,
 		eventCreator:     NewEventCreator(db, notifyService),
 		reminderCreator:  NewReminderCreator(db, notifyService),
+		workerCount:      defaultWorkerCount,
 		ctx:              ctx,
 		cancel:           cancel,
 	}
@@ -64,8 +83,10 @@ func New(
 func (p *Processor) Start() error {
 	fmt.Println("Event processor started")
 
-	p.wg.Add(1)
-	go p.processLoop()
+	for i := 0; i < p.workerCount; i++ {
+		p.wg.Add(1)
+		go p.processLoop()
+	}
 
 	return nil
 }
@@ -150,45 +171,18 @@ func (p *Processor) processMessage(msg source.Message) error {
 	// Convert to database types for analysis (shared context)
 	historyRecords := convertToMessageRecords(history)
 	newMessageRecord := convertSourceMessageToRecord(storedMsg)
-
-	// Run event analyzer (independent goroutine - fire and forget)
-	if p.eventAnalyzer != nil && p.eventAnalyzer.IsConfigured() {
-		go func() {
-			analysis, err := p.eventAnalyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingEvents)
-			if err != nil {
-				fmt.Printf("Event analysis error: %v\n", err)
-				return
-			}
-
-			fmt.Printf("Event analysis: action=%s, has_event=%v, confidence=%.2f\n",
-				analysis.Action, analysis.HasEvent, analysis.Confidence)
-
-			if analysis.HasEvent && analysis.Action != "none" {
-				if err := p.createPendingEvent(channel, storedMsg.ID, analysis, msg.SourceType); err != nil {
-					fmt.Printf("Failed to create pending event: %v\n", err)
-				}
-			}
-		}()
-	}
-
-	// Run reminder analyzer (independent goroutine - fire and forget)
-	if p.reminderAnalyzer != nil && p.reminderAnalyzer.IsConfigured() {
-		go func() {
-			analysis, err := p.reminderAnalyzer.AnalyzeMessages(p.ctx, historyRecords, newMessageRecord, existingReminders)
-			if err != nil {
-				fmt.Printf("Reminder analysis error: %v\n", err)
-				return
-			}
-
-			fmt.Printf("Reminder analysis: action=%s, has_reminder=%v, confidence=%.2f\n",
-				analysis.Action, analysis.HasReminder, analysis.Confidence)
-
-			if analysis.HasReminder && analysis.Action != "none" {
-				if err := p.createPendingReminder(channel, storedMsg.ID, analysis, msg.SourceType); err != nil {
-					fmt.Printf("Failed to create pending reminder: %v\n", err)
-				}
-			}
-		}()
+	if err := p.routeAnalyzeAndPersistMessage(
+		channel,
+		msg.SourceType,
+		storedMsg.ID,
+		intents.MessageInput{
+			History:           historyRecords,
+			NewMessage:        newMessageRecord,
+			ExistingEvents:    existingEvents,
+			ExistingReminders: existingReminders,
+		},
+	); err != nil {
+		fmt.Printf("Intent orchestration error: %v\n", err)
 	}
 
 	return nil
@@ -222,6 +216,161 @@ func convertSourceMessageToRecord(m *database.SourceMessage) database.MessageRec
 		Timestamp:   m.Timestamp,
 		CreatedAt:   m.CreatedAt,
 	}
+}
+
+type messageIntentPersister struct {
+	p         *Processor
+	channel   *database.SourceChannel
+	source    source.SourceType
+	messageID int64
+}
+
+func (mp *messageIntentPersister) PersistEvent(ctx context.Context, analysis *agent.EventAnalysis) error {
+	return mp.p.createPendingEvent(mp.channel, mp.messageID, analysis, mp.source)
+}
+
+func (mp *messageIntentPersister) PersistReminder(ctx context.Context, analysis *agent.ReminderAnalysis) error {
+	return mp.p.createPendingReminder(mp.channel, mp.messageID, analysis, mp.source)
+}
+
+func (p *Processor) routeAnalyzeAndPersistMessage(
+	channel *database.SourceChannel,
+	sourceType source.SourceType,
+	messageID int64,
+	input intents.MessageInput,
+) error {
+	if p.intentRegistry == nil || p.intentRouter == nil {
+		return nil
+	}
+
+	route := p.intentRouter.RouteMessages(p.ctx, input)
+	fmt.Printf("Intent route: intent=%s confidence=%.2f reason=%s\n", route.Intent, route.Confidence, truncate(route.Reasoning, 80))
+	msgID := messageID
+	_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+		UserID:           channel.UserID,
+		ChannelID:        channel.ID,
+		SourceType:       string(sourceType),
+		TriggerMessageID: &msgID,
+		Intent:           route.Intent,
+		RouterConfidence: route.Confidence,
+		Action:           "",
+		Confidence:       route.Confidence,
+		Reasoning:        route.Reasoning,
+		Status:           "routed",
+	})
+
+	intentOrder, unknownRoutedIntent := resolveIntentExecutionOrder(p.intentRegistry, route)
+	if len(intentOrder) == 0 {
+		return nil
+	}
+
+	var firstErr error
+	for _, intentName := range intentOrder {
+		if err := p.runMessageIntentModule(intentName, channel, sourceType, messageID, input); err != nil {
+			fmt.Printf("Intent module %s error: %v\n", intentName, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		if unknownRoutedIntent {
+			break
+		}
+	}
+	return firstErr
+}
+
+func (p *Processor) runMessageIntentModule(
+	intentName string,
+	channel *database.SourceChannel,
+	sourceType source.SourceType,
+	messageID int64,
+	input intents.MessageInput,
+) error {
+	module, ok := p.intentRegistry.Get(intentName)
+	if !ok {
+		count := p.unknownIntentCount.Add(1)
+		fmt.Printf("Unknown intent '%s' -> no_action (count=%d)\n", intentName, count)
+		msgID := messageID
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           channel.UserID,
+			ChannelID:        channel.ID,
+			SourceType:       string(sourceType),
+			TriggerMessageID: &msgID,
+			Intent:           intentName,
+			Status:           "unknown_intent",
+			Reasoning:        "intent module not registered",
+		})
+		return nil
+	}
+
+	output, err := module.AnalyzeMessages(p.ctx, input)
+	if err != nil {
+		return err
+	}
+	if output == nil {
+		return nil
+	}
+
+	if err := module.Validate(p.ctx, output); err != nil {
+		fmt.Printf("Intent validation failed intent=%s: %v\n", intentName, err)
+		msgID := messageID
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           channel.UserID,
+			ChannelID:        channel.ID,
+			SourceType:       string(sourceType),
+			TriggerMessageID: &msgID,
+			Intent:           intentName,
+			Action:           output.Action,
+			Confidence:       output.Confidence,
+			Reasoning:        output.Reasoning,
+			Status:           "validation_failed",
+			Details: map[string]any{
+				"error": err.Error(),
+			},
+		})
+		return nil
+	}
+	if output.Confidence < minPersistConfidence {
+		fmt.Printf("Skipping low-confidence intent=%s confidence=%.2f\n", intentName, output.Confidence)
+		msgID := messageID
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           channel.UserID,
+			ChannelID:        channel.ID,
+			SourceType:       string(sourceType),
+			TriggerMessageID: &msgID,
+			Intent:           intentName,
+			Action:           output.Action,
+			Confidence:       output.Confidence,
+			Reasoning:        output.Reasoning,
+			Status:           "skipped_low_confidence",
+		})
+		return nil
+	}
+
+	persister := &messageIntentPersister{
+		p:         p,
+		channel:   channel,
+		source:    sourceType,
+		messageID: messageID,
+	}
+	err = module.Persist(p.ctx, output, persister)
+	status := "persisted"
+	if err != nil {
+		status = "persist_error"
+	}
+	msgID := messageID
+	_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+		UserID:           channel.UserID,
+		ChannelID:        channel.ID,
+		SourceType:       string(sourceType),
+		TriggerMessageID: &msgID,
+		Intent:           intentName,
+		Action:           output.Action,
+		Confidence:       output.Confidence,
+		Reasoning:        output.Reasoning,
+		Status:           status,
+	})
+	return err
 }
 
 // createPendingEvent creates or updates a pending event from the analysis

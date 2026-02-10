@@ -26,6 +26,7 @@ type SyncDBInterface interface {
 const (
 	importLookbackDays  = 30
 	importLookaheadDays = 365
+	stopWaitTimeout     = 5 * time.Second
 )
 
 // Worker periodically syncs Google Calendar changes back to Alfred.
@@ -84,8 +85,19 @@ func (w *Worker) Start() error {
 func (w *Worker) Stop() {
 	fmt.Println("Google Calendar worker: stopping...")
 	w.cancel()
-	w.wg.Wait()
-	fmt.Println("Google Calendar worker: stopped")
+
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("Google Calendar worker: stopped")
+	case <-time.After(stopWaitTimeout):
+		fmt.Printf("Google Calendar worker: stop timed out after %v; continuing shutdown\n", stopWaitTimeout)
+	}
 }
 
 // SetClient updates the Google Calendar client (used when auth/scopes change).

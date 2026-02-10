@@ -67,6 +67,7 @@ export interface StoredUser {
   email: string;
   name: string;
   avatarUrl?: string;
+  timezone?: string;
 }
 
 export async function getSessionToken(): Promise<string | null> {

@@ -20,6 +20,7 @@ type ClientManager struct {
 	cfg             *ManagerConfig
 	notifyService   *notify.Service
 	onboardingState *sse.State
+	backfillHook    whatsapp.HistorySyncBackfillHook
 
 	// Shared message channel (all users' messages tagged with UserID)
 	msgChan chan source.Message
@@ -62,6 +63,38 @@ func (m *ClientManager) MessageChan() <-chan source.Message {
 	return m.msgChan
 }
 
+// SetWhatsAppHistorySyncBackfillHook registers a callback that WhatsApp handlers
+// invoke after HistorySync stores messages for enabled channels.
+func (m *ClientManager) SetWhatsAppHistorySyncBackfillHook(hook whatsapp.HistorySyncBackfillHook) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.backfillHook = hook
+	for _, client := range m.whatsappClients {
+		if client != nil {
+			client.SetHistorySyncBackfillHook(hook)
+		}
+	}
+}
+
+// PeekWhatsAppClient returns an in-memory WhatsApp client only if it already exists.
+// Unlike GetWhatsAppClient, this method never creates a new client.
+func (m *ClientManager) PeekWhatsAppClient(userID int64) (*whatsapp.Client, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	client, ok := m.whatsappClients[userID]
+	return client, ok
+}
+
+// PeekTelegramClient returns an in-memory Telegram client only if it already exists.
+// Unlike GetTelegramClient, this method never creates a new client.
+func (m *ClientManager) PeekTelegramClient(userID int64) (*telegram.Client, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	client, ok := m.telegramClients[userID]
+	return client, ok
+}
+
 // ==================== WhatsApp Client Management ====================
 
 // GetWhatsAppClient returns an existing WhatsApp client for the user or creates a new one
@@ -101,11 +134,12 @@ func (m *ClientManager) CreateWhatsAppClient(userID int64) (*whatsapp.Client, er
 	}
 
 	// Create handler for this user first
-	handler := whatsapp.NewHandlerForUser(userID, m.db, m.cfg.DebugAllMessages, m.onboardingState)
+	handler := whatsapp.NewHandler(userID, m.db, m.cfg.DebugAllMessages, m.onboardingState)
 
 	// Override handler's message channel with shared channel
 	// This ensures all users' messages go to the same channel with UserID tags
 	handler.SetMessageChannel(m.msgChan)
+	handler.SetHistorySyncBackfillHook(m.backfillHook)
 
 	// Create client with handler
 	client, err := whatsapp.NewClient(handler, dbPath, preferredDeviceJID, m.notifyService)
@@ -241,7 +275,7 @@ func (m *ClientManager) CreateTelegramClient(userID int64) (*telegram.Client, er
 	fmt.Printf("ClientManager: Creating Telegram client for user %d with session path: %s\n", userID, sessionPath)
 
 	// Create handler for this user first
-	handler := telegram.NewHandlerForUser(userID, m.db)
+	handler := telegram.NewHandler(userID, m.db)
 
 	// Override handler's message channel with shared channel
 	handler.SetMessageChannel(m.msgChan)

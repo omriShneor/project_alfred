@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
+	"github.com/omriShneor/project_alfred/internal/agent/intents"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/source"
@@ -18,10 +19,20 @@ type BackfillProcessor struct {
 	notifyService    *notify.Service
 	eventCreator     *EventCreator
 	reminderCreator  *ReminderCreator
+	intentRegistry   *intents.Registry
+	intentRouter     intents.Router
 }
 
 // NewBackfillProcessor creates a new backfill processor.
 func NewBackfillProcessor(db *database.DB, eventAnalyzer agent.EventAnalyzer, reminderAnalyzer agent.ReminderAnalyzer, notifyService *notify.Service) *BackfillProcessor {
+	registry := intents.NewRegistry()
+	if eventAnalyzer != nil && eventAnalyzer.IsConfigured() {
+		_ = registry.Register(&intents.EventModule{Analyzer: eventAnalyzer})
+	}
+	if reminderAnalyzer != nil && reminderAnalyzer.IsConfigured() {
+		_ = registry.Register(&intents.ReminderModule{Analyzer: reminderAnalyzer})
+	}
+
 	return &BackfillProcessor{
 		db:               db,
 		eventAnalyzer:    eventAnalyzer,
@@ -29,6 +40,8 @@ func NewBackfillProcessor(db *database.DB, eventAnalyzer agent.EventAnalyzer, re
 		notifyService:    notifyService,
 		eventCreator:     NewEventCreator(db, notifyService),
 		reminderCreator:  NewReminderCreator(db, notifyService),
+		intentRegistry:   registry,
+		intentRouter:     intents.NewKeywordRouter(),
 	}
 }
 
@@ -72,26 +85,19 @@ func (p *BackfillProcessor) ProcessChannelMessages(ctx context.Context, userID i
 			existingReminders = []database.Reminder{}
 		}
 
-		if p.eventAnalyzer != nil && p.eventAnalyzer.IsConfigured() {
-			analysis, err := p.eventAnalyzer.AnalyzeMessages(ctx, historyRecords, newRecord, existingEvents)
-			if err != nil {
-				fmt.Printf("Backfill event analysis error: %v\n", err)
-			} else if analysis.HasEvent && analysis.Action != "none" {
-				if err := p.createPendingEvent(channel, msg.ID, analysis, sourceType); err != nil {
-					fmt.Printf("Backfill: failed to create pending event: %v\n", err)
-				}
-			}
-		}
-
-		if p.reminderAnalyzer != nil && p.reminderAnalyzer.IsConfigured() {
-			analysis, err := p.reminderAnalyzer.AnalyzeMessages(ctx, historyRecords, newRecord, existingReminders)
-			if err != nil {
-				fmt.Printf("Backfill reminder analysis error: %v\n", err)
-			} else if analysis.HasReminder && analysis.Action != "none" {
-				if err := p.createPendingReminder(channel, msg.ID, analysis, sourceType); err != nil {
-					fmt.Printf("Backfill: failed to create pending reminder: %v\n", err)
-				}
-			}
+		if err := p.routeAnalyzeAndPersistBackfill(
+			ctx,
+			channel,
+			msg.ID,
+			sourceType,
+			intents.MessageInput{
+				History:           historyRecords,
+				NewMessage:        newRecord,
+				ExistingEvents:    existingEvents,
+				ExistingReminders: existingReminders,
+			},
+		); err != nil {
+			fmt.Printf("Backfill intent orchestration error: %v\n", err)
 		}
 	}
 
@@ -143,4 +149,138 @@ func (p *BackfillProcessor) createPendingReminder(
 
 func ctxOrBackground() context.Context {
 	return context.Background()
+}
+
+type backfillIntentPersister struct {
+	p         *BackfillProcessor
+	channel   *database.SourceChannel
+	messageID int64
+	source    source.SourceType
+}
+
+func (bp *backfillIntentPersister) PersistEvent(ctx context.Context, analysis *agent.EventAnalysis) error {
+	return bp.p.createPendingEvent(bp.channel, bp.messageID, analysis, bp.source)
+}
+
+func (bp *backfillIntentPersister) PersistReminder(ctx context.Context, analysis *agent.ReminderAnalysis) error {
+	return bp.p.createPendingReminder(bp.channel, bp.messageID, analysis, bp.source)
+}
+
+func (p *BackfillProcessor) routeAnalyzeAndPersistBackfill(
+	ctx context.Context,
+	channel *database.SourceChannel,
+	messageID int64,
+	sourceType source.SourceType,
+	input intents.MessageInput,
+) error {
+	if p.intentRegistry == nil || p.intentRouter == nil {
+		return nil
+	}
+
+	route := p.intentRouter.RouteMessages(ctx, input)
+	intentOrder, unknownRoutedIntent := resolveIntentExecutionOrder(p.intentRegistry, route)
+	if len(intentOrder) == 0 {
+		return nil
+	}
+
+	var firstErr error
+	for _, intentName := range intentOrder {
+		if err := p.runBackfillIntentModule(ctx, intentName, channel, messageID, sourceType, input); err != nil {
+			fmt.Printf("Backfill intent module %s error: %v\n", intentName, err)
+			if firstErr == nil {
+				firstErr = err
+			}
+		}
+		if unknownRoutedIntent {
+			break
+		}
+	}
+	return firstErr
+}
+
+func (p *BackfillProcessor) runBackfillIntentModule(
+	ctx context.Context,
+	intentName string,
+	channel *database.SourceChannel,
+	messageID int64,
+	sourceType source.SourceType,
+	input intents.MessageInput,
+) error {
+	module, ok := p.intentRegistry.Get(intentName)
+	if !ok {
+		fmt.Printf("Unknown backfill intent '%s' -> no_action\n", intentName)
+		msgID := messageID
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           channel.UserID,
+			ChannelID:        channel.ID,
+			SourceType:       string(sourceType),
+			TriggerMessageID: &msgID,
+			Intent:           intentName,
+			Status:           "unknown_intent",
+		})
+		return nil
+	}
+
+	output, err := module.AnalyzeMessages(ctx, input)
+	if err != nil {
+		return err
+	}
+	if output == nil {
+		return nil
+	}
+	if err := module.Validate(ctx, output); err != nil {
+		fmt.Printf("Backfill intent validation failed intent=%s: %v\n", intentName, err)
+		msgID := messageID
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           channel.UserID,
+			ChannelID:        channel.ID,
+			SourceType:       string(sourceType),
+			TriggerMessageID: &msgID,
+			Intent:           intentName,
+			Action:           output.Action,
+			Confidence:       output.Confidence,
+			Reasoning:        output.Reasoning,
+			Status:           "validation_failed",
+		})
+		return nil
+	}
+	if output.Confidence < minPersistConfidence {
+		fmt.Printf("Backfill: skipping low-confidence intent=%s confidence=%.2f\n", intentName, output.Confidence)
+		msgID := messageID
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           channel.UserID,
+			ChannelID:        channel.ID,
+			SourceType:       string(sourceType),
+			TriggerMessageID: &msgID,
+			Intent:           intentName,
+			Action:           output.Action,
+			Confidence:       output.Confidence,
+			Reasoning:        output.Reasoning,
+			Status:           "skipped_low_confidence",
+		})
+		return nil
+	}
+	err = module.Persist(ctx, output, &backfillIntentPersister{
+		p:         p,
+		channel:   channel,
+		messageID: messageID,
+		source:    sourceType,
+	})
+	status := "persisted"
+	if err != nil {
+		status = "persist_error"
+	}
+	msgID := messageID
+	_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+		UserID:           channel.UserID,
+		ChannelID:        channel.ID,
+		SourceType:       string(sourceType),
+		TriggerMessageID: &msgID,
+		Intent:           intentName,
+		Action:           output.Action,
+		Confidence:       output.Confidence,
+		Reasoning:        output.Reasoning,
+		Status:           status,
+	})
+	return err
 }

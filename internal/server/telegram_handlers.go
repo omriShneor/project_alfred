@@ -31,19 +31,27 @@ func (s *Server) handleTelegramStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get per-user Telegram client
-	tgClient, err := s.clientManager.GetTelegramClient(userID)
-	if err != nil {
+	// Read-only status path: do not create clients.
+	if tgClient, ok := s.clientManager.PeekTelegramClient(userID); ok {
 		respondJSON(w, http.StatusOK, TelegramStatusResponse{
-			Connected: false,
-			Message:   fmt.Sprintf("Failed to get client: %v", err),
+			Connected: tgClient.IsConnected(),
+			Message:   "",
+		})
+		return
+	}
+
+	// Fall back to stored session metadata when client is not in memory.
+	if tgSession, err := s.db.GetTelegramSession(userID); err == nil && tgSession != nil && tgSession.Connected {
+		respondJSON(w, http.StatusOK, TelegramStatusResponse{
+			Connected: true,
+			Message:   "",
 		})
 		return
 	}
 
 	respondJSON(w, http.StatusOK, TelegramStatusResponse{
-		Connected: tgClient.IsConnected(),
-		Message:   "",
+		Connected: false,
+		Message:   "Not connected",
 	})
 }
 

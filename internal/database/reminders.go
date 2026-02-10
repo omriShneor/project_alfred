@@ -53,6 +53,8 @@ type Reminder struct {
 	ActionType    ReminderActionType `json:"action_type"`
 	OriginalMsgID *int64             `json:"original_message_id,omitempty"`
 	LLMReasoning  string             `json:"llm_reasoning,omitempty"`
+	LLMConfidence float64            `json:"llm_confidence"`
+	QualityFlags  []string           `json:"quality_flags,omitempty"`
 	Source        string             `json:"source,omitempty"`
 	EmailSourceID *int64             `json:"email_source_id,omitempty"`
 	CreatedAt     time.Time          `json:"created_at"`
@@ -67,12 +69,12 @@ func (d *DB) CreatePendingReminder(reminder *Reminder) (*Reminder, error) {
 		INSERT INTO reminders (
 			user_id, channel_id, google_event_id, calendar_id, title, description,
 			location, due_date, reminder_time, priority, status, action_type,
-			original_message_id, llm_reasoning, source, email_source_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			original_message_id, llm_reasoning, llm_confidence, quality_flags, source, email_source_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		reminder.UserID, reminder.ChannelID, reminder.GoogleEventID, reminder.CalendarID, reminder.Title, reminder.Description,
 		reminder.Location, reminder.DueDate, reminder.ReminderTime, reminder.Priority, ReminderStatusPending, reminder.ActionType,
-		reminder.OriginalMsgID, reminder.LLMReasoning, reminder.Source, reminder.EmailSourceID,
+		reminder.OriginalMsgID, reminder.LLMReasoning, reminder.LLMConfidence, encodeQualityFlags(reminder.QualityFlags), reminder.Source, reminder.EmailSourceID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create reminder: %w", err)
@@ -105,11 +107,12 @@ func scanReminder(scanner reminderScanner) (*Reminder, error) {
 	var origMsgIDNull sql.NullInt64
 	var emailSourceIDNull sql.NullInt64
 	var sourceNull sql.NullString
+	var qualityFlagsNull sql.NullString
 
 	err := scanner.Scan(
 		&reminder.ID, &reminder.UserID, &reminder.ChannelID, &googleEventID, &reminder.CalendarID, &reminder.Title,
 		&descriptionNull, &locationNull, &dueDateNull, &reminderTimeNull, &reminder.Priority, &reminder.Status,
-		&reminder.ActionType, &origMsgIDNull, &reminder.LLMReasoning, &sourceNull, &emailSourceIDNull,
+		&reminder.ActionType, &origMsgIDNull, &reminder.LLMReasoning, &reminder.LLMConfidence, &qualityFlagsNull, &sourceNull, &emailSourceIDNull,
 		&reminder.CreatedAt, &reminder.UpdatedAt, &reminder.ChannelName,
 	)
 	if err != nil {
@@ -141,6 +144,7 @@ func scanReminder(scanner reminderScanner) (*Reminder, error) {
 	if sourceNull.Valid {
 		reminder.Source = sourceNull.String
 	}
+	reminder.QualityFlags = decodeQualityFlags(qualityFlagsNull)
 
 	return &reminder, nil
 }
@@ -150,7 +154,7 @@ func (d *DB) GetReminderByID(id int64) (*Reminder, error) {
 	reminder, err := scanReminder(d.QueryRow(`
 		SELECT r.id, r.user_id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
 			r.description, r.location, r.due_date, r.reminder_time, r.priority, r.status,
-			r.action_type, r.original_message_id, r.llm_reasoning, r.source, r.email_source_id,
+			r.action_type, r.original_message_id, r.llm_reasoning, r.llm_confidence, r.quality_flags, r.source, r.email_source_id,
 			r.created_at, r.updated_at,
 			c.name as channel_name
 		FROM reminders r
@@ -169,7 +173,7 @@ func (d *DB) ListReminders(userID int64, status *ReminderStatus, channelID *int6
 	query := `
 		SELECT r.id, r.user_id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
 			r.description, r.location, r.due_date, r.reminder_time, r.priority, r.status,
-			r.action_type, r.original_message_id, r.llm_reasoning, r.source, r.email_source_id,
+			r.action_type, r.original_message_id, r.llm_reasoning, r.llm_confidence, r.quality_flags, r.source, r.email_source_id,
 			r.created_at, r.updated_at,
 			c.name as channel_name
 		FROM reminders r
@@ -224,7 +228,7 @@ func (d *DB) GetActiveRemindersForChannel(channelID int64) ([]Reminder, error) {
 	query := `
 		SELECT r.id, r.user_id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
 			r.description, r.location, r.due_date, r.reminder_time, r.priority, r.status,
-			r.action_type, r.original_message_id, r.llm_reasoning, r.source, r.email_source_id,
+			r.action_type, r.original_message_id, r.llm_reasoning, r.llm_confidence, r.quality_flags, r.source, r.email_source_id,
 			r.created_at, r.updated_at,
 			c.name as channel_name
 		FROM reminders r
@@ -327,7 +331,7 @@ func (d *DB) GetUpcomingReminders(window time.Duration) ([]Reminder, error) {
 	query := `
 		SELECT r.id, r.user_id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
 			r.description, r.location, r.due_date, r.reminder_time, r.priority, r.status,
-			r.action_type, r.original_message_id, r.llm_reasoning, r.source, r.email_source_id,
+			r.action_type, r.original_message_id, r.llm_reasoning, r.llm_confidence, r.quality_flags, r.source, r.email_source_id,
 			r.created_at, r.updated_at,
 			COALESCE(c.name, 'Alfred') as channel_name
 		FROM reminders r
@@ -371,7 +375,7 @@ func (d *DB) GetDueRemindersForNotification(now time.Time, limit int) ([]Reminde
 	query := `
 		SELECT r.id, r.user_id, r.channel_id, r.google_event_id, r.calendar_id, r.title,
 			r.description, r.location, r.due_date, r.reminder_time, r.priority, r.status,
-			r.action_type, r.original_message_id, r.llm_reasoning, r.source, r.email_source_id,
+			r.action_type, r.original_message_id, r.llm_reasoning, r.llm_confidence, r.quality_flags, r.source, r.email_source_id,
 			r.created_at, r.updated_at,
 			COALESCE(c.name, 'Alfred') as channel_name
 		FROM reminders r

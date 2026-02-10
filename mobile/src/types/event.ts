@@ -4,7 +4,8 @@ export type EventActionType = 'create' | 'update' | 'delete';
 export interface Attendee {
   id: number;
   event_id: number;
-  name: string;
+  name?: string;
+  display_name?: string;
   email?: string;
 }
 
@@ -23,6 +24,8 @@ export interface CalendarEvent {
   action_type: EventActionType;
   original_msg_id?: number;
   llm_reasoning: string;
+  llm_confidence?: number;
+  quality_flags?: string[];
   attendees: Attendee[];
   created_at: string;
   updated_at: string;

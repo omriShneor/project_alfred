@@ -277,8 +277,10 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	timezone := s.getUserTimezone(userID)
+
 	// Parse start time
-	startTime, err := parseEventTime(req.StartTime)
+	startTime, _, err := parseEventTime(req.StartTime, timezone)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid start_time format: %v", err))
 		return
@@ -287,7 +289,7 @@ func (s *Server) handleUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	// Parse end time if provided
 	var endTime *time.Time
 	if req.EndTime != nil && *req.EndTime != "" {
-		et, err := parseEventTime(*req.EndTime)
+		et, _, err := parseEventTime(*req.EndTime, timezone)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, fmt.Sprintf("invalid end_time format: %v", err))
 			return

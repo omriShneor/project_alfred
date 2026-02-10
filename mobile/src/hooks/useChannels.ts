@@ -63,6 +63,10 @@ export function useWhatsAppTopContacts(options?: { enabled?: boolean }) {
     queryFn: getWhatsAppTopContacts,
     enabled: options?.enabled ?? true,
     staleTime: 0, // Always fetch fresh data when modal opens
+    refetchOnMount: 'always',
+    // Keep polling while the modal is open so early partial suggestions can
+    // converge to the finalized ranking after HistorySync phase 2 completes.
+    refetchInterval: (options?.enabled ?? true) ? 2000 : false,
   });
 }
 

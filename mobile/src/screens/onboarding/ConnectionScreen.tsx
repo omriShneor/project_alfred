@@ -193,18 +193,8 @@ export function ConnectionScreen() {
   const googleSelectedScopeLabels = googleScopesSelected.map(getGoogleScopeLabel);
   const googleMissingScopeLabels = googleScopesMissing.map(getGoogleScopeLabel);
   const googleButtonTitle = googleScopesMissing.length > 1
-    ? 'Authorize Gmail + Calendar'
+    ? 'Authorize Gmail & Calendar'
     : `Authorize ${googleMissingScopeLabels[0] || 'Google'}`;
-  const googleDescription = googleScopesSelected.length > 1
-    ? 'Grant Gmail and Google Calendar access so Alfred can detect events from email and sync confirmed events.'
-    : gmailEnabled
-      ? 'Grant Gmail read access so Alfred can detect reminders and events from selected senders.'
-      : 'Grant Google Calendar access so Alfred can sync confirmed events to your calendar.';
-  const googleScopeHint = googleScopesMissing.length === 0
-    ? 'All required Google scopes are already granted.'
-    : googleScopesMissing.length === googleScopesSelected.length
-      ? `We will request ${joinScopeLabels(googleSelectedScopeLabels)} scope${googleSelectedScopeLabels.length > 1 ? 's' : ''} in one authorization.`
-      : `Some scopes are already granted. We will request only ${joinScopeLabels(googleMissingScopeLabels)} now.`;
 
   // Check if all required integrations are available
   const allAvailable = React.useMemo(() => {
@@ -275,10 +265,6 @@ export function ConnectionScreen() {
   const continueTitle = allAvailable
     ? 'Continue to configuration'
     : `Connect ${remainingApps.length} more integration${remainingApps.length === 1 ? '' : 's'}`;
-
-  const heroHint = allAvailable
-    ? 'All selected integrations are connected. Continue to configure what Alfred monitors.'
-    : `Remaining: ${remainingApps.join(', ')}`;
 
   const notifyWhatsAppConnected = useCallback(async () => {
     try {
@@ -479,7 +465,6 @@ export function ConnectionScreen() {
                 ]}
               />
             </View>
-            <Text style={styles.heroHint}>{heroHint}</Text>
           </Card>
 
         {hasGoogleIntegrationSelected && (
@@ -488,12 +473,6 @@ export function ConnectionScreen() {
               <View style={styles.integrationHeader}>
                 <View style={styles.integrationInfo}>
                   <Text style={styles.integrationName}>Google</Text>
-                  <Text style={styles.integrationDescription}>
-                    {googleDescription}
-                  </Text>
-                  <Text style={styles.googleScopesHint}>
-                    {googleScopeHint}
-                  </Text>
                 </View>
                 <View style={styles.integrationStatus}>
                   <View style={[styles.statusDot, { backgroundColor: getStatusColor(googleStatus) }]} />
@@ -776,18 +755,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.text,
     marginBottom: 2,
-  },
-  integrationDescription: {
-    fontSize: 13,
-    color: colors.textSecondary,
-    lineHeight: 18,
-    marginTop: 4,
-  },
-  googleScopesHint: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    lineHeight: 17,
-    marginTop: 6,
   },
   integrationStatus: {
     flexDirection: 'row',

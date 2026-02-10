@@ -122,7 +122,7 @@ func TestManualReminderCreation(t *testing.T) {
 		assert.Equal(t, "Buy new running shoes", created.Title)
 		assert.Equal(t, "Check weekend sales", created.Description)
 		assert.Equal(t, "City Mall", created.Location)
-		assert.Equal(t, database.ReminderStatusConfirmed, created.Status)
+		assert.Equal(t, database.ReminderStatusPending, created.Status)
 		assert.Equal(t, "manual", created.Source)
 		assert.Nil(t, created.DueDate)
 	})
@@ -154,7 +154,7 @@ func TestManualReminderCreation(t *testing.T) {
 		require.NotNil(t, created.DueDate)
 		assert.WithinDuration(t, due, *created.DueDate, time.Second)
 		assert.Equal(t, database.ReminderPriorityHigh, created.Priority)
-		assert.Equal(t, database.ReminderStatusConfirmed, created.Status)
+		assert.Equal(t, database.ReminderStatusPending, created.Status)
 	})
 }
 

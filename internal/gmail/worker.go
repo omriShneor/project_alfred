@@ -9,6 +9,8 @@ import (
 	"github.com/omriShneor/project_alfred/internal/database"
 )
 
+const workerStopWaitTimeout = 5 * time.Second
+
 // DBInterface defines the database operations needed by the Gmail worker
 type DBInterface interface {
 	IsEmailProcessed(userID int64, emailID string) (bool, error)
@@ -97,8 +99,19 @@ func (w *Worker) Start() error {
 func (w *Worker) Stop() {
 	fmt.Println("Gmail worker: stopping...")
 	w.cancel()
-	w.wg.Wait()
-	fmt.Println("Gmail worker: stopped")
+
+	done := make(chan struct{})
+	go func() {
+		w.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		fmt.Println("Gmail worker: stopped")
+	case <-time.After(workerStopWaitTimeout):
+		fmt.Printf("Gmail worker: stop timed out after %v; continuing shutdown\n", workerStopWaitTimeout)
+	}
 }
 
 // SetClient updates the Gmail client (used when OAuth completes)

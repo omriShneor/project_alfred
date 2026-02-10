@@ -39,6 +39,8 @@ export function useCreateEmailSource() {
     mutationFn: (data: CreateEmailSourceRequest) => createEmailSource(data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailSources'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailTopContacts'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailContactSearch'] });
     },
   });
 }
@@ -51,6 +53,8 @@ export function useUpdateEmailSource() {
       updateEmailSource(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailSources'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailTopContacts'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailContactSearch'] });
     },
   });
 }
@@ -62,15 +66,20 @@ export function useDeleteEmailSource() {
     mutationFn: (id: number) => deleteEmailSource(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailSources'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailTopContacts'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailContactSearch'] });
     },
   });
 }
 
 // Top Contacts - cached contacts for fast discovery
-export function useTopContacts() {
+export function useTopContacts(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ['gmailTopContacts'],
     queryFn: getTopContacts,
+    enabled: options?.enabled ?? true,
+    staleTime: 0,
+    refetchOnMount: 'always',
   });
 }
 
@@ -92,6 +101,7 @@ export function useAddCustomSource() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['emailSources'] });
       queryClient.invalidateQueries({ queryKey: ['gmailTopContacts'] });
+      queryClient.invalidateQueries({ queryKey: ['gmailContactSearch'] });
     },
   });
 }

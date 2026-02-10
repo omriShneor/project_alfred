@@ -18,6 +18,8 @@ export interface Reminder {
   action_type: ReminderActionType;
   original_msg_id?: number;
   llm_reasoning: string;
+  llm_confidence?: number;
+  quality_flags?: string[];
   source?: string;
   email_source_id?: number;
   created_at: string;

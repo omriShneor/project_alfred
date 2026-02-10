@@ -7,10 +7,16 @@ import { colors } from '../theme/colors';
 const styles = StyleSheet.create({
   backButton: {
     alignItems: 'center',
+    backgroundColor: '#ffffff',
+    borderColor: colors.border,
+    borderRadius: 18,
+    borderWidth: 1,
     justifyContent: 'center',
-    marginLeft: -4,
-    minHeight: 36,
-    minWidth: 36,
+    height: 36,
+    width: 36,
+  },
+  backButtonPressed: {
+    opacity: 0.75,
   },
 });
 
@@ -41,7 +47,10 @@ export function renderHeaderBackButton(onPress: () => void) {
   return () => (
     <Pressable
       onPress={onPress}
-      style={styles.backButton}
+      style={({ pressed }) => [
+        styles.backButton,
+        pressed ? styles.backButtonPressed : undefined,
+      ]}
       hitSlop={8}
       accessibilityRole="button"
       accessibilityLabel="Go back"

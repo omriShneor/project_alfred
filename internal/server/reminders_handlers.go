@@ -10,6 +10,7 @@ import (
 
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/gcal"
+	"github.com/omriShneor/project_alfred/internal/timeutil"
 )
 
 // handleListReminders returns reminders with optional status and channel_id filters
@@ -74,8 +75,9 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var dueDate *time.Time
+	timezone := s.getUserTimezone(userID)
 	if req.DueDate != nil && strings.TrimSpace(*req.DueDate) != "" {
-		parsed, err := parseReminderDateTime(strings.TrimSpace(*req.DueDate))
+		parsed, err := parseReminderDateTime(strings.TrimSpace(*req.DueDate), timezone)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid due_date format")
 			return
@@ -85,7 +87,7 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 
 	var reminderTime *time.Time
 	if req.ReminderTime != nil && strings.TrimSpace(*req.ReminderTime) != "" {
-		parsed, err := parseReminderDateTime(strings.TrimSpace(*req.ReminderTime))
+		parsed, err := parseReminderDateTime(strings.TrimSpace(*req.ReminderTime), timezone)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid reminder_time format")
 			return
@@ -131,19 +133,9 @@ func (s *Server) handleCreateReminder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Manual reminders are user-approved by default.
-	if err := s.db.UpdateReminderStatus(created.ID, database.ReminderStatusConfirmed); err != nil {
-		respondError(w, http.StatusInternalServerError, fmt.Sprintf("failed to finalize reminder creation: %v", err))
-		return
-	}
-
-	updated, err := s.db.GetReminderByID(created.ID)
-	if err != nil {
-		respondError(w, http.StatusInternalServerError, "reminder created but could not be reloaded")
-		return
-	}
-
-	respondJSON(w, http.StatusCreated, updated)
+	// Keep newly created reminders pending so all newly created items follow the
+	// same review flow regardless of creation path.
+	respondJSON(w, http.StatusCreated, created)
 }
 
 // handleGetReminder returns a single reminder by ID
@@ -239,13 +231,15 @@ func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
 		location = strings.TrimSpace(*req.Location)
 	}
 
+	timezone := s.getUserTimezone(userID)
+
 	dueDate := reminder.DueDate
 	if req.DueDate != nil {
 		dueDateText := strings.TrimSpace(*req.DueDate)
 		if dueDateText == "" {
 			dueDate = nil
 		} else {
-			parsed, err := parseReminderDateTime(dueDateText)
+			parsed, err := parseReminderDateTime(dueDateText, timezone)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid due_date format")
 				return
@@ -260,7 +254,7 @@ func (s *Server) handleUpdateReminder(w http.ResponseWriter, r *http.Request) {
 		if reminderTimeText == "" {
 			reminderTime = nil
 		} else {
-			parsed, err := parseReminderDateTime(reminderTimeText)
+			parsed, err := parseReminderDateTime(reminderTimeText, timezone)
 			if err != nil {
 				respondError(w, http.StatusBadRequest, "invalid reminder_time format")
 				return
@@ -524,14 +518,14 @@ func (s *Server) handleDismissReminder(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, updatedReminder)
 }
 
-func parseReminderDateTime(s string) (time.Time, error) {
-	if t, err := parseEventTime(s); err == nil {
+func parseReminderDateTime(s, timezone string) (time.Time, error) {
+	if t, _, err := parseEventTime(s, timezone); err == nil {
 		return t, nil
 	}
 
-	// Accept date-only values and default them to 09:00 local time.
-	if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
-		return time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, time.Local), nil
+	// Accept date-only values and default them to 09:00 in user timezone.
+	if t, _, err := timeutil.ParseDateWithDefaultTime(s, timezone, 9, 0); err == nil {
+		return t, nil
 	}
 
 	return time.Time{}, fmt.Errorf("unrecognized datetime format")

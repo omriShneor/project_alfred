@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -37,7 +37,9 @@ export function GmailPreferencesScreen() {
   const [isConnecting, setIsConnecting] = useState(false);
 
   const { data: sources, isLoading: sourcesLoading } = useEmailSources();
-  const { data: topContacts, isLoading: contactsLoading } = useTopContacts();
+  const { data: topContacts, isLoading: contactsLoading } = useTopContacts({
+    enabled: Boolean(gmailStatus?.connected && gmailStatus?.has_scopes && addSourceModalVisible),
+  });
 
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedQuery = useDebounce(searchQuery, 300);
@@ -46,6 +48,20 @@ export function GmailPreferencesScreen() {
   const createSource = useCreateEmailSource();
   const deleteSource = useDeleteEmailSource();
   const addCustomSource = useAddCustomSource();
+
+  const trackedSenderIds = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const source of sources || []) {
+      if (source.type !== 'sender' || !source.enabled) {
+        continue;
+      }
+      const normalized = source.identifier.trim().toLowerCase();
+      if (normalized) {
+        map.set(normalized, source.id);
+      }
+    }
+    return map;
+  }, [sources]);
 
   // Handle connecting Gmail (requesting Gmail scope)
   const handleConnectGmail = async () => {
@@ -85,26 +101,32 @@ export function GmailPreferencesScreen() {
   };
 
   // Map Gmail TopContact to SourceTopContact for the shared modal
-  const mappedContacts: SourceTopContact[] = (topContacts || []).map((contact: TopContact) => ({
-    identifier: contact.email,
-    name: contact.name || contact.email,
-    secondary_label: contact.email,
-    message_count: contact.email_count,
-    is_tracked: contact.is_tracked,
-    channel_id: contact.source_id,
-    type: 'sender' as const,
-  }));
+  const mappedContacts: SourceTopContact[] = (topContacts || []).map((contact: TopContact) => {
+    const normalizedEmail = contact.email.trim().toLowerCase();
+    return {
+      identifier: normalizedEmail,
+      name: contact.name || contact.email,
+      secondary_label: contact.email,
+      message_count: contact.email_count,
+      is_tracked: trackedSenderIds.has(normalizedEmail),
+      channel_id: trackedSenderIds.get(normalizedEmail),
+      type: 'sender' as const,
+    };
+  });
 
   // Map Gmail search results to SourceTopContact format
-  const mappedSearchResults: SourceTopContact[] | undefined = gmailSearchResults?.map((contact: TopContact) => ({
-    identifier: contact.email,
-    name: contact.name || contact.email,
-    secondary_label: contact.email,
-    message_count: contact.email_count,
-    is_tracked: contact.is_tracked,
-    channel_id: contact.source_id,
-    type: 'sender' as const,
-  }));
+  const mappedSearchResults: SourceTopContact[] | undefined = gmailSearchResults?.map((contact: TopContact) => {
+    const normalizedEmail = contact.email.trim().toLowerCase();
+    return {
+      identifier: normalizedEmail,
+      name: contact.name || contact.email,
+      secondary_label: contact.email,
+      message_count: contact.email_count,
+      is_tracked: trackedSenderIds.has(normalizedEmail),
+      channel_id: trackedSenderIds.get(normalizedEmail),
+      type: 'sender' as const,
+    };
+  });
 
   const handleDeleteSource = (source: EmailSource) => {
     Alert.alert(
@@ -153,13 +175,11 @@ export function GmailPreferencesScreen() {
   // Handler for adding selected contacts from the modal
   const handleAddContacts = async (contacts: SourceTopContact[]) => {
     for (const contact of contacts) {
-      if (!contact.is_tracked) {
-        await createSource.mutateAsync({
-          type: 'sender',
-          identifier: contact.identifier,
-          name: contact.name,
-        });
-      }
+      await createSource.mutateAsync({
+        type: 'sender',
+        identifier: contact.identifier,
+        name: contact.name,
+      });
     }
   };
 

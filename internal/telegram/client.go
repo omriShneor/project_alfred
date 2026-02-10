@@ -393,11 +393,7 @@ func (c *Client) Handle(ctx context.Context, u tg.UpdatesClass) error {
 	}
 
 	// Forward updates to handler
-	select {
-	case c.updatesChan <- u:
-	default:
-		fmt.Println("Telegram: Updates channel full, dropping update")
-	}
+	c.updatesChan <- u
 
 	return nil
 }

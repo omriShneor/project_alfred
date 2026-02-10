@@ -20,20 +20,8 @@ type Handler struct {
 	users            map[int64]*tg.User // Cache of user info
 }
 
-// NewHandler creates a new Telegram message handler
-func NewHandler(db *database.DB, debugAllMessages bool, state *sse.State) *Handler {
-	return &Handler{
-		UserID:           0, // Will be set by ClientManager in multi-user mode
-		db:               db,
-		debugAllMessages: debugAllMessages,
-		messageChan:      make(chan source.Message, 100),
-		state:            state,
-		users:            make(map[int64]*tg.User),
-	}
-}
-
-// NewHandlerForUser creates a handler for a specific user (multi-user mode)
-func NewHandlerForUser(userID int64, db *database.DB) *Handler {
+// NewHandler creates a handler for a specific user (multi-user mode)
+func NewHandler(userID int64, db *database.DB) *Handler {
 	return &Handler{
 		UserID:           userID,
 		db:               db,
@@ -153,9 +141,8 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 	// Log message
 	fmt.Printf("[Telegram DM: %s] %s\n", senderName, truncateText(text, 100))
 
-	// Send to processor
-	select {
-	case h.messageChan <- source.Message{
+	// Send to processor (blocking for reliability).
+	h.messageChan <- source.Message{
 		UserID:     h.UserID,
 		SourceType: source.SourceTypeTelegram,
 		SourceID:   sourceID,
@@ -164,9 +151,6 @@ func (h *Handler) handleNewMessage(msg tg.MessageClass) {
 		SenderName: senderName,
 		Text:       text,
 		Timestamp:  time.Unix(int64(message.Date), 0),
-	}:
-	default:
-		fmt.Println("Telegram: message channel full, dropping message")
 	}
 }
 
@@ -205,8 +189,7 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 
 	fmt.Printf("[Telegram DM: %s] %s\n", senderName, truncateText(msg.Message, 100))
 
-	select {
-	case h.messageChan <- source.Message{
+	h.messageChan <- source.Message{
 		UserID:     h.UserID,
 		SourceType: source.SourceTypeTelegram,
 		SourceID:   sourceID,
@@ -215,9 +198,6 @@ func (h *Handler) handleShortMessage(msg *tg.UpdateShortMessage) {
 		SenderName: senderName,
 		Text:       msg.Message,
 		Timestamp:  time.Unix(int64(msg.Date), 0),
-	}:
-	default:
-		fmt.Println("Telegram: message channel full, dropping message")
 	}
 }
 

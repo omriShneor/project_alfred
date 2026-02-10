@@ -218,6 +218,13 @@ func HandleUpdateReminder(_ context.Context, input map[string]any) (string, erro
 	if parsed.AlfredReminderID == 0 {
 		return "", fmt.Errorf("alfred_reminder_id is required")
 	}
+	if parsed.Title == "" &&
+		parsed.Description == "" &&
+		parsed.DueDate == "" &&
+		parsed.ReminderTime == "" &&
+		parsed.Priority == "" {
+		return "", fmt.Errorf("update requires at least one changed field")
+	}
 
 	result, err := json.Marshal(map[string]any{
 		"status":   "success",

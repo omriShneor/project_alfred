@@ -19,7 +19,9 @@ export function AttendeeChips({ attendees }: AttendeeChipsProps) {
         <View style={styles.chips}>
           {attendees.map((attendee) => (
             <View key={attendee.id} style={styles.chip}>
-              <Text style={styles.chipText}>{attendee.name}</Text>
+              <Text style={styles.chipText}>
+                {attendee.display_name || attendee.name || attendee.email || 'Guest'}
+              </Text>
             </View>
           ))}
         </View>

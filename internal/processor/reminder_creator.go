@@ -3,12 +3,14 @@ package processor
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/agent"
 	"github.com/omriShneor/project_alfred/internal/database"
 	"github.com/omriShneor/project_alfred/internal/notify"
 	"github.com/omriShneor/project_alfred/internal/source"
+	"github.com/omriShneor/project_alfred/internal/timeutil"
 )
 
 // ReminderCreationParams contains parameters for creating a reminder from analysis
@@ -71,20 +73,31 @@ func (rc *ReminderCreator) createReminder(_ context.Context, params ReminderCrea
 	}
 
 	reminderData := params.Analysis.Reminder
+	userTimezone, _ := rc.db.GetUserTimezone(params.UserID)
+	if userTimezone == "" {
+		userTimezone = "UTC"
+	}
+	timezoneFallback := false
 
 	// Parse due date
-	parsedDueDate, err := parseReminderTime(reminderData.DueDate)
+	parsedDueDate, fallback, err := parseReminderTime(reminderData.DueDate, userTimezone)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse due date: %w", err)
+	}
+	if fallback {
+		timezoneFallback = true
 	}
 	dueDate := &parsedDueDate
 
 	// Parse reminder time (optional, defaults to due date)
 	var reminderTime *time.Time
 	if reminderData.ReminderTime != "" {
-		rt, err := parseReminderTime(reminderData.ReminderTime)
+		rt, fallback, err := parseReminderTime(reminderData.ReminderTime, userTimezone)
 		if err == nil {
 			reminderTime = &rt
+		}
+		if fallback {
+			timezoneFallback = true
 		}
 	}
 
@@ -101,14 +114,16 @@ func (rc *ReminderCreator) createReminder(_ context.Context, params ReminderCrea
 		UserID:        params.UserID,
 		ChannelID:     params.ChannelID,
 		CalendarID:    calendarID,
-		Title:         reminderData.Title,
-		Description:   reminderData.Description,
+		Title:         strings.TrimSpace(reminderData.Title),
+		Description:   strings.TrimSpace(reminderData.Description),
 		DueDate:       dueDate,
 		ReminderTime:  reminderTime,
 		Priority:      priority,
 		ActionType:    database.ReminderActionCreate,
 		OriginalMsgID: params.MessageID,
 		LLMReasoning:  params.Analysis.Reasoning,
+		LLMConfidence: params.Analysis.Confidence,
+		QualityFlags:  buildQualityFlags(params.Analysis.Confidence, timezoneFallback),
 		Source:        string(params.SourceType),
 	}
 
@@ -145,6 +160,11 @@ func (rc *ReminderCreator) updateReminder(_ context.Context, params ReminderCrea
 	}
 
 	reminderData := params.Analysis.Reminder
+	userTimezone, _ := rc.db.GetUserTimezone(params.UserID)
+	if userTimezone == "" {
+		userTimezone = "UTC"
+	}
+	timezoneFallback := false
 
 	// Find the existing reminder by alfred_reminder_id
 	if reminderData.AlfredReminderRef == 0 {
@@ -174,17 +194,23 @@ func (rc *ReminderCreator) updateReminder(_ context.Context, params ReminderCrea
 
 	dueDate := existing.DueDate
 	if reminderData.DueDate != "" {
-		parsed, err := parseReminderTime(reminderData.DueDate)
+		parsed, fallback, err := parseReminderTime(reminderData.DueDate, userTimezone)
 		if err == nil {
 			dueDate = &parsed
+		}
+		if fallback {
+			timezoneFallback = true
 		}
 	}
 
 	var reminderTime *time.Time
 	if reminderData.ReminderTime != "" {
-		rt, err := parseReminderTime(reminderData.ReminderTime)
+		rt, fallback, err := parseReminderTime(reminderData.ReminderTime, userTimezone)
 		if err == nil {
 			reminderTime = &rt
+		}
+		if fallback {
+			timezoneFallback = true
 		}
 	} else {
 		reminderTime = existing.ReminderTime
@@ -207,6 +233,11 @@ func (rc *ReminderCreator) updateReminder(_ context.Context, params ReminderCrea
 	); err != nil {
 		return nil, fmt.Errorf("failed to update pending reminder: %w", err)
 	}
+	_, _ = rc.db.Exec(`
+		UPDATE reminders
+		SET llm_reasoning = ?, llm_confidence = ?, quality_flags = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, params.Analysis.Reasoning, params.Analysis.Confidence, qualityFlagsJSON(buildQualityFlags(params.Analysis.Confidence, timezoneFallback)), existing.ID)
 
 	fmt.Printf("Updated pending reminder: %s (ID: %d)\n", title, existing.ID)
 
@@ -253,27 +284,14 @@ func (rc *ReminderCreator) deleteReminder(_ context.Context, params ReminderCrea
 }
 
 // parseReminderTime parses a time string in various formats
-func parseReminderTime(timeStr string) (time.Time, error) {
-	// Try RFC3339 first
-	t, err := time.Parse(time.RFC3339, timeStr)
-	if err == nil {
-		return t, nil
+func parseReminderTime(timeStr, timezone string) (time.Time, bool, error) {
+	if t, fallback, err := timeutil.ParseDateTime(timeStr, timezone); err == nil {
+		return t, fallback, nil
 	}
-
-	// Try ISO 8601 without timezone
-	t, err = time.Parse("2006-01-02T15:04:05", timeStr)
-	if err == nil {
-		return t, nil
+	if t, fallback, err := timeutil.ParseDateWithDefaultTime(timeStr, timezone, 9, 0); err == nil {
+		return t, fallback, nil
 	}
-
-	// Try date only
-	t, err = time.Parse("2006-01-02", timeStr)
-	if err == nil {
-		// Default to 9 AM if only date provided
-		return time.Date(t.Year(), t.Month(), t.Day(), 9, 0, 0, 0, time.Local), nil
-	}
-
-	return time.Time{}, fmt.Errorf("unable to parse time: %s", timeStr)
+	return time.Time{}, false, fmt.Errorf("unable to parse time: %s", timeStr)
 }
 
 // mapReminderPriority maps a string priority to ReminderPriority

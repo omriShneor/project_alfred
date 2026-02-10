@@ -725,7 +725,7 @@ func TestParseEventData_FloatConversion(t *testing.T) {
 }
 
 func TestParseAgentOutput_MultipleActionTools(t *testing.T) {
-	// If multiple action tools are called, the last one should take precedence
+	// If multiple action tools are called, parser should fail closed to no-action.
 	output := &agent.AgentOutput{
 		ToolCalls: []agent.ToolCall{
 			{
@@ -756,9 +756,8 @@ func TestParseAgentOutput_MultipleActionTools(t *testing.T) {
 	result, err := parseAgentOutput(output)
 
 	require.NoError(t, err)
-	// The last action tool (no_calendar_action) should be used
 	assert.False(t, result.HasEvent)
 	assert.Equal(t, "none", result.Action)
-	assert.Equal(t, "Actually, no action needed", result.Reasoning)
-	assert.Equal(t, 0.9, result.Confidence)
+	assert.Equal(t, "Ambiguous tool output: multiple action tools called", result.Reasoning)
+	assert.Equal(t, 0.0, result.Confidence)
 }

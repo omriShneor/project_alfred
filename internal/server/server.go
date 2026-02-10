@@ -110,6 +110,11 @@ func (s *Server) InitializeClients(cfg ClientsConfig) {
 // SetClientManager sets the ClientManager for per-user WhatsApp/Telegram clients
 func (s *Server) SetClientManager(mgr *clients.ClientManager) {
 	s.clientManager = mgr
+	if mgr != nil {
+		mgr.SetWhatsAppHistorySyncBackfillHook(func(userID int64, channel *database.SourceChannel) {
+			s.startChannelBackfill(userID, channel)
+		})
+	}
 }
 
 // GetClientManager returns the ClientManager
@@ -201,6 +206,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/auth/google/callback", s.handleAuthGoogleCallback)
 	mux.HandleFunc("POST /api/auth/google/logout", s.handleAuthLogout)
 	mux.HandleFunc("GET /api/auth/me", s.requireAuth(s.handleAuthMe))
+	mux.HandleFunc("PUT /api/auth/me", s.requireAuth(s.handleUpdateAuthMe))
 
 	// Incremental authorization (requires auth - user must be logged in to add scopes)
 	mux.HandleFunc("POST /api/auth/google/add-scopes", s.requireAuth(s.handleRequestAdditionalScopes))

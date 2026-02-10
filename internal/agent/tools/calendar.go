@@ -32,6 +32,15 @@ extracted from the message context.`,
 			"type":        "string",
 			"description": "Event location if mentioned. Optional.",
 		},
+		"attendees": agent.PropertyArray("Attendees with known emails (optional)", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":  agent.PropertyString("Attendee display name"),
+				"email": agent.PropertyString("Attendee email (required to invite)"),
+				"phone": agent.PropertyString("Attendee phone if mentioned"),
+				"role":  agent.PropertyEnum("Attendee role", []string{"organizer", "required", "optional"}),
+			},
+		}),
 		"confidence": agent.PropertyNumber("Confidence score from 0.0 to 1.0 that this is a real event"),
 		"reasoning": agent.PropertyString("Brief explanation of why this event should be created"),
 	}, []string{"title", "start_time", "confidence", "reasoning"}),
@@ -74,6 +83,15 @@ alfred_event_id. Only include fields that are being changed.`,
 			"type":        "string",
 			"description": "Updated location. Optional - only if changed.",
 		},
+		"attendees": agent.PropertyArray("Updated attendee list (optional)", map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"name":  agent.PropertyString("Attendee display name"),
+				"email": agent.PropertyString("Attendee email"),
+				"phone": agent.PropertyString("Attendee phone"),
+				"role":  agent.PropertyEnum("Attendee role", []string{"organizer", "required", "optional"}),
+			},
+		}),
 		"confidence": agent.PropertyNumber("Confidence score from 0.0 to 1.0"),
 		"reasoning": agent.PropertyString("Brief explanation of what is being updated and why"),
 	}, []string{"confidence", "reasoning"}),
@@ -120,6 +138,7 @@ type CreateEventInput struct {
 	StartTime   string  `json:"start_time"`
 	EndTime     string  `json:"end_time,omitempty"`
 	Location    string  `json:"location,omitempty"`
+	Attendees   []Attendee `json:"attendees,omitempty"`
 	Confidence  float64 `json:"confidence"`
 	Reasoning   string  `json:"reasoning"`
 }
@@ -133,6 +152,7 @@ type UpdateEventInput struct {
 	StartTime      string  `json:"start_time,omitempty"`
 	EndTime        string  `json:"end_time,omitempty"`
 	Location       string  `json:"location,omitempty"`
+	Attendees      []Attendee `json:"attendees,omitempty"`
 	Confidence     float64 `json:"confidence"`
 	Reasoning      string  `json:"reasoning"`
 }
@@ -172,6 +192,26 @@ func HandleCreateCalendarEvent(_ context.Context, input map[string]any) (string,
 	}
 	if v, ok := input["confidence"].(float64); ok {
 		parsed.Confidence = v
+	}
+	if attendeesRaw, ok := input["attendees"].([]any); ok {
+		for _, a := range attendeesRaw {
+			if attendeeMap, ok := a.(map[string]any); ok {
+				attendee := Attendee{}
+				if name, ok := attendeeMap["name"].(string); ok {
+					attendee.Name = name
+				}
+				if email, ok := attendeeMap["email"].(string); ok {
+					attendee.Email = email
+				}
+				if phone, ok := attendeeMap["phone"].(string); ok {
+					attendee.Phone = phone
+				}
+				if role, ok := attendeeMap["role"].(string); ok {
+					attendee.Role = role
+				}
+				parsed.Attendees = append(parsed.Attendees, attendee)
+			}
+		}
 	}
 	if v, ok := input["reasoning"].(string); ok {
 		parsed.Reasoning = v
@@ -225,6 +265,26 @@ func HandleUpdateCalendarEvent(_ context.Context, input map[string]any) (string,
 	if v, ok := input["confidence"].(float64); ok {
 		parsed.Confidence = v
 	}
+	if attendeesRaw, ok := input["attendees"].([]any); ok {
+		for _, a := range attendeesRaw {
+			if attendeeMap, ok := a.(map[string]any); ok {
+				attendee := Attendee{}
+				if name, ok := attendeeMap["name"].(string); ok {
+					attendee.Name = name
+				}
+				if email, ok := attendeeMap["email"].(string); ok {
+					attendee.Email = email
+				}
+				if phone, ok := attendeeMap["phone"].(string); ok {
+					attendee.Phone = phone
+				}
+				if role, ok := attendeeMap["role"].(string); ok {
+					attendee.Role = role
+				}
+				parsed.Attendees = append(parsed.Attendees, attendee)
+			}
+		}
+	}
 	if v, ok := input["reasoning"].(string); ok {
 		parsed.Reasoning = v
 	}
@@ -232,6 +292,14 @@ func HandleUpdateCalendarEvent(_ context.Context, input map[string]any) (string,
 	// Validate - must reference an existing event
 	if parsed.AlfredEventID == 0 && parsed.GoogleEventID == "" {
 		return "", fmt.Errorf("either alfred_event_id or google_event_id is required")
+	}
+	if parsed.Title == "" &&
+		parsed.Description == "" &&
+		parsed.StartTime == "" &&
+		parsed.EndTime == "" &&
+		parsed.Location == "" &&
+		len(parsed.Attendees) == 0 {
+		return "", fmt.Errorf("update requires at least one changed field")
 	}
 
 	result, err := json.Marshal(map[string]any{

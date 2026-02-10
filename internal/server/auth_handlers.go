@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/omriShneor/project_alfred/internal/auth"
 	"golang.org/x/oauth2"
@@ -169,6 +170,7 @@ func (s *Server) handleAuthGoogleCallback(w http.ResponseWriter, r *http.Request
 			"email":      user.Email,
 			"name":       user.Name,
 			"avatar_url": user.AvatarURL,
+			"timezone":   user.Timezone,
 		},
 	})
 }
@@ -229,6 +231,58 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"email":      user.Email,
 		"name":       user.Name,
 		"avatar_url": user.AvatarURL,
+		"timezone":   user.Timezone,
+	})
+}
+
+// handleUpdateAuthMe updates user profile settings.
+// PUT /api/auth/me
+func (s *Server) handleUpdateAuthMe(w http.ResponseWriter, r *http.Request) {
+	userID, err := getUserID(r)
+	if err != nil {
+		respondError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if s.authService == nil {
+		respondError(w, http.StatusServiceUnavailable, "authentication not configured")
+		return
+	}
+
+	var req struct {
+		Timezone string `json:"timezone"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.Timezone == "" {
+		respondError(w, http.StatusBadRequest, "timezone is required")
+		return
+	}
+	if _, err := time.LoadLocation(req.Timezone); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid timezone")
+		return
+	}
+
+	if err := s.authService.UpdateUserTimezone(userID, req.Timezone); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to update timezone")
+		return
+	}
+
+	user, err := s.authService.GetUserByID(userID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to fetch updated user")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"id":         user.ID,
+		"google_id":  user.GoogleID,
+		"email":      user.Email,
+		"name":       user.Name,
+		"avatar_url": user.AvatarURL,
+		"timezone":   user.Timezone,
 	})
 }
 

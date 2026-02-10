@@ -31,11 +31,15 @@ func (s *Server) handleGetAppStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check actual connection status
-	// For WhatsApp/Telegram in multi-user mode, we check if ClientManager is available
 	whatsappConnected := false
 	if s.clientManager != nil && userID > 0 {
-		if waClient, err := s.clientManager.GetWhatsAppClient(userID); err == nil {
+		if waClient, ok := s.clientManager.PeekWhatsAppClient(userID); ok {
 			whatsappConnected = waClient.IsLoggedIn()
+		}
+		if !whatsappConnected {
+			if waSession, sessionErr := s.db.GetWhatsAppSession(userID); sessionErr == nil && waSession != nil && waSession.Connected {
+				whatsappConnected = true
+			}
 		}
 	}
 
@@ -207,6 +211,20 @@ func (s *Server) handleResetOnboarding(w http.ResponseWriter, r *http.Request) {
 		s.state.SetGCalStatus("pending")
 	}
 
-	// Return updated status
-	s.handleGetAppStatus(w, r)
+	// Return a deterministic reset response without triggering status-side effects.
+	respondJSON(w, http.StatusOK, AppStatusResponse{
+		OnboardingComplete: false,
+		WhatsApp: ConnectionStatus{
+			Enabled:   false,
+			Connected: false,
+		},
+		Gmail: ConnectionStatus{
+			Enabled:   false,
+			Connected: false,
+		},
+		GoogleCalendar: ConnectionStatus{
+			Enabled:   false,
+			Connected: false,
+		},
+	})
 }

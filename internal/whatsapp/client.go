@@ -3,7 +3,6 @@ package whatsapp
 import (
 	"context"
 	"fmt"
-	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/omriShneor/project_alfred/internal/notify"
@@ -176,7 +175,6 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 				if state != nil {
 					state.SetWhatsAppStatus("connected")
 				}
-				time.Sleep(5 * time.Second) // Wait 5 seconds for the App UI to complete.
 				if c.notifyService != nil {
 					c.notifyService.NotifyWhatsAppConnected(context.Background(), c.UserID)
 				}
@@ -196,6 +194,13 @@ func (c *Client) PairWithPhone(ctx context.Context, phone string, state *sse.Sta
 
 func (c *Client) IsLoggedIn() bool {
 	return c.WAClient.Store.ID != nil
+}
+
+// SetHistorySyncBackfillHook configures a callback invoked after HistorySync stores messages.
+func (c *Client) SetHistorySyncBackfillHook(hook HistorySyncBackfillHook) {
+	if c.handler != nil {
+		c.handler.SetHistorySyncBackfillHook(hook)
+	}
 }
 
 // SetUserID sets the user ID on both the client and its handler

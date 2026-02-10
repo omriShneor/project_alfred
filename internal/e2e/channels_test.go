@@ -116,10 +116,11 @@ func TestChannelCRUD(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-		// Verify deleted - GetChannelByID returns nil, nil when not found
+		// Verify soft-delete (disabled) so history can be preserved on re-enable.
 		deleted, err := ts.DB.GetSourceChannelByID(ts.TestUser.ID, channel.ID)
-		assert.NoError(t, err) // No error on not found
-		assert.Nil(t, deleted) // But channel should be nil
+		require.NoError(t, err)
+		require.NotNil(t, deleted)
+		assert.False(t, deleted.Enabled)
 	})
 }
 

@@ -302,6 +302,52 @@ func TestHandleWhatsAppTopContacts(t *testing.T) {
 	assert.Equal(t, 1, resp.Contacts[1].MessageCount)
 }
 
+func TestHandleWhatsAppTopContacts_UsesChannelStatsDuringSync(t *testing.T) {
+	s := createTestServer(t)
+	user := database.CreateTestUser(t, s.db)
+
+	ch1, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"1111111111@s.whatsapp.net",
+		"Alice",
+	)
+	require.NoError(t, err)
+	ch2, err := s.db.CreateSourceChannel(
+		user.ID,
+		source.SourceTypeWhatsApp,
+		source.ChannelTypeSender,
+		"2222222222@s.whatsapp.net",
+		"Bob",
+	)
+	require.NoError(t, err)
+
+	now := time.Now()
+	require.NoError(t, s.db.UpdateChannelStats(ch1.ID, 34, &now))
+	require.NoError(t, s.db.UpdateChannelStats(ch2.ID, 120, &now))
+
+	req := httptest.NewRequest("GET", "/api/whatsapp/top-contacts", nil)
+	req = withAuthContext(req, user)
+	w := httptest.NewRecorder()
+
+	s.handleWhatsAppTopContacts(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp struct {
+		Contacts []TopContactResponse `json:"contacts"`
+	}
+	err = json.Unmarshal(w.Body.Bytes(), &resp)
+	require.NoError(t, err)
+
+	require.Len(t, resp.Contacts, 2)
+	assert.Equal(t, ch2.Identifier, resp.Contacts[0].Identifier)
+	assert.Equal(t, 120, resp.Contacts[0].MessageCount)
+	assert.Equal(t, ch1.Identifier, resp.Contacts[1].Identifier)
+	assert.Equal(t, 34, resp.Contacts[1].MessageCount)
+}
+
 func TestHandleWhatsAppTopContacts_EmptyHistory(t *testing.T) {
 	s := createTestServer(t)
 	user := database.CreateTestUser(t, s.db)

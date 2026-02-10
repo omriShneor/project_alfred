@@ -15,6 +15,7 @@ export interface User {
   email: string;
   name: string;
   avatarUrl?: string;
+  timezone?: string;
 }
 
 interface AuthContextType {
@@ -61,6 +62,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
                 email: userData.email,
                 name: userData.name,
                 avatarUrl: userData.avatar_url,
+                timezone: userData.timezone,
               });
             } else {
               // Token invalid, clear auth data
@@ -73,6 +75,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
               email: storedUser.email,
               name: storedUser.name,
               avatarUrl: storedUser.avatarUrl,
+              timezone: storedUser.timezone,
             });
           }
         }
@@ -111,6 +114,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         email: data.user.email,
         name: data.user.name,
         avatarUrl: data.user.avatar_url,
+        timezone: data.user.timezone,
       };
 
       await setStoredUser({
@@ -118,6 +122,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         email: newUser.email,
         name: newUser.name,
         avatarUrl: newUser.avatarUrl,
+        timezone: newUser.timezone,
       });
 
       setUser(newUser);

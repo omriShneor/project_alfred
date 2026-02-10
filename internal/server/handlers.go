@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/omriShneor/project_alfred/internal/auth"
+	"github.com/omriShneor/project_alfred/internal/timeutil"
 )
 
 // getUserID extracts the authenticated user's ID from the request context.
@@ -66,23 +67,17 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
 }
 
-// parseEventTime parses a time string in various formats
-func parseEventTime(s string) (time.Time, error) {
-	formats := []string{
-		time.RFC3339,
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04",
-		"2006-01-02 15:04:05",
-		"2006-01-02 15:04",
-	}
+// parseEventTime parses a time string with user timezone fallback.
+func parseEventTime(s, timezone string) (time.Time, bool, error) {
+	return timeutil.ParseDateTime(s, timezone)
+}
 
-	for _, format := range formats {
-		if t, err := time.ParseInLocation(format, s, time.Local); err == nil {
-			return t, nil
-		}
+func (s *Server) getUserTimezone(userID int64) string {
+	tz, err := s.db.GetUserTimezone(userID)
+	if err != nil || tz == "" {
+		return "UTC"
 	}
-
-	return time.Time{}, fmt.Errorf("unrecognized time format")
+	return tz
 }
 
 // Onboarding API Handlers

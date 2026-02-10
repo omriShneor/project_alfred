@@ -2,6 +2,7 @@ package database
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -42,12 +43,37 @@ type CalendarEvent struct {
 	ActionType    EventActionType `json:"action_type"`
 	OriginalMsgID *int64          `json:"original_message_id,omitempty"`
 	LLMReasoning  string          `json:"llm_reasoning,omitempty"`
+	LLMConfidence float64         `json:"llm_confidence"`
+	QualityFlags  []string        `json:"quality_flags,omitempty"`
 	CreatedAt     time.Time       `json:"created_at"`
 	UpdatedAt     time.Time       `json:"updated_at"`
 	ChannelName   string          `json:"channel_name,omitempty"` // Joined from channels table
 	// ChannelSourceType helps callers distinguish imported calendar events from Alfred-created ones.
 	ChannelSourceType string     `json:"channel_source_type,omitempty"` // Joined from channels.source_type
 	Attendees         []Attendee `json:"attendees,omitempty"`           // Participants for this event
+}
+
+func decodeQualityFlags(raw sql.NullString) []string {
+	if !raw.Valid || raw.String == "" {
+		return []string{}
+	}
+
+	var flags []string
+	if err := json.Unmarshal([]byte(raw.String), &flags); err != nil {
+		return []string{}
+	}
+	return flags
+}
+
+func encodeQualityFlags(flags []string) string {
+	if len(flags) == 0 {
+		return "[]"
+	}
+	b, err := json.Marshal(flags)
+	if err != nil {
+		return "[]"
+	}
+	return string(b)
 }
 
 // CreatePendingEvent creates a new pending event in the database
@@ -57,12 +83,12 @@ func (d *DB) CreatePendingEvent(event *CalendarEvent) (*CalendarEvent, error) {
 		INSERT INTO calendar_events (
 			user_id, channel_id, google_event_id, calendar_id, title, description,
 			start_time, end_time, location, status, action_type,
-			original_message_id, llm_reasoning
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			original_message_id, llm_reasoning, llm_confidence, quality_flags
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		event.UserID, event.ChannelID, event.GoogleEventID, event.CalendarID, event.Title, event.Description,
 		event.StartTime, event.EndTime, event.Location, EventStatusPending, event.ActionType,
-		event.OriginalMsgID, event.LLMReasoning,
+		event.OriginalMsgID, event.LLMReasoning, event.LLMConfidence, encodeQualityFlags(event.QualityFlags),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create event: %w", err)
@@ -87,11 +113,12 @@ func (d *DB) GetEventByID(id int64) (*CalendarEvent, error) {
 	var googleEventID sql.NullString
 	var endTimeNull sql.NullTime
 	var origMsgIDNull sql.NullInt64
+	var qualityFlags sql.NullString
 
 	err := d.QueryRow(`
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			c.name as channel_name
 		FROM calendar_events e
 		JOIN channels c ON e.channel_id = c.id
@@ -99,7 +126,7 @@ func (d *DB) GetEventByID(id int64) (*CalendarEvent, error) {
 	`, id).Scan(
 		&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 		&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 		&event.ChannelName,
 	)
 	if err != nil {
@@ -115,6 +142,7 @@ func (d *DB) GetEventByID(id int64) (*CalendarEvent, error) {
 	if origMsgIDNull.Valid {
 		event.OriginalMsgID = &origMsgIDNull.Int64
 	}
+	event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 	// Fetch attendees for this event
 	attendees, err := d.GetEventAttendees(id)
@@ -132,11 +160,12 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 	var gEventID sql.NullString
 	var endTimeNull sql.NullTime
 	var origMsgIDNull sql.NullInt64
+	var qualityFlags sql.NullString
 
 	err := d.QueryRow(`
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			c.name as channel_name
 		FROM calendar_events e
 		JOIN channels c ON e.channel_id = c.id
@@ -144,7 +173,7 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 	`, googleEventID).Scan(
 		&event.ID, &event.UserID, &event.ChannelID, &gEventID, &event.CalendarID, &event.Title,
 		&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 		&event.ChannelName,
 	)
 	if err != nil {
@@ -160,6 +189,7 @@ func (d *DB) GetEventByGoogleID(googleEventID string) (*CalendarEvent, error) {
 	if origMsgIDNull.Valid {
 		event.OriginalMsgID = &origMsgIDNull.Int64
 	}
+	event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 	return &event, nil
 }
@@ -171,11 +201,12 @@ func (d *DB) GetEventByGoogleIDForUser(userID int64, googleEventID string) (*Cal
 	var gEventID sql.NullString
 	var endTimeNull sql.NullTime
 	var origMsgIDNull sql.NullInt64
+	var qualityFlags sql.NullString
 
 	err := d.QueryRow(`
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			COALESCE(c.name, 'Alfred') as channel_name
 		FROM calendar_events e
 		LEFT JOIN channels c ON e.channel_id = c.id
@@ -185,7 +216,7 @@ func (d *DB) GetEventByGoogleIDForUser(userID int64, googleEventID string) (*Cal
 	`, userID, googleEventID).Scan(
 		&event.ID, &event.UserID, &event.ChannelID, &gEventID, &event.CalendarID, &event.Title,
 		&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+		&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 		&event.ChannelName,
 	)
 	if err == sql.ErrNoRows {
@@ -204,6 +235,7 @@ func (d *DB) GetEventByGoogleIDForUser(userID int64, googleEventID string) (*Cal
 	if origMsgIDNull.Valid {
 		event.OriginalMsgID = &origMsgIDNull.Int64
 	}
+	event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 	attendees, err := d.GetEventAttendees(event.ID)
 	if err != nil {
@@ -219,7 +251,7 @@ func (d *DB) ListEvents(userID int64, status *EventStatus, channelID *int64) ([]
 	query := `
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			c.name as channel_name
 		FROM calendar_events e
 		JOIN channels c ON e.channel_id = c.id
@@ -251,11 +283,12 @@ func (d *DB) ListEvents(userID int64, status *EventStatus, channelID *int64) ([]
 		var googleEventID sql.NullString
 		var endTimeNull sql.NullTime
 		var origMsgIDNull sql.NullInt64
+		var qualityFlags sql.NullString
 
 		if err := rows.Scan(
 			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan event: %w", err)
@@ -270,6 +303,7 @@ func (d *DB) ListEvents(userID int64, status *EventStatus, channelID *int64) ([]
 		if origMsgIDNull.Valid {
 			event.OriginalMsgID = &origMsgIDNull.Int64
 		}
+		event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 		events = append(events, event)
 	}
@@ -375,7 +409,7 @@ func (d *DB) GetActiveEventsForChannel(userID int64, channelID int64) ([]Calenda
 	query := `
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			c.name as channel_name
 		FROM calendar_events e
 		JOIN channels c ON e.channel_id = c.id
@@ -395,11 +429,12 @@ func (d *DB) GetActiveEventsForChannel(userID int64, channelID int64) ([]Calenda
 		var googleEventID sql.NullString
 		var endTimeNull sql.NullTime
 		var origMsgIDNull sql.NullInt64
+		var qualityFlags sql.NullString
 
 		if err := rows.Scan(
 			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan event: %w", err)
@@ -414,6 +449,7 @@ func (d *DB) GetActiveEventsForChannel(userID int64, channelID int64) ([]Calenda
 		if origMsgIDNull.Valid {
 			event.OriginalMsgID = &origMsgIDNull.Int64
 		}
+		event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 		events = append(events, event)
 	}
@@ -454,7 +490,7 @@ func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 	query := `
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			COALESCE(c.name, 'Alfred') as channel_name,
 			COALESCE(c.source_type, 'whatsapp') as channel_source_type
 		FROM calendar_events e
@@ -477,11 +513,12 @@ func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 		var googleEventID sql.NullString
 		var endTimeNull sql.NullTime
 		var origMsgIDNull sql.NullInt64
+		var qualityFlags sql.NullString
 
 		if err := rows.Scan(
 			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName, &event.ChannelSourceType,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan event: %w", err)
@@ -496,6 +533,7 @@ func (d *DB) GetTodayEvents(userID int64) ([]CalendarEvent, error) {
 		if origMsgIDNull.Valid {
 			event.OriginalMsgID = &origMsgIDNull.Int64
 		}
+		event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 		events = append(events, event)
 	}
@@ -512,7 +550,7 @@ func (d *DB) ListSyncedEventsWithGoogleID(userID int64) ([]CalendarEvent, error)
 	query := `
 		SELECT e.id, e.user_id, e.channel_id, e.google_event_id, e.calendar_id, e.title,
 			e.description, e.start_time, e.end_time, e.location, e.status,
-			e.action_type, e.original_message_id, e.llm_reasoning, e.created_at, e.updated_at,
+			e.action_type, e.original_message_id, e.llm_reasoning, e.llm_confidence, e.quality_flags, e.created_at, e.updated_at,
 			COALESCE(c.name, 'Alfred') as channel_name
 		FROM calendar_events e
 		LEFT JOIN channels c ON e.channel_id = c.id
@@ -535,11 +573,12 @@ func (d *DB) ListSyncedEventsWithGoogleID(userID int64) ([]CalendarEvent, error)
 		var googleEventID sql.NullString
 		var endTimeNull sql.NullTime
 		var origMsgIDNull sql.NullInt64
+		var qualityFlags sql.NullString
 
 		if err := rows.Scan(
 			&event.ID, &event.UserID, &event.ChannelID, &googleEventID, &event.CalendarID, &event.Title,
 			&event.Description, &event.StartTime, &endTimeNull, &event.Location, &event.Status,
-			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.CreatedAt, &event.UpdatedAt,
+			&event.ActionType, &origMsgIDNull, &event.LLMReasoning, &event.LLMConfidence, &qualityFlags, &event.CreatedAt, &event.UpdatedAt,
 			&event.ChannelName,
 		); err != nil {
 			return nil, fmt.Errorf("failed to scan synced event: %w", err)
@@ -554,6 +593,7 @@ func (d *DB) ListSyncedEventsWithGoogleID(userID int64) ([]CalendarEvent, error)
 		if origMsgIDNull.Valid {
 			event.OriginalMsgID = &origMsgIDNull.Int64
 		}
+		event.QualityFlags = decodeQualityFlags(qualityFlags)
 
 		events = append(events, event)
 	}

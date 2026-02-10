@@ -131,6 +131,10 @@ func buildUserPrompt(
 	prompt.WriteString("## Message History (last messages from this channel)\n\n")
 
 	for _, msg := range history {
+		if msg.ID == newMessage.ID {
+			// Avoid duplicating the trigger message if history already includes it.
+			continue
+		}
 		prompt.WriteString(fmt.Sprintf("[%s] %s: %s\n",
 			msg.Timestamp.Format("2006-01-02 15:04"),
 			msg.SenderName,
@@ -169,7 +173,8 @@ func buildUserPrompt(
 	}
 
 	prompt.WriteString("\n## Current Date/Time Reference\n\n")
-	prompt.WriteString(fmt.Sprintf("Current time: %s\n", time.Now().Format("2006-01-02 15:04 (Monday)")))
+	now := time.Now()
+	prompt.WriteString(fmt.Sprintf("Current time: %s (%s)\n", now.Format("2006-01-02 15:04:05 Monday -07:00"), now.Location().String()))
 
 	if languageInstruction != "" {
 		prompt.WriteString("\n## Output Language Requirement\n\n")
@@ -208,7 +213,8 @@ func buildEmailPrompt(email agent.EmailContent, languageInstruction, retryInstru
 	prompt.WriteString(truncateBody(email.Body, 8000))
 
 	prompt.WriteString("\n\n## Current Date/Time Reference\n\n")
-	prompt.WriteString(fmt.Sprintf("Current time: %s\n", time.Now().Format("2006-01-02 15:04 (Monday)")))
+	now := time.Now()
+	prompt.WriteString(fmt.Sprintf("Current time: %s (%s)\n", now.Format("2006-01-02 15:04:05 Monday -07:00"), now.Location().String()))
 
 	if languageInstruction != "" {
 		prompt.WriteString("\n## Output Language Requirement\n\n")
@@ -349,23 +355,38 @@ func parseAgentOutput(output *agent.AgentOutput) (*agent.ReminderAnalysis, error
 		}, nil
 	}
 
-	// Find the action tool call (the last one that determines the action)
-	var actionCall *agent.ToolCall
-findAction:
-	for i := len(output.ToolCalls) - 1; i >= 0; i-- {
+	// Validate terminal action semantics: exactly one action tool call.
+	actionCalls := make([]*agent.ToolCall, 0, 1)
+	for i := range output.ToolCalls {
 		call := &output.ToolCalls[i]
 		switch call.Name {
 		case "create_reminder", "update_reminder", "delete_reminder", "no_reminder_action":
-			actionCall = call
-			break findAction
+			actionCalls = append(actionCalls, call)
 		}
 	}
 
-	if actionCall == nil {
+	if len(actionCalls) == 0 {
 		return &agent.ReminderAnalysis{
 			HasReminder: false,
 			Action:      "none",
 			Reasoning:   "No action tool was called",
+			Confidence:  0,
+		}, nil
+	}
+	if len(actionCalls) > 1 {
+		return &agent.ReminderAnalysis{
+			HasReminder: false,
+			Action:      "none",
+			Reasoning:   "Ambiguous tool output: multiple action tools called",
+			Confidence:  0,
+		}, nil
+	}
+	actionCall := actionCalls[0]
+	if actionCall.Error != nil {
+		return &agent.ReminderAnalysis{
+			HasReminder: false,
+			Action:      "none",
+			Reasoning:   fmt.Sprintf("Action tool failed: %v", actionCall.Error),
 			Confidence:  0,
 		}, nil
 	}

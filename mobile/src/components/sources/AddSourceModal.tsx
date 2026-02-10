@@ -9,6 +9,7 @@ import {
   Keyboard,
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Modal, Button, LoadingSpinner } from '../common';
 import { colors } from '../../theme/colors';
 import type { SourceTopContact } from '../../types/channel';
@@ -63,6 +64,7 @@ export function AddSourceModal({
   addContactsLoading,
   addCustomLoading,
 }: AddSourceModalProps) {
+  const insets = useSafeAreaInsets();
   const [selectedContacts, setSelectedContacts] = useState<Set<string>>(new Set());
   const [customEntries, setCustomEntries] = useState<CustomEntry[]>([]);
   const [customInput, setCustomInput] = useState('');
@@ -353,7 +355,7 @@ export function AddSourceModal({
       onClose={onClose}
       title={title}
       footer={
-        <View style={styles.floatingFooter}>
+        <View style={[styles.floatingFooter, { paddingBottom: 16 + insets.bottom }]}>
           <View style={styles.composerSection}>
             <Text style={styles.sectionLabel}>Search or add manually</Text>
             <View style={styles.customInputRow}>

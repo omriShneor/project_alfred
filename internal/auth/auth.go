@@ -274,9 +274,9 @@ func (s *Service) upsertUser(googleUser *goauth2.Userinfo) (*User, error) {
 	// Try to find existing user
 	var user User
 	err := s.db.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url
+		SELECT id, google_id, email, name, avatar_url, COALESCE(timezone, 'UTC')
 		FROM users WHERE google_id = ?
-	`, googleUser.Id).Scan(&user.ID, &user.GoogleID, &user.Email, &user.Name, &user.AvatarURL)
+	`, googleUser.Id).Scan(&user.ID, &user.GoogleID, &user.Email, &user.Name, &user.AvatarURL, &user.Timezone)
 
 	if err == sql.ErrNoRows {
 		// Create new user
@@ -299,6 +299,7 @@ func (s *Service) upsertUser(googleUser *goauth2.Userinfo) (*User, error) {
 			Email:     googleUser.Email,
 			Name:      googleUser.Name,
 			AvatarURL: googleUser.Picture,
+			Timezone:  "UTC",
 		}, nil
 	} else if err != nil {
 		return nil, err
@@ -316,6 +317,9 @@ func (s *Service) upsertUser(googleUser *goauth2.Userinfo) (*User, error) {
 	user.Email = googleUser.Email
 	user.Name = googleUser.Name
 	user.AvatarURL = googleUser.Picture
+	if user.Timezone == "" {
+		user.Timezone = "UTC"
+	}
 
 	return &user, nil
 }
@@ -441,11 +445,11 @@ func (s *Service) ValidateSession(token string) (*User, error) {
 	var expiresAt time.Time
 
 	err := s.db.QueryRow(`
-		SELECT u.id, u.google_id, u.email, u.name, u.avatar_url, s.expires_at
+		SELECT u.id, u.google_id, u.email, u.name, u.avatar_url, COALESCE(u.timezone, 'UTC'), s.expires_at
 		FROM user_sessions s
 		JOIN users u ON s.user_id = u.id
 		WHERE s.token_hash = ?
-	`, tokenHash).Scan(&user.ID, &user.GoogleID, &user.Email, &user.Name, &user.AvatarURL, &expiresAt)
+	`, tokenHash).Scan(&user.ID, &user.GoogleID, &user.Email, &user.Name, &user.AvatarURL, &user.Timezone, &expiresAt)
 	if err == sql.ErrNoRows {
 		return nil, fmt.Errorf("invalid session")
 	} else if err != nil {
@@ -475,13 +479,23 @@ func (s *Service) Logout(token string) error {
 func (s *Service) GetUserByID(userID int64) (*User, error) {
 	var user User
 	err := s.db.QueryRow(`
-		SELECT id, google_id, email, name, avatar_url
+		SELECT id, google_id, email, name, avatar_url, COALESCE(timezone, 'UTC')
 		FROM users WHERE id = ?
-	`, userID).Scan(&user.ID, &user.GoogleID, &user.Email, &user.Name, &user.AvatarURL)
+	`, userID).Scan(&user.ID, &user.GoogleID, &user.Email, &user.Name, &user.AvatarURL, &user.Timezone)
 	if err != nil {
 		return nil, err
 	}
 	return &user, nil
+}
+
+// UpdateUserTimezone sets the user's preferred timezone.
+func (s *Service) UpdateUserTimezone(userID int64, timezone string) error {
+	_, err := s.db.Exec(`
+		UPDATE users
+		SET timezone = ?, updated_at = CURRENT_TIMESTAMP
+		WHERE id = ?
+	`, timezone, userID)
+	return err
 }
 
 // initializeUserSettings creates default settings rows for a new user

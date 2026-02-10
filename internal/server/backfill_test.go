@@ -195,3 +195,33 @@ func TestHandleCreateWhatsappChannel_DisableAndReEnableTriggersBackfillWithPrese
 	assert.Equal(t, 1, recreatedCount)
 	assert.Equal(t, int64(1), analyzer.calls.Load(), "re-enabled channel should backfill preserved history")
 }
+
+func TestHandleWhatsAppCustomSource_StartsBackfill(t *testing.T) {
+	s := createTestServer(t)
+	s.db.SetMaxOpenConns(1)
+	analyzer := &countingBackfillEventAnalyzer{}
+	s.eventAnalyzer = analyzer
+
+	user := database.CreateTestUser(t, s.db)
+
+	body, err := json.Marshal(map[string]string{
+		"phone_number": "+15551234567",
+	})
+	require.NoError(t, err)
+
+	req := httptest.NewRequest("POST", "/api/whatsapp/sources/custom", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req = withAuthContext(req, user)
+	w := httptest.NewRecorder()
+
+	s.handleWhatsAppCustomSource(w, req)
+	require.Equal(t, 201, w.Code)
+
+	var channel database.SourceChannel
+	err = json.Unmarshal(w.Body.Bytes(), &channel)
+	require.NoError(t, err)
+	require.NotZero(t, channel.ID)
+
+	waitForChannelBackfillStatus(t, s.db, channel.ID, database.BackfillStatusCompleted)
+	assert.Equal(t, int64(0), analyzer.calls.Load(), "no historical messages means no analyzer calls")
+}

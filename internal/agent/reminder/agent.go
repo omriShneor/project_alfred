@@ -92,7 +92,9 @@ func (a *Agent) AnalyzeMessages(
 // AnalyzeEmail analyzes an email for reminders
 // Implements agent.ReminderAnalyzer interface
 func (a *Agent) AnalyzeEmail(ctx context.Context, email agent.EmailContent) (*agent.ReminderAnalysis, error) {
-	targetLanguage := langpolicy.DetectTargetLanguage(email.Body)
+	// Detect language from subject+body so a single localized token in the body
+	// doesn't incorrectly flip the entire output language.
+	targetLanguage := langpolicy.DetectTargetLanguage(strings.TrimSpace(email.Subject + "\n" + email.Body))
 	languageInstruction := langpolicy.BuildLanguageInstruction(targetLanguage)
 	if targetLanguage.Reliable {
 		fmt.Printf(

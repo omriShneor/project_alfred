@@ -115,6 +115,68 @@ func TestStoreSourceMessage(t *testing.T) {
 	}
 }
 
+func TestStoreSourceMessage_DeduplicatesReplayedMessages(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
+
+	ts := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+
+	first, err := db.StoreSourceMessage(
+		source.SourceTypeWhatsApp,
+		channel.ID,
+		"sender@s.whatsapp.net",
+		"Sender",
+		"Same message",
+		"",
+		ts,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+
+	second, err := db.StoreSourceMessage(
+		source.SourceTypeWhatsApp,
+		channel.ID,
+		"sender@s.whatsapp.net",
+		"Sender (new push name)",
+		"Same message",
+		"",
+		ts,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, second)
+	assert.Equal(t, first.ID, second.ID, "expected second insert to return the existing message")
+
+	count, err := db.CountSourceMessages(user.ID, source.SourceTypeWhatsApp, channel.ID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count, "expected duplicate message to be stored once")
+}
+
+func TestGetSourceMessageHistory_DeduplicatesExistingDuplicates(t *testing.T) {
+	db := NewTestDB(t)
+	user := CreateTestUser(t, db)
+	channel := createTestChannelForMessages(t, db, user.ID)
+
+	ts := time.Date(2026, 2, 10, 12, 0, 0, 0, time.UTC)
+
+	// Bypass StoreSourceMessage (which is idempotent) and simulate a legacy DB with duplicates.
+	_, err := db.Exec(`
+		INSERT INTO message_history (user_id, source_type, channel_id, sender_jid, sender_name, message_text, subject, timestamp, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, user.ID, source.SourceTypeWhatsApp, channel.ID, "sender@s.whatsapp.net", "Sender", "Dup", "", ts, ts)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+		INSERT INTO message_history (user_id, source_type, channel_id, sender_jid, sender_name, message_text, subject, timestamp, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, user.ID, source.SourceTypeWhatsApp, channel.ID, "sender@s.whatsapp.net", "Sender", "Dup", "", ts, ts.Add(time.Second))
+	require.NoError(t, err)
+
+	history, err := db.GetSourceMessageHistory(user.ID, source.SourceTypeWhatsApp, channel.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, history, 1, "expected deduped history")
+	assert.Equal(t, "Dup", history[0].MessageText)
+}
+
 func TestStoreSourceMessage_InvalidChannel(t *testing.T) {
 	db := NewTestDB(t)
 

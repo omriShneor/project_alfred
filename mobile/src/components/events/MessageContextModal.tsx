@@ -48,6 +48,9 @@ export function MessageContextModal({
                 <Text style={styles.sender}>{item.sender_name}</Text>
                 <Text style={styles.time}>{formatTime(item.timestamp)}</Text>
               </View>
+              {item.subject ? (
+                <Text style={styles.subject}>{item.subject}</Text>
+              ) : null}
               <Text style={styles.text}>{item.message_text}</Text>
             </View>
           )}
@@ -86,6 +89,12 @@ const styles = StyleSheet.create({
   time: {
     fontSize: 11,
     color: colors.textSecondary,
+  },
+  subject: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.text,
+    marginBottom: 6,
   },
   text: {
     fontSize: 14,

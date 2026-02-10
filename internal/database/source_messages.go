@@ -35,6 +35,42 @@ func (sm *SourceMessage) ToHistoryMessage() source.HistoryMessage {
 
 // StoreSourceMessage saves a message to the history with source type
 func (d *DB) StoreSourceMessage(sourceType source.SourceType, channelID int64, senderID, senderName, text, subject string, timestamp time.Time) (*SourceMessage, error) {
+	// Best-effort idempotency: WhatsApp HistorySync (and other backfills) can
+	// replay the same messages. We don't currently store a source-native message
+	// ID, so we dedupe on a stable content+time key.
+	//
+	// This protects prompt/context quality (no duplicated messages) and keeps the
+	// "View Context" UI clean.
+	var existing SourceMessage
+	err := d.QueryRow(`
+		SELECT id, COALESCE(source_type, 'whatsapp'), channel_id, sender_jid, sender_name, message_text, COALESCE(subject, ''), timestamp, created_at
+		FROM message_history
+		WHERE channel_id = ?
+			AND COALESCE(source_type, 'whatsapp') = ?
+			AND sender_jid = ?
+			AND message_text = ?
+			AND timestamp = ?
+			AND COALESCE(subject, '') = COALESCE(?, '')
+		ORDER BY id DESC
+		LIMIT 1
+	`, channelID, sourceType, senderID, text, timestamp, subject).Scan(
+		&existing.ID,
+		&existing.SourceType,
+		&existing.ChannelID,
+		&existing.SenderID,
+		&existing.SenderName,
+		&existing.MessageText,
+		&existing.Subject,
+		&existing.Timestamp,
+		&existing.CreatedAt,
+	)
+	if err == nil {
+		return &existing, nil
+	}
+	if err != sql.ErrNoRows {
+		return nil, fmt.Errorf("failed to check existing message: %w", err)
+	}
+
 	// user_id is derived from the channel's user_id via subquery
 	result, err := d.Exec(`
 		INSERT INTO message_history (user_id, source_type, channel_id, sender_jid, sender_name, message_text, subject, timestamp)
@@ -75,25 +111,50 @@ func (d *DB) StoreSourceMessage(sourceType source.SourceType, channelID int64, s
 
 // GetSourceMessageHistory retrieves the last N messages for a source type and channel, ordered chronologically
 func (d *DB) GetSourceMessageHistory(userID int64, sourceType source.SourceType, channelID int64, limit int) ([]SourceMessage, error) {
+	fetchLimit := limit * 5
+	if fetchLimit < limit {
+		fetchLimit = limit
+	}
+	if fetchLimit > 500 {
+		fetchLimit = 500
+	}
+
 	rows, err := d.Query(`
 		SELECT id, COALESCE(source_type, 'whatsapp'), channel_id, sender_jid, sender_name, message_text, COALESCE(subject, ''), timestamp, created_at
 		FROM message_history
 		WHERE user_id = ? AND source_type = ? AND channel_id = ?
-		ORDER BY timestamp DESC
+		ORDER BY timestamp DESC, id DESC
 		LIMIT ?
-	`, userID, sourceType, channelID, limit)
+	`, userID, sourceType, channelID, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query source message history: %w", err)
 	}
 	defer rows.Close()
 
 	var messages []SourceMessage
+	seen := make(map[string]struct{}, limit)
 	for rows.Next() {
 		var m SourceMessage
 		if err := rows.Scan(&m.ID, &m.SourceType, &m.ChannelID, &m.SenderID, &m.SenderName, &m.MessageText, &m.Subject, &m.Timestamp, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan source message: %w", err)
 		}
+
+		key := fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%d",
+			m.SourceType,
+			m.ChannelID,
+			m.SenderID,
+			m.Subject,
+			m.MessageText,
+			m.Timestamp.UnixNano(),
+		)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 		messages = append(messages, m)
+		if len(messages) >= limit {
+			break
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -195,11 +256,24 @@ func (d *DB) GetSourceMessagesSince(userID int64, sourceType source.SourceType, 
 	defer rows.Close()
 
 	var messages []SourceMessage
+	seen := make(map[string]struct{})
 	for rows.Next() {
 		var m SourceMessage
 		if err := rows.Scan(&m.ID, &m.SourceType, &m.ChannelID, &m.SenderID, &m.SenderName, &m.MessageText, &m.Subject, &m.Timestamp, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan source message: %w", err)
 		}
+		key := fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%d",
+			m.SourceType,
+			m.ChannelID,
+			m.SenderID,
+			m.Subject,
+			m.MessageText,
+			m.Timestamp.UnixNano(),
+		)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 		messages = append(messages, m)
 	}
 

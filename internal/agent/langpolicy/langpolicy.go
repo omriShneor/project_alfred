@@ -294,20 +294,62 @@ func countScripts(text string) (map[string]int, int) {
 }
 
 func detectLatinBySpecialChars(text string) (string, bool) {
-	switch {
-	case strings.ContainsAny(text, "ãõ"):
-		return "pt", true
-	case strings.ContainsAny(text, "äöüß"):
-		return "de", true
-	case strings.ContainsAny(text, "àâçèêëîïôûùüÿœæ"):
-		return "fr", true
-	case strings.ContainsAny(text, "ìò"):
-		return "it", true
-	case strings.ContainsAny(text, "ñ¿¡áíóú"):
-		return "es", true
-	default:
-		return "", false
+	// Special characters are a strong hint, but a single token in a different
+	// language (e.g., a localized footer in an otherwise-English email invite)
+	// should not flip the entire detection.
+	//
+	// We count occurrences and require a small threshold before accepting.
+	counts := map[string]int{
+		"pt": 0,
+		"de": 0,
+		"fr": 0,
+		"it": 0,
+		"es": 0,
 	}
+
+	for _, r := range text {
+		switch r {
+		// Portuguese
+		case 'ã', 'õ':
+			counts["pt"]++
+		// German
+		case 'ä', 'ö', 'ü', 'ß':
+			counts["de"]++
+		// French
+		// Note: we intentionally exclude 'ü' here since it's ambiguous and also a strong
+		// German hint; keyword detection can disambiguate if needed.
+		case 'à', 'â', 'ç', 'è', 'ê', 'ë', 'î', 'ï', 'ô', 'û', 'ù', 'ÿ', 'œ', 'æ':
+			counts["fr"]++
+		// Italian
+		case 'ì', 'ò':
+			counts["it"]++
+		// Spanish
+		case 'ñ', '¿', '¡', 'á', 'í', 'ó', 'ú':
+			counts["es"]++
+		}
+	}
+
+	bestCode := ""
+	bestCount := 0
+	secondCount := 0
+	for _, code := range []string{"pt", "de", "fr", "it", "es"} {
+		c := counts[code]
+		if c > bestCount {
+			secondCount = bestCount
+			bestCount = c
+			bestCode = code
+			continue
+		}
+		if c > secondCount {
+			secondCount = c
+		}
+	}
+
+	// Require more than a single special character to prevent false positives.
+	if bestCount >= 2 && bestCount >= secondCount+1 {
+		return bestCode, true
+	}
+	return "", false
 }
 
 func detectLatinByKeywords(text string) (bestCode string, bestScore int, secondScore int) {

@@ -35,8 +35,10 @@ export interface EventWithMessage extends CalendarEvent {
   trigger_message?: {
     id: number;
     channel_id: number;
+    source_type?: string;
     sender_jid: string;
     sender_name: string;
+    subject?: string;
     message_text: string;
     timestamp: string;
   };
@@ -54,8 +56,10 @@ export interface UpdateEventRequest {
 export interface MessageHistory {
   id: number;
   channel_id: number;
+  source_type?: string;
   sender_jid: string;
   sender_name: string;
+  subject?: string;
   message_text: string;
   timestamp: string;
 }

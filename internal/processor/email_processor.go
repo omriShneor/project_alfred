@@ -57,6 +57,31 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, e
 	// Clean the email body
 	body := gmail.CleanEmailBody(email.Body)
 
+	// Create (or resolve) the synthetic channel for this email source and store the
+	// trigger email into message_history so the UI "View Context" and DB tracing
+	// work for Gmail-sourced events/reminders.
+	emailChannel, userID, channelErr := p.getOrCreateEmailChannel(emailSource)
+	var triggerMsgID *int64
+	if channelErr == nil && emailChannel != nil {
+		senderEmail := gmail.ExtractSenderEmail(email.From)
+		senderName := gmail.ExtractSenderName(email.From)
+		storageBody := gmail.TruncateText(body, 8000)
+		stored, err := p.db.StoreSourceMessage(
+			source.SourceTypeGmail,
+			emailChannel.ID,
+			senderEmail,
+			senderName,
+			storageBody,
+			email.Subject,
+			email.ReceivedAt,
+		)
+		if err != nil {
+			fmt.Printf("Email: failed to store message context: %v\n", err)
+		} else {
+			triggerMsgID = &stored.ID
+		}
+	}
+
 	// Build email content with thread context (shared between analyzers)
 	emailContent := agent.EmailContent{
 		Subject: email.Subject,
@@ -78,7 +103,7 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, e
 		}
 	}
 
-	if err := p.routeAnalyzeAndPersistEmail(ctx, emailSource, intents.EmailInput{Email: emailContent}); err != nil {
+	if err := p.routeAnalyzeAndPersistEmail(ctx, emailSource, userID, emailChannel, triggerMsgID, intents.EmailInput{Email: emailContent}); err != nil {
 		fmt.Printf("Email intent orchestration error: %v\n", err)
 	}
 
@@ -88,23 +113,55 @@ func (p *EmailProcessor) ProcessEmail(ctx context.Context, email *gmail.Email, e
 type emailIntentPersister struct {
 	p           *EmailProcessor
 	emailSource *gmail.EmailSource
+	messageID   *int64
 }
 
 func (ep *emailIntentPersister) PersistEvent(ctx context.Context, analysis *agent.EventAnalysis) error {
-	return ep.p.createPendingEventFromEmail(ep.emailSource, analysis)
+	return ep.p.createPendingEventFromEmail(ep.emailSource, ep.messageID, analysis)
 }
 
 func (ep *emailIntentPersister) PersistReminder(ctx context.Context, analysis *agent.ReminderAnalysis) error {
-	return ep.p.createPendingReminderFromEmail(ep.emailSource, analysis)
+	return ep.p.createPendingReminderFromEmail(ep.emailSource, ep.messageID, analysis)
 }
 
-func (p *EmailProcessor) routeAnalyzeAndPersistEmail(ctx context.Context, emailSource *gmail.EmailSource, input intents.EmailInput) error {
+func (p *EmailProcessor) routeAnalyzeAndPersistEmail(
+	ctx context.Context,
+	emailSource *gmail.EmailSource,
+	userID int64,
+	emailChannel *database.SourceChannel,
+	triggerMsgID *int64,
+	input intents.EmailInput,
+) error {
 	if p.intentRegistry == nil || p.intentRouter == nil {
 		return nil
 	}
 
 	route := p.intentRouter.RouteEmail(ctx, input)
 	fmt.Printf("Email intent route: intent=%s confidence=%.2f reason=%s\n", route.Intent, route.Confidence, truncate(route.Reasoning, 80))
+
+	if emailChannel != nil && userID != 0 {
+		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
+			UserID:           userID,
+			ChannelID:        emailChannel.ID,
+			SourceType:       string(source.SourceTypeGmail),
+			TriggerMessageID: triggerMsgID,
+			Intent:           route.Intent,
+			RouterConfidence: route.Confidence,
+			Action:           "",
+			Confidence:       route.Confidence,
+			Reasoning:        route.Reasoning,
+			Status:           "routed",
+			Details: map[string]any{
+				"email_subject":        input.Email.Subject,
+				"email_from":           input.Email.From,
+				"email_to":             input.Email.To,
+				"email_date":           input.Email.Date,
+				"email_body_len":       len(input.Email.Body),
+				"email_body_excerpt":   truncate(input.Email.Body, 800),
+				"thread_history_count": len(input.Email.ThreadHistory),
+			},
+		})
+	}
 
 	intentOrder, unknownRoutedIntent := resolveIntentExecutionOrder(p.intentRegistry, route)
 	if len(intentOrder) == 0 {
@@ -113,7 +170,7 @@ func (p *EmailProcessor) routeAnalyzeAndPersistEmail(ctx context.Context, emailS
 
 	var firstErr error
 	for _, intentName := range intentOrder {
-		if err := p.runEmailIntentModule(ctx, intentName, emailSource, input); err != nil {
+		if err := p.runEmailIntentModule(ctx, intentName, emailSource, userID, emailChannel, triggerMsgID, input); err != nil {
 			fmt.Printf("Email intent module %s error: %v\n", intentName, err)
 			if firstErr == nil {
 				firstErr = err
@@ -126,8 +183,15 @@ func (p *EmailProcessor) routeAnalyzeAndPersistEmail(ctx context.Context, emailS
 	return firstErr
 }
 
-func (p *EmailProcessor) runEmailIntentModule(ctx context.Context, intentName string, emailSource *gmail.EmailSource, input intents.EmailInput) error {
-	emailChannel, userID, channelErr := p.getOrCreateEmailChannel(emailSource)
+func (p *EmailProcessor) runEmailIntentModule(
+	ctx context.Context,
+	intentName string,
+	emailSource *gmail.EmailSource,
+	userID int64,
+	emailChannel *database.SourceChannel,
+	triggerMsgID *int64,
+	input intents.EmailInput,
+) error {
 	channelID := int64(0)
 	if emailChannel != nil {
 		channelID = emailChannel.ID
@@ -136,14 +200,21 @@ func (p *EmailProcessor) runEmailIntentModule(ctx context.Context, intentName st
 	module, ok := p.intentRegistry.Get(intentName)
 	if !ok {
 		fmt.Printf("Unknown email intent '%s' -> no_action\n", intentName)
-		if channelErr == nil && channelID != 0 {
+		if emailChannel != nil && userID != 0 && channelID != 0 {
 			_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
 				UserID:     userID,
 				ChannelID:  channelID,
 				SourceType: string(source.SourceTypeGmail),
+				TriggerMessageID: triggerMsgID,
 				Intent:     intentName,
 				Status:     "unknown_intent",
 				Reasoning:  "intent module not registered",
+				Details: map[string]any{
+					"email_subject":      input.Email.Subject,
+					"email_from":         input.Email.From,
+					"email_date":         input.Email.Date,
+					"email_body_excerpt": truncate(input.Email.Body, 800),
+				},
 			})
 		}
 		return nil
@@ -159,59 +230,82 @@ func (p *EmailProcessor) runEmailIntentModule(ctx context.Context, intentName st
 
 	if err := module.Validate(ctx, output); err != nil {
 		fmt.Printf("Email intent validation failed intent=%s: %v\n", intentName, err)
-		if channelErr == nil && channelID != 0 {
+		if emailChannel != nil && userID != 0 && channelID != 0 {
 			_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
 				UserID:     userID,
 				ChannelID:  channelID,
 				SourceType: string(source.SourceTypeGmail),
+				TriggerMessageID: triggerMsgID,
 				Intent:     intentName,
 				Action:     output.Action,
 				Confidence: output.Confidence,
 				Reasoning:  output.Reasoning,
 				Status:     "validation_failed",
+				Details: map[string]any{
+					"error":           err.Error(),
+					"email_subject":   input.Email.Subject,
+					"email_from":      input.Email.From,
+					"email_date":      input.Email.Date,
+					"email_body_len":  len(input.Email.Body),
+					"thread_messages": len(input.Email.ThreadHistory),
+				},
 			})
 		}
 		return nil
 	}
 	if output.Confidence < minPersistConfidence {
 		fmt.Printf("Skipping low-confidence email intent=%s confidence=%.2f\n", intentName, output.Confidence)
-		if channelErr == nil && channelID != 0 {
+		if emailChannel != nil && userID != 0 && channelID != 0 {
 			_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
 				UserID:     userID,
 				ChannelID:  channelID,
 				SourceType: string(source.SourceTypeGmail),
+				TriggerMessageID: triggerMsgID,
 				Intent:     intentName,
 				Action:     output.Action,
 				Confidence: output.Confidence,
 				Reasoning:  output.Reasoning,
 				Status:     "skipped_low_confidence",
+				Details: map[string]any{
+					"email_subject":      input.Email.Subject,
+					"email_from":         input.Email.From,
+					"email_date":         input.Email.Date,
+					"email_body_excerpt": truncate(input.Email.Body, 800),
+				},
 			})
 		}
 		return nil
 	}
 
-	err = module.Persist(ctx, output, &emailIntentPersister{p: p, emailSource: emailSource})
+	err = module.Persist(ctx, output, &emailIntentPersister{p: p, emailSource: emailSource, messageID: triggerMsgID})
 	status := "persisted"
 	if err != nil {
 		status = "persist_error"
 	}
-	if channelErr == nil && channelID != 0 {
+	if emailChannel != nil && userID != 0 && channelID != 0 {
 		_ = p.db.CreateAnalysisTrace(database.AnalysisTrace{
 			UserID:     userID,
 			ChannelID:  channelID,
 			SourceType: string(source.SourceTypeGmail),
+			TriggerMessageID: triggerMsgID,
 			Intent:     intentName,
 			Action:     output.Action,
 			Confidence: output.Confidence,
 			Reasoning:  output.Reasoning,
 			Status:     status,
+			Details: map[string]any{
+				"email_subject":      input.Email.Subject,
+				"email_from":         input.Email.From,
+				"email_date":         input.Email.Date,
+				"email_body_excerpt": truncate(input.Email.Body, 800),
+			},
 		})
 	}
 	return err
 }
 
 // createPendingEventFromEmail creates a pending event from email analysis
-func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSource, analysis *agent.EventAnalysis) error {
+func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSource, messageID *int64, analysis *agent.EventAnalysis) error {
 	// Get or create a placeholder channel for email sources
 	emailChannel, userID, err := p.getOrCreateEmailChannel(emailSource)
 	if err != nil {
@@ -224,6 +318,7 @@ func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSou
 		ChannelID:     emailChannel.ID,
 		SourceType:    source.SourceTypeGmail,
 		EmailSourceID: &emailSourceID,
+		MessageID:     messageID,
 		Analysis:      analysis,
 	}
 
@@ -232,7 +327,7 @@ func (p *EmailProcessor) createPendingEventFromEmail(emailSource *gmail.EmailSou
 }
 
 // createPendingReminderFromEmail creates a pending reminder from email analysis
-func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.EmailSource, analysis *agent.ReminderAnalysis) error {
+func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.EmailSource, messageID *int64, analysis *agent.ReminderAnalysis) error {
 	// Get or create a placeholder channel for email sources
 	emailChannel, userID, err := p.getOrCreateEmailChannel(emailSource)
 	if err != nil {
@@ -245,6 +340,7 @@ func (p *EmailProcessor) createPendingReminderFromEmail(emailSource *gmail.Email
 		ChannelID:     emailChannel.ID,
 		SourceType:    source.SourceTypeGmail,
 		EmailSourceID: &emailSourceID,
+		MessageID:     messageID,
 		Analysis:      analysis,
 	}
 

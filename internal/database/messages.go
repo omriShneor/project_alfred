@@ -14,31 +14,62 @@ type MessageRecord struct {
 	SenderJID   string    `json:"sender_jid"`
 	SenderName  string    `json:"sender_name"`
 	MessageText string    `json:"message_text"`
+	SourceType  source.SourceType `json:"source_type,omitempty"`
+	Subject     string            `json:"subject,omitempty"`
 	Timestamp   time.Time `json:"timestamp"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
 // GetMessageHistory retrieves the last N messages for a channel, ordered by timestamp descending
 func (d *DB) GetMessageHistory(channelID int64, limit int) ([]MessageRecord, error) {
+	// message_history may contain duplicates (e.g., WhatsApp HistorySync replay).
+	// Fetch more than needed and dedupe in-memory so callers always get a clean,
+	// high-signal context window.
+	fetchLimit := limit * 5
+	if fetchLimit < limit {
+		fetchLimit = limit
+	}
+	if fetchLimit > 500 {
+		fetchLimit = 500
+	}
+
 	rows, err := d.Query(`
-		SELECT id, channel_id, sender_jid, sender_name, message_text, timestamp, created_at
+		SELECT id, channel_id, sender_jid, sender_name, message_text, timestamp, created_at,
+			COALESCE(source_type, 'whatsapp'), COALESCE(subject, '')
 		FROM message_history
 		WHERE channel_id = ?
-		ORDER BY timestamp DESC
+		ORDER BY timestamp DESC, id DESC
 		LIMIT ?
-	`, channelID, limit)
+	`, channelID, fetchLimit)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query message history: %w", err)
 	}
 	defer rows.Close()
 
 	var messages []MessageRecord
+	seen := make(map[string]struct{}, limit)
 	for rows.Next() {
 		var m MessageRecord
-		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderJID, &m.SenderName, &m.MessageText, &m.Timestamp, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.ChannelID, &m.SenderJID, &m.SenderName, &m.MessageText, &m.Timestamp, &m.CreatedAt, &m.SourceType, &m.Subject); err != nil {
 			return nil, fmt.Errorf("failed to scan message: %w", err)
 		}
+
+		key := fmt.Sprintf("%s\x00%d\x00%s\x00%s\x00%s\x00%d",
+			m.SourceType,
+			m.ChannelID,
+			m.SenderJID,
+			m.Subject,
+			m.MessageText,
+			m.Timestamp.UnixNano(),
+		)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
 		messages = append(messages, m)
+		if len(messages) >= limit {
+			break
+		}
 	}
 
 	if err := rows.Err(); err != nil {
@@ -74,10 +105,11 @@ func (d *DB) PruneMessages(channelID int64, keepCount int) error {
 func (d *DB) GetMessageByID(id int64) (*MessageRecord, error) {
 	var m MessageRecord
 	err := d.QueryRow(`
-		SELECT id, channel_id, sender_jid, sender_name, message_text, timestamp, created_at
+		SELECT id, channel_id, sender_jid, sender_name, message_text, timestamp, created_at,
+			COALESCE(source_type, 'whatsapp'), COALESCE(subject, '')
 		FROM message_history
 		WHERE id = ?
-	`, id).Scan(&m.ID, &m.ChannelID, &m.SenderJID, &m.SenderName, &m.MessageText, &m.Timestamp, &m.CreatedAt)
+	`, id).Scan(&m.ID, &m.ChannelID, &m.SenderJID, &m.SenderName, &m.MessageText, &m.Timestamp, &m.CreatedAt, &m.SourceType, &m.Subject)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get message: %w", err)
 	}

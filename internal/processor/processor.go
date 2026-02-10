@@ -194,10 +194,12 @@ func convertToMessageRecords(messages []database.SourceMessage) []database.Messa
 	for i, m := range messages {
 		records[i] = database.MessageRecord{
 			ID:          m.ID,
+			SourceType:  m.SourceType,
 			ChannelID:   m.ChannelID,
 			SenderJID:   m.SenderID,
 			SenderName:  m.SenderName,
 			MessageText: m.MessageText,
+			Subject:     m.Subject,
 			Timestamp:   m.Timestamp,
 			CreatedAt:   m.CreatedAt,
 		}
@@ -209,10 +211,12 @@ func convertToMessageRecords(messages []database.SourceMessage) []database.Messa
 func convertSourceMessageToRecord(m *database.SourceMessage) database.MessageRecord {
 	return database.MessageRecord{
 		ID:          m.ID,
+		SourceType:  m.SourceType,
 		ChannelID:   m.ChannelID,
 		SenderJID:   m.SenderID,
 		SenderName:  m.SenderName,
 		MessageText: m.MessageText,
+		Subject:     m.Subject,
 		Timestamp:   m.Timestamp,
 		CreatedAt:   m.CreatedAt,
 	}

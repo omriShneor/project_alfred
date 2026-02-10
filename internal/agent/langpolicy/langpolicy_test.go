@@ -44,6 +44,13 @@ func TestDetectTargetLanguage_LowSignal(t *testing.T) {
 	assert.Equal(t, "", unknown.Code)
 }
 
+func TestDetectTargetLanguage_DoesNotFlipOnSingleForeignToken(t *testing.T) {
+	// A single localized word in an otherwise-English body shouldn't flip the result.
+	target := DetectTargetLanguage("You've been invited to a Google Calendar event.\nreunião")
+	require.True(t, target.Reliable)
+	assert.Equal(t, "en", target.Code)
+}
+
 func TestValidateFieldsLanguage_MatchAndMismatch(t *testing.T) {
 	target := DetectTargetLanguage("mañana tenemos reunión")
 	require.True(t, target.Reliable)
